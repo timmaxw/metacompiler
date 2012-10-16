@@ -40,9 +40,9 @@ A "declaration" describes an object's meta-type, and also assigns names to its p
 <name> (<declaration>)* '::' <type-or-term-marker>
 ```
 
-where `<type-or-term-marker>` is either `(type)` or `(term <TL-type>)`, where `<TL-type>` is a translation-language type.
+where `<type-or-term-marker>` is either `('type')` or `('term' <TL-type>)`, where `<TL-type>` is a translation-language type.
 
-The declaration indicates that `<name>` has the parameters that appear in parentheses after it. If `<type-or-term-marker>` is `(type)`, then `<name>` is a type; otherwise, it is a term, and its type is `<TL-type>`.
+The declaration indicates that `<name>` has the parameters that appear in parentheses after it. If `<type-or-term-marker>` is `('type')`, then `<name>` is a type; otherwise, it is a term, and its type is `<TL-type>`.
 
 Unlike Haskell's type declarations, our declarations do not appear at the top level of the file. Instead, they appear at the top of translation directives.
 
@@ -72,7 +72,7 @@ The syntax of a type translation directive is as follows:
 )
 ```
 
-The declaration gives the name and parameters of the type. Naturally, it must end with `:: (type)`.
+The declaration gives the name and parameters of the type. Naturally, it must end with `'::' ('type')`.
 
 The clauses give details about the translation. They can be in any order.
 
@@ -110,7 +110,7 @@ Naturally, the syntax for term translation directives is very similar to that fo
 )
 ```
 
-But, of course, this time the `<declaration>` must end with `:: (term <TL-type>)`.
+But, of course, this time the `<declaration>` must end with `'::' ('term' <TL-type>)`.
 
 ## The `spec` clause
 
