@@ -1,0 +1,1 @@
+`metacompiler` is an experimental compiler from a Haskell-like language to Javascript that allows a human to assist the compiler in efficient compilation. It's basically a research project and is not meant for real use. Tim Maxwell is writing `metacompiler` at Caltech under the supervision of Mike Vanier for a CS 81: Undergraduate Projects in Computer Science class.
