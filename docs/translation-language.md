@@ -6,13 +6,13 @@ This document is a detailed specification for the translation files that `metaco
 
 # Objects, meta-types and declarations
 
-`metacompiler` often uses similar syntax for types and terms. For example, in translation directives, type parameters can be mixed with term parameters. An "object" is either a type or a term, parameterized on zero or more other objects. An object's "meta-type" indicates whether it is a type or a term, what its parameters are, and so on.
+`metacompiler` often uses similar syntax for types and terms. For example, in translation directives, type parameters can be specified next to term parameters. An "object" is either a type or a term, parameterized on zero or more other objects. An object's "meta-type" indicates whether it is a type or a term, what its parameters are, and so on.
 
 Types cannot be parameterized on terms. If terms are parameterized on types, all of the type parameters must come before any of the term parameters.
 
 ## Object syntax
 
-The syntax for an object comes in one of two forms.
+The syntax for an type or a term comes in one of two forms.
 
 The first form is used to refer to a translation directive. It is as follows:
 
@@ -20,7 +20,9 @@ The first form is used to refer to a translation directive. It is as follows:
 <name> ([<var>* ->] <object>)*
 ```
 
-The initial `<name>` is the name of the translation directive in question. The things appearing in parentheses after it are parameters to it. If the parameter itself takes sub-parameters, then those sub-parameters' names are given by the `<var>`s before the `->`.
+The initial `<name>` is the name of the translation directive in question. The things appearing in parentheses after it are parameters to it. If the parameter itself takes sub-parameters, then those sub-parameters' names are given by the `<var>`s before the `->`. The number of parameters and the meta-types of the parameters must exactly match those of the translation directive; there is no partial application.
+
+Names of translation directives must begin with a capital letter. Names of variables must begin with a lower-case letter.
 
 The second form is used to refer to a variable. It is as follows:
 

@@ -4,6 +4,8 @@
 
 `metacompiler` takes two inputs: SL files, and translation files. The SL files define functions and types but do not specify how to express them as Javascript. The translation files specify ways to translate the functions and types from SL to Javascript. They also specify what should actually be included in the output. The output from `metacompiler` is a Javascript file which defines some functions or values.
 
+## Table of contents
+
 The documentation is broken up across the following files:
 
  *  `spec-language.md` defines the SL language.
@@ -12,4 +14,28 @@ The documentation is broken up across the following files:
 
  *  `tutorial.md` is an informal example-based explanation of how to write translation files.
 
+## Notational conventions
 
+Both SL and the syntax of the translation files are based on S-expressions. The S-expressions used by `metacompiler` consist only of lists, atoms, and string literals. String literal escaping conventions are exactly as in Haskell. Comments begin with semicolons and run until the end of the line.
+
+When describing the syntax that is built on top of the S-expressions, the following conventions will be used:
+
+ *  Parentheses mean an actual list.
+
+ *  A word or symbol without any other meaning is an atom.
+
+ *  Anything enclosed in `<` and `>` means "something gets inserted here"
+
+ *  Anything enclosed in `""` is a S-expression string.
+
+ *  A `*` or `+` after something means "repeat this zero or more / one or more times"
+
+ *  Anything enclosed in `[` and `]` is optional.
+
+For example,
+
+```
+(blah = "<phone-number>"+)
+```
+
+means a list consisting of the atom `blah`, the atom `=`, and the one or more strings which represent phone numbers.
