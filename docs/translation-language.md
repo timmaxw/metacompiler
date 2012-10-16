@@ -17,12 +17,14 @@ The syntax for an type or a term comes in one of two forms.
 The first form is used to refer to a translation directive. It is as follows:
 
 ```
-<name> ([<var>* '->'] <object>)*
+(<name> ([<var>* '->'] <object>)*)
 ```
 
 The initial `<name>` is the name of the translation directive in question. The things appearing in parentheses after it are parameters to it. If the parameter itself takes sub-parameters, then those sub-parameters' names are given by the `<var>`s before the `->`. The number of parameters and the meta-types of the parameters must exactly match those of the translation directive; there is no partial application.
 
 Names of translation directives must begin with a capital letter. Names of variables must begin with a lower-case letter.
+
+If there are no parameters, the outer parentheses may be omitted. For a parameter, if there is no `->` clause, and the object within the parentheses is a single word, then the parameter parentheses may be omitted.
 
 The second form is used to refer to a variable. It is as follows:
 
@@ -58,6 +60,24 @@ For example, `ListAsArray (x :: (type)) :: (type)` would be represented in SL as
 
 Translation-language terms are similarly translated. If the translation-language terms are parameterized on types, then their SL equivalents are polymorphic. If they are parameterized on terms, then their SL equivalents become functions.
 
+# Javascript blocks
+
+Sometimes it's necessary to have a block of Javascript and to substitute translation-language terms into it. Here's the syntax for that:
+
+```
+"<js-expr-string>" ("<js-var>" '=' <var> (<js-block>)*)* ('free' "<js-var>")*
+```
+
+where `<js-block>` another `<js-expr-string>` and parameter list and so on recursively.
+
+The `free`-clauses and `=`-clauses can be mixed in any order.
+
+The Javascript code that this is equivalent to is "<js-expr-string>", with the following changes:
+
+ *  For each `=`-clause, the Javascript variable to the left of the `=` is replaced with the Javascript equivalent of whatever is to the right of the `=`. The thing to the right of the `=` sign can take parameters, in which case those parameters are further Javascript blocks. This allows for function literals, `case`-expressions, and so on to be expressed.
+ 
+ *  For each `free`-clause, the Javascript variable is replaced with a new unique Javascript identifier.
+
 # Type translation directives
 
 A type translation directive describes a way in which some SL type can be represented in Javascript. It introduces a name into scope that, when instantiated with zero or more parameters, forms a translation-language type.
@@ -91,10 +111,16 @@ Of course, all of the parameters of the declaration are exposed within `<SL-type
 The `verifier` clause is used to specify a chunk of Javascript code which returns `true` if its input is a valid value of this type and returns something else or throws an exception otherwise. It is optional. It has the form:
 
 ```
-('verifier' "<js-expr-string>" ("<js-var>" '=' 'it'))
+('verifier' <js-block>)
 ```
 
-When `<js-expr-string>` is evaluated with `<js-var>` bound to or replaced by the value, it should return `true` if it is valid and return something else or throw an exception if it is not. The verifier code should have no other side effects.
+Within `<js-block>`, the variable `it` is bound to the thing being verified. For example, if some SL type were being translated to a Javascript string, the verifier clause could look like this:
+
+```
+(verifier "typeof x == 'string'" ("x" = it))
+```
+
+The verifier code should have no side effects.
 
 Typically, the verifier code will only be used when `metacompiler` is asked to perform automatic verification; otherwise it will not be used.
 
@@ -127,15 +153,6 @@ Just like with type translation directives, any parameters to the term translati
 The `impl` clause specifies how to translate the term into Javascript. It is mandatory. It takes the following form:
 
 ```
-('impl' <block>)
+('impl' <js-block>)
 ```
-
-where `<block>` looks like:
-
-```
-"<js-expr-string>" ("<js-var>" '=' <var> (`<block>`)*)
-```
-
-The `<js-expr-string>` of the root block will become the Javascript expression that is equivalent to the term. The `<js-var>`s after it will be bound to the parameters of the term. If the terms themselves take further parameters, those will be bound to the given Javascript expressions, and so on recursively. This allows for complicated constructs like lambdas to be translated.
-
 
