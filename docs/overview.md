@@ -22,20 +22,20 @@ When describing the syntax that is built on top of the S-expressions, the follow
 
  *  Parentheses mean an actual list.
 
- *  A word or symbol without any other meaning is an atom.
-
- *  Anything enclosed in `<` and `>` means "something gets inserted here"
-
- *  Anything enclosed in `""` is a S-expression string.
+ *  Something enclosed in `<` and `>` means "something gets inserted here"
 
  *  A `*` or `+` after something means "repeat this zero or more / one or more times"
 
  *  Anything enclosed in `[` and `]` is optional.
 
+ *  `''` indicates a specific atom. This is so that atoms that contain `*`, `+`, and other meaningful characterss can be distinguished from those special characters themselves.
+
+ *  `""` indicate a S-expression string.
+
 For example,
 
 ```
-(blah = "<phone-number>"+)
+('blah' '=' "<phone-number>"+)
 ```
 
 means a list consisting of the atom `blah`, the atom `=`, and the one or more strings which represent phone numbers.

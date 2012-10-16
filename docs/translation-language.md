@@ -17,7 +17,7 @@ The syntax for an type or a term comes in one of two forms.
 The first form is used to refer to a translation directive. It is as follows:
 
 ```
-<name> ([<var>* ->] <object>)*
+<name> ([<var>* '->'] <object>)*
 ```
 
 The initial `<name>` is the name of the translation directive in question. The things appearing in parentheses after it are parameters to it. If the parameter itself takes sub-parameters, then those sub-parameters' names are given by the `<var>`s before the `->`. The number of parameters and the meta-types of the parameters must exactly match those of the translation directive; there is no partial application.
@@ -37,7 +37,7 @@ This is pretty obvious.
 A "declaration" describes an object's meta-type, and also assigns names to its parameters. The syntax for declarations is:
 
 ```
-<name> (<declaration>)* :: <type-or-term-marker>
+<name> (<declaration>)* '::' <type-or-term-marker>
 ```
 
 where `<type-or-term-marker>` is either `(type)` or `(term <TL-type>)`, where `<TL-type>` is a translation-language type.
@@ -67,7 +67,7 @@ Because Javascript is an untyped language, it's impossible to specify a Javascri
 The syntax of a type translation directive is as follows:
 
 ```
-(translation <declaration>
+('translation' <declaration>
 	<clause>*
 )
 ```
@@ -81,7 +81,7 @@ The clauses give details about the translation. They can be in any order.
 The `spec` clause specifies the SL type which is equivalent to the translation-language type. It is mandatory. It has the form:
 
 ```
-(spec <SL-type>)
+('spec' <SL-type>)
 ```
 
 Of course, all of the parameters of the declaration are exposed within `<SL-type>`. They are simply bound to the names given in the declaration.
@@ -91,7 +91,7 @@ Of course, all of the parameters of the declaration are exposed within `<SL-type
 The `verifier` clause is used to specify a chunk of Javascript code which returns `true` if its input is a valid value of this type and returns something else or throws an exception otherwise. It is optional. It has the form:
 
 ```
-(verifier "<js-expr-string>" ("<js-var>" = it))
+('verifier' "<js-expr-string>" ("<js-var>" '=' 'it'))
 ```
 
 When `<js-expr-string>` is evaluated with `<js-var>` bound to or replaced by the value, it should return `true` if it is valid and return something else or throw an exception if it is not. The verifier code should have no other side effects.
@@ -105,7 +105,7 @@ A term translation directive represents a way in which some SL term can be trans
 Naturally, the syntax for term translation directives is very similar to that for type translation directives:
 
 ```
-(translation <declaration>
+('translation' <declaration>
 	<clause>*
 )
 ```
@@ -117,7 +117,7 @@ But, of course, this time the `<declaration>` must end with `:: (term <TL-type>)
 The `spec` clause specifies the spec-language equivalent to this translation-language term. It is mandatory. It has the form:
 
 ```
-(spec <SL-term>)
+('spec' <SL-term>)
 ```
 
 Just like with type translation directives, any parameters to the term translation directive will be exposed within `<SL-term>`.
@@ -127,13 +127,13 @@ Just like with type translation directives, any parameters to the term translati
 The `impl` clause specifies how to translate the term into Javascript. It is mandatory. It takes the following form:
 
 ```
-(impl <block>)
+('impl' <block>)
 ```
 
 where `<block>` looks like:
 
 ```
-"<js-expr-string>" ("<js-var>" = <var> (`<block>`)*)
+"<js-expr-string>" ("<js-var>" '=' <var> (`<block>`)*)
 ```
 
 The `<js-expr-string>` of the root block will become the Javascript expression that is equivalent to the term. The `<js-var>`s after it will be bound to the parameters of the term. If the terms themselves take further parameters, those will be bound to the given Javascript expressions, and so on recursively. This allows for complicated constructs like lambdas to be translated.
