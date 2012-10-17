@@ -55,7 +55,7 @@ and then emit the following Javascript, or something similar:
 two = (((0) + 1) + ((0) + 1))
 ```
 
-# `Either`
+# Translating `Either` to Javascript
 
 SL definition:
 
@@ -102,7 +102,7 @@ Translations:
 ))
 ```
 
-# Functions
+# Translating functions to Javascript
 
 `metacompiler` does not have built-in knowledge of Javascript functions. The user must specify how to translate the SL concept of a function into Javascript. Here is a typical such translation:
 
