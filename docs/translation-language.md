@@ -16,7 +16,7 @@ For the purposes of this document, we will introduce some terminology that isn't
 
 The following syntactic forms are for meta-types:
 
-### `type`
+### The meta-type of unparameterized types: `type`
 
 ```
 'type'
@@ -24,7 +24,7 @@ The following syntactic forms are for meta-types:
 
 This is the meta-type of unparameterized translation-language types.
 
-### `term`
+### The meta-type of unparameterized terms: `term`
 
 ```
 'term' (<type>)
@@ -32,7 +32,7 @@ This is the meta-type of unparameterized translation-language types.
 
 This is the meta-type of unparameterized translation-language terms. `<type>` means, naturally, a meta-object that has meta-type `type`. The parentheses can be omitted if `<type>` is one word.
 
-### `fun`
+### The meta-type of parameterized meta-objects: `fun`
 
 ```
 'fun' (<meta-type>)+ '->' <meta-type>
@@ -143,10 +143,13 @@ Its Javascript implementation is `Javascript-code-string`, but with certain vari
 `infer` is a special meta-object form that only produces terms. It looks like this:
 
 ```
-('infer' <SL-term>)
+('infer' :
+	('goal' <SL-term>)
+	('type' <type>)
+)
 ```
 
-When `metacompiler` encounters an `infer` term, it tries to construct a translation-language term whose SL equivalent is the given SL term, and the `infer` term evalutes to that term.
+When `metacompiler` encounters an `infer` term, it tries to construct a translation-language term whose type is the given type and whose SL equivalent is the given SL term. The `infer` term evalutes to that term.
 
 When inferring, `metacompiler` will only use terms that have been marked with a `use` directive. A `use` directive looks like this:
 
@@ -161,7 +164,7 @@ This enters `<meta-object>` into `metacompiler`'s lookup table, indexed by its S
 An `emit` directive determines what `metacompiler` will actually write to the output file. An `emit` directive looks like this:
 
 ```
-(`emit` <Javascript-block>)
+('emit' <Javascript-block>)
 ```
 
 where `<Javascript-block>` is defined as before. `metacompiler` will take the Javascript block, perform the requested substitutions on it, and then write it to the output file.

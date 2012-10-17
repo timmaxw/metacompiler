@@ -36,8 +36,9 @@ Ignoring integer overflow, a natural translation is to express `Nat` as a Javasc
 ))
 
 (emit "two = x" :
-	(set "x" (infer
-		(plus (Succ Zero) (Succ Zero))
+	(set "x" (infer :
+		(goal (plus (Succ Zero) (Succ Zero)))
+		(type NatAsNumber)
 	))
 )
 ```

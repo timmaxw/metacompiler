@@ -13,6 +13,8 @@ The documentation is broken up across the following files:
  *  `translation-language.md` defines the syntax and semantics of the translation files, in detail.
 
  *  `tutorial.md` is an informal example-based explanation of how to write translation files.
+ 
+ *  `inference.md` describes the algorithm for inferring translation-language terms from SL terms.
 
 ## Notational conventions
 
