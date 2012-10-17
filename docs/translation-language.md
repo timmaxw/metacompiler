@@ -4,155 +4,165 @@ This document is a detailed specification for the translation files that `metaco
 
 `metacompiler` translates SL to Javascript by means of an intermediate language, the "translation language". Each type and term in the translation language has both a Javascript equivalent and an SL equivalent. A translation file contains a series of translation directives, which bring into scope types or terms in the translation language. When the compiler is asked to translate a SL term into Javascript, it constructs a translation-language term that is equivalent to the SL term and then emits the Javascript equivalent of that translation-language term.
 
-# Objects, meta-types and declarations
+## Meta-objects and meta-types
 
-`metacompiler` often uses similar syntax for types and terms. For example, in translation directives, type parameters can be specified next to term parameters. An "object" is either a type or a term, parameterized on zero or more other objects. An object's "meta-type" indicates whether it is a type or a term, what its parameters are, and so on.
+For the purposes of this document, we will introduce some terminology that isn't directly useful to a `metacompiler` user:
 
-Types cannot be parameterized on terms. If terms are parameterized on types, all of the type parameters must come before any of the term parameters.
+ *  A "meta-object" is a translation-language type or a translation-language term, parameterized on zero or more meta-objects.
 
-## Object syntax
+ *  A "meta-type" is the type of a meta-object: How many parameters does it take? What are their meta-types? Is the result a type or a term, and if it is a term, what is that term's type?
 
-The syntax for an type or a term comes in one of two forms.
+## Meta-types
 
-The first form is used to refer to a translation directive. It is as follows:
+The following syntactic forms are for meta-types:
 
-```
-(<name> ([<var>* '->'] <object>)*)
-```
-
-The initial `<name>` is the name of the translation directive in question. The things appearing in parentheses after it are parameters to it. If the parameter itself takes sub-parameters, then those sub-parameters' names are given by the `<var>`s before the `->`. The number of parameters and the meta-types of the parameters must exactly match those of the translation directive; there is no partial application.
-
-Names of translation directives must begin with a capital letter. Names of variables must begin with a lower-case letter.
-
-If there are no parameters, the outer parentheses may be omitted. For a parameter, if there is no `->` clause, and the object within the parentheses is a single word, then the parameter parentheses may be omitted.
-
-The second form is used to refer to a variable. It is as follows:
+### `type`
 
 ```
-<var>
+'type'
 ```
 
-This is pretty obvious.
+This is the meta-type of unparameterized translation-language types.
 
-## Declarations
-
-A "declaration" describes an object's meta-type, and also assigns names to its parameters. The syntax for declarations is:
+### `term`
 
 ```
-<name> (<declaration>)* '::' <type-or-term-marker>
+'term' (<type>)
 ```
 
-where `<type-or-term-marker>` is either `('type')` or `('term' <TL-type>)`, where `<TL-type>` is a translation-language type.
+This is the meta-type of unparameterized translation-language terms. `<type>` means, naturally, a meta-object that has meta-type `type`. The parentheses can be omitted if `<type>` is one word.
 
-The declaration indicates that `<name>` has the parameters that appear in parentheses after it. If `<type-or-term-marker>` is `('type')`, then `<name>` is a type; otherwise, it is a term, and its type is `<TL-type>`.
-
-Unlike Haskell's type declarations, our declarations do not appear at the top level of the file. Instead, they appear at the top of translation directives.
-
-## SL equivalents
-
-Every translation-language type has some SL type that is its equivalent. Same with every translation-language term. These are determined by looking at the translation directive that the SL type refers to, and taking the type in its `spec` clause; see the sections on translation directives for detaisl.
-
-Sometimes translation-language objects are bound to variables in SL. The way this translation is accomplished is as follows:
-
-Translation-language types are translated to their SL equivalents. If they are parameterized on types, then they become SL types with kinds other than `*`.
-
-For example, `ListAsArray (x :: (type)) :: (type)` would be represented in SL as a type of kind `(fun * -> *)`.
-
-Translation-language terms are similarly translated. If the translation-language terms are parameterized on types, then their SL equivalents are polymorphic. If they are parameterized on terms, then their SL equivalents become functions.
-
-# Javascript blocks
-
-Sometimes it's necessary to have a block of Javascript and to substitute translation-language terms into it. Here's the syntax for that:
+### `fun`
 
 ```
-"<js-expr-string>" ("<js-var>" '=' <var> (<js-block>)*)* ('free' "<js-var>")*
+'fun' (<meta-type>)+ '->' <meta-type>
 ```
 
-where `<js-block>` another `<js-expr-string>` and parameter list and so on recursively.
+This is the meta-type of meta-types parameterized on other meta-types. The parentheses can be omitted if `<meta-type>` is one word.
 
-The `free`-clauses and `=`-clauses can be mixed in any order.
+## Meta-object common terms
 
-The Javascript code that this is equivalent to is "<js-expr-string>", with the following changes:
+The following syntactic forms can be used with both types and terms.
 
- *  For each `=`-clause, the Javascript variable to the left of the `=` is replaced with the Javascript equivalent of whatever is to the right of the `=`. The thing to the right of the `=` sign can take parameters, in which case those parameters are further Javascript blocks. This allows for function literals, `case`-expressions, and so on to be expressed.
- 
- *  For each `free`-clause, the Javascript variable is replaced with a new unique Javascript identifier.
-
-# Type translation directives
-
-A type translation directive describes a way in which some SL type can be represented in Javascript. It introduces a name into scope that, when instantiated with zero or more parameters, forms a translation-language type.
-
-Because Javascript is an untyped language, it's impossible to specify a Javascript equivalent. Instead, the type translation directive just acts as a thing for term translation directives to refer to to inform the compiler that they are using the same Javascript representation for some SL type.
-
-The syntax of a type translation directive is as follows:
+### Application
 
 ```
-('translation' <declaration>
-	<clause>*
+<meta-object> (<meta-object>)
+```
+
+This provides a value for the first parameter of the meta-object, if any. The first meta-object must have meta-type `fun a -> r` for some `a` and `r`, and the second must have meta-type `a`. The resulting meta-object will have meta-type `r`.
+
+The parentheses can be omitted if `<meta-object>` is only one word.
+
+Its SL equivalent and/or Javascript equivalent are the same as whatever the first meta-object evaluates to after its parameter has been filled.
+
+### Abstraction
+
+```
+'\\' (<name> '::' (<meta-type>))+ '->' <meta-object>
+```
+
+This parameterizes a meta-object on one or more variables. In the one-variable case, if the meta-type is `a` and the meta-object has meta-type `r`, then the resulting meta-object will have meta-type `fun a -> r`.
+
+The parentheses around the `<meta-type>` after the `::` can be omitted if `<meta-type>` is only one word. Parameterization binds more loosely than applying a parameter; `\\ a -> b c` is parsed as `\\ a -> (b c)`.
+
+This has no Javascript equivalent. If `r` is `type` and all of the parameters' meta-types can be represented as SL kinds, then its SL equivalent is an SL type. If `r` is `term <...>`, and all of the parameters' meta-types can be represented as SL kinds or types, and all of the type parameters come before all of the term parametes, then its SL equivalent is a function taking various parameters and returning the SL equivalent of its return value. Otherwise, it cannot be represented in SL.
+
+### Variable reference
+
+```
+<name>
+```
+
+This refers to a global definition or a variable in scope. The SL equivalent and/or Javascript equivalent are the same as whatever it resolves to.
+
+## `let` directives
+
+A `let` directive binds a meta-object to a name. It looks like this:
+
+```
+('let' ['use'] <name> (<name> '::' <meta-type>)* ['::' (<meta-type>)] '='
+	<meta-object>
 )
 ```
 
-The declaration gives the name and parameters of the type. Naturally, it must end with `'::' ('type')`.
+It's pretty straight-forward.
 
-The clauses give details about the translation. They can be in any order.
+The parentheses around the optional `<meta-type>` after the `::` can be omitted if it is only one word.
 
-## The `spec` clause
+The optional `'use'` is equivalent to putting a `('use' <name>)` directive after the `let` directive.
 
-The `spec` clause specifies the SL type which is equivalent to the translation-language type. It is mandatory. It has the form:
+The name brought into scope by a `let` directive is only visible after the `let` directive in the file.
 
-```
-('spec' <SL-type>)
-```
+## `js-repr` directives
 
-Of course, all of the parameters of the declaration are exposed within `<SL-type>`. They are simply bound to the names given in the declaration.
+A `js-repr` directive describes a way in which some SL type can be represented in Javascript. It introduces a new meta-object into scope with meta-type `type` or `fun <...> -> type`, where `<...>` is one or more arguments.
 
-## The `verifier` clause
-
-The `verifier` clause is used to specify a chunk of Javascript code which returns `true` if its input is a valid value of this type and returns something else or throws an exception otherwise. It is optional. It has the form:
+A `js-repr` directive looks like this:
 
 ```
-('verifier' <js-block>)
-```
-
-Within `<js-block>`, the variable `it` is bound to the thing being verified. For example, if some SL type were being translated to a Javascript string, the verifier clause could look like this:
-
-```
-(verifier "typeof x == 'string'" ("x" = it))
-```
-
-The verifier code should have no side effects.
-
-Typically, the verifier code will only be used when `metacompiler` is asked to perform automatic verification; otherwise it will not be used.
-
-# Term translation directives
-
-A term translation directive represents a way in which some SL term can be transformed into a Javascript expression. It introduces a name into scope that, when instantiated with zero or more parameters, becomes a translation-language term.
-
-Naturally, the syntax for term translation directives is very similar to that for type translation directives:
-
-```
-('translation' <declaration>
-	<clause>*
+('js-repr' <name> (<name> '::' <meta-type>)* ':'
+	('spec' <SL-type>)
 )
 ```
 
-But, of course, this time the `<declaration>` must end with `'::' ('term' <TL-type>)`.
+The things after the `=` sign are called "clauses". Right now there's only one clause, but in the future there will probably be more.
 
-## The `spec` clause
+The `spec` clause specifies the SL equivalent of the newly created type.
 
-The `spec` clause specifies the spec-language equivalent to this translation-language term. It is mandatory. It has the form:
+## Meta-object `js-expr` terms
 
-```
-('spec' <SL-term>)
-```
-
-Just like with type translation directives, any parameters to the term translation directive will be exposed within `<SL-term>`.
-
-## The `impl` clause
-
-The `impl` clause specifies how to translate the term into Javascript. It is mandatory. It takes the following form:
+`js-expr` is a special meta-object form that only produces terms, not types. It looks like this:
 
 ```
-('impl' <js-block>)
+('js-expr' ':'
+	('type' <type>)
+	('spec' <SL-term>)
+	('impl' <Javascript-block>)
+)
 ```
+
+where `<Javascript-block>` looks like
+
+```
+"<Javascript-code-string>" [':' ('set' "<Javascript-var>" <term>)* ('free' "<Javascript-var>")*]
+```
+
+The things after `js-expr` are called clauses and they can go in any order. The things that come after "<Javascript-code-string>" can also be reordered arbitrarily.
+
+Its meta-type is `term <type>`, where `<type>` is the `<type>` from the `type` clause. Its SL equivalent is `<SL-term>`. Naturally, the SL equivalent of `<type>` must be the type of `<SL-term>`.
+
+Its Javascript implementation is `Javascript-code-string`, but with certain variables substituted:
+
+  * `set` means to substitute the `<Javascript-var>` with the Javascript equivalent of the `<term>`. As a special case, within `<term>`, literal strings will evaluate to terms whose Javascript equivalents are those literal strings, and whose SL equivalents are undefined.
+
+  * `free` means to substitute the `<Javascript-var>` with a unique new variable.
+
+## `use` directives and meta-object `infer` terms
+
+`infer` is a special meta-object form that only produces terms. It looks like this:
+
+```
+('infer' <SL-term>)
+```
+
+When `metacompiler` encounters an `infer` term, it tries to construct a translation-language term whose SL equivalent is the given SL term, and the `infer` term evalutes to that term.
+
+When inferring, `metacompiler` will only use terms that have been marked with a `use` directive. A `use` directive looks like this:
+
+```
+('use' <meta-object>)
+```
+
+This enters `<meta-object>` into `metacompiler`'s lookup table, indexed by its SL equivalent. `metacompiler` uses the lookup table to construct equivalent terms.
+
+## `emit` directives
+
+An `emit` directive determines what `metacompiler` will actually write to the output file. An `emit` directive looks like this:
+
+```
+(`emit` <Javascript-block>)
+```
+
+where `<Javascript-block>` is defined as before. `metacompiler` will take the Javascript block, perform the requested substitutions on it, and then write it to the output file.
 
