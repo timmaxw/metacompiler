@@ -16,6 +16,8 @@ The documentation is broken up across the following files:
  
  *  `inference.md` describes the algorithm for inferring translation-language terms from SL terms.
 
+ *  `future-directions.md` summarizes some improvements that might be implemented at some point.
+
 ## Notational conventions
 
 Both SL and the syntax of the translation files are based on S-expressions. The S-expressions used by `metacompiler` consist only of lists, atoms, and string literals. String literal escaping conventions are exactly as in Haskell. Comments begin with semicolons and run until the end of the line.
