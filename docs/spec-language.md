@@ -48,7 +48,7 @@ Expressions take the following forms:
 <name> (<type>)*
 ```
 
-Refers to a variable or definition in scope. The types are type-parameters for if the name refers to something polymorphic.
+Refers to a variable or definition in scope. The types are type-parameters for if the name refers to something polymorphic. The parentheses can be omitted if the types are one word.
 
 ```
 <expr> (<expr>)
