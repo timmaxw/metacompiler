@@ -26,11 +26,11 @@ When describing the syntax that is built on top of the S-expressions, the follow
 
  *  Parentheses mean an actual list.
 
+ *  `{` and `}` surround groups.
+
+ *  A `?`, `*` or `+` after something means "repeat this (up to one / zero or more / one or more) times"
+
  *  Something enclosed in `<` and `>` means "something gets inserted here"
-
- *  A `*` or `+` after something means "repeat this zero or more / one or more times"
-
- *  Anything enclosed in `[` and `]` is optional.
 
  *  `''` indicates a specific atom. This is so that atoms that contain `*`, `+`, and other meaningful characterss can be distinguished from those special characters themselves.
 
@@ -39,7 +39,7 @@ When describing the syntax that is built on top of the S-expressions, the follow
 For example,
 
 ```
-('blah' '=' "<phone-number>"+)
+('blah' '=' "<phone-number>" {',' "<phone-number>"}*)
 ```
 
-means a list consisting of the atom `blah`, the atom `=`, and the one or more strings which represent phone numbers.
+means a list consisting of the atom `blah`, the atom `=`, and the one or more strings which represent phone numbers, separated by commas.

@@ -57,7 +57,7 @@ Refers to a variable or definition in scope. The types are type-parameters for i
 Application. The parentheses can be omitted if the parameter is one word.
 
 ```
-'\\' (<name> '::' <type>)+ '->' <expr>
+'\' (<name> '::' <type>)+ '->' <expr>
 ```
 
 Abstraction.

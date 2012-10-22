@@ -59,7 +59,7 @@ Its SL equivalent and/or Javascript equivalent are the same as whatever the firs
 ### Abstraction
 
 ```
-'\\' (<name> '::' (<meta-type>))+ '->' <meta-object>
+'\' (<name> '::' (<meta-type>))+ '->' <meta-object>
 ```
 
 This parameterizes a meta-object on one or more variables. In the one-variable case, if the meta-type is `a` and the meta-object has meta-type `r`, then the resulting meta-object will have meta-type `fun a -> r`.
@@ -81,7 +81,7 @@ This refers to a global definition or a variable in scope. The SL equivalent and
 A `let` directive binds a meta-object to a name. It looks like this:
 
 ```
-('let' ['use'] <name> (<name> '::' <meta-type>)* ['::' (<meta-type>)] '='
+('let' 'use'? <name> (<name> '::' <meta-type>)* {'::' (<meta-type>)}? '='
 	<meta-object>
 )
 ```
@@ -125,7 +125,7 @@ The `spec` clause specifies the SL equivalent of the newly created type.
 where `<Javascript-block>` looks like
 
 ```
-"<Javascript-code-string>" [':' ('set' "<Javascript-var>" <term>)* ('free' "<Javascript-var>")*]
+"<Javascript-code-string>" {':' ('set' "<Javascript-var>" <term>)* ('free' "<Javascript-var>")*}?
 ```
 
 The things after `js-expr` are called clauses and they can go in any order. The things that come after "<Javascript-code-string>" can also be reordered arbitrarily.
