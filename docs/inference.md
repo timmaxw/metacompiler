@@ -10,5 +10,7 @@ Here's a rough outline of the algorithm:
 
  3. Recursively infer on the sub-matches.
 
- 4. If we get in a loop, fail. The only way we can loop is if there are registered translations whose SL equivalent is simply one of their parameters. In any sequence of such translations, no single translation should appear more than once.
+ 4. Whenever possible, define global variables and refer to those instead of inlining definitions. This allows many recursive functions to be implemented properly. It is an open question whether it allows all recursive functions to be implemented properly.
+
+ 5. If we get stuck a loop one one term, fail. This can happen if there are registered translations whose SL equivalent is simply one of their parameters. In any sequence of such translations, no single translation should appear more than once.
 

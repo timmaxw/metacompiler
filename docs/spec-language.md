@@ -22,11 +22,15 @@ The kind of types that are parameterized on other types. The parentheses can be 
 
 Types take the following forms:
 
+### Name references
+
 ```
 <name>
 ```
 
 Refers to a variable or definition in scope.
+
+### Providing parameters
 
 ```
 <type> <type>
@@ -34,15 +38,27 @@ Refers to a variable or definition in scope.
 
 Provides a value for the parameter of a type.
 
+### Function types
+
 ```
 'fun' (<type>)+ '->' <type>
 ```
 
-The type of curried functions. The parentheses can be omitted if the type is one word.
+The type of curried functions. The parentheses can be omitted if the type is one word. All functions in SL are strict!
+
+### Lazy value types
+
+```
+'lazy' <type>
+```
+
+The type of lazy values.
 
 ## Expressions
 
 Expressions take the following forms:
+
+### Name references
 
 ```
 <name> (<type>)*
@@ -50,11 +66,15 @@ Expressions take the following forms:
 
 Refers to a variable or definition in scope. The types are type-parameters for if the name refers to something polymorphic. The parentheses can be omitted if the types are one word.
 
+### Application
+
 ```
 <expr> (<expr>)
 ```
 
 Application. The parentheses can be omitted if the parameter is one word.
+
+### Abstraction
 
 ```
 '\' (<name> '::' <type>)+ '->' <expr>
@@ -62,8 +82,10 @@ Application. The parentheses can be omitted if the parameter is one word.
 
 Abstraction.
 
+### Examining data values
+
 ```
-('case' (<expr>) 'of' <case>*)
+'case' (<expr>) 'of' <case>*
 ```
 
 where `<case>` is
@@ -72,7 +94,23 @@ where `<case>` is
 (<ctor> <name>*) '->' (<expr>)
 ```
 
-Examining a constructor. The parentheses around the `<expr>` after `case` can be omitted if it is only one word. The parentheses around `<ctor>` can be omitted if no `<name>`s follow it. The parentheses around the `<expr>` after the `->` can be omitted if it is only one word.
+Examining a data value. The parentheses around the `<expr>` after `case` can be omitted if it is only one word. The parentheses around `<ctor>` can be omitted if no `<name>`s follow it. The parentheses around the `<expr>` after the `->` can be omitted if it is only one word.
+
+### Making lazy values
+
+```
+'wrap' (<expr>)
+```
+
+Makes a value lazily evaluated. The parentheses around the `<expr>` can be omitted if it is only one word.
+
+### Using lazy values
+
+```
+'unwrap' (<expr>)
+```
+
+Evaluates a lazy value. The parentheses around the `<expr>` can be omitted if it is only one word.
 
 ## `data` directives
 

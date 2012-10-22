@@ -122,11 +122,15 @@ Translations:
 `metacompiler` does not have built-in knowledge of Javascript functions. The user must specify how to translate the SL concept of a function into Javascript. Here is a typical such translation:
 
 ```
-(js-repr FunctionType (a :: type) (r :: type) :
+(js-repr FunctionType
+		(a :: type) (r :: type) :
 	(spec (fun a -> r))
 )
 
-(let use FunctionLambda (a :: type) (r :: type) (body :: fun (term a) -> term r) = (js-expr :
+(let use FunctionLambda
+		(a :: type) (r :: type)
+		(body :: fun (term a) -> term r)
+		= (js-expr :
 	(type (FunctionType a r))
 	(spec (\\ x -> body x))
 	(impl "function(x) { return body; }" :
@@ -135,12 +139,78 @@ Translations:
 	)
 ))
 
-(let use FunctionApply (a :: type) (r :: type) (fun :: term (FunctionType a r)) (arg :: term a) = (js-expr :
+(let use FunctionApply
+		(a :: type) (r :: type)
+		(fun :: term (FunctionType a r)) (arg :: term a)
+		= (js-expr :
 	(type r)
 	(spec (fun arg))
 	(impl "fun(arg)"
 		(set "fun" fun)
 		(set "arg" arg)
+	)
+))
+```
+
+## Multiple-parameter functions
+
+Suppose that we want `metacompiler` to turn SL functions that take multiple parameters (curried, of course) into Javascript functions that take multiple parameters. Here's a way to do that:
+
+```
+(js-repr Function2Type
+		(a1 :: type) (a2 :: type) (r :: type) :
+	(spec (fun a1 a2 -> r))
+)
+
+(let use Function2Lambda
+		(a1 :: type) (a2 :: type) (r :: type)
+		(body :: fun (term a1) (term a2) -> term r)
+		= (js-expr :
+	(type (Function2Type a1 a2 r))
+	(spec (\\ x1 x2 -> body x1 x2))
+	(impl "function(x1, x2) { return body; }" :
+		(free "x1")
+		(free "x2")
+		(set "body" (body "x1" "x2"))
+	)
+))
+
+(let use Function2Apply
+		(a1 :: type) (a2 :: type) (r :: type)
+		(fun :: term (Function2Type a1 a2 r)) (arg1 :: term a1) (arg2 :: term a2)
+		= (js-expr :
+	(type r)
+	(spec (fun arg1 arg2))
+	(impl "fun(arg1, arg2)" :
+		(set "fun" fun)
+		(set "arg1" arg1)
+		(set "arg2" arg2)
+	)
+))
+```
+
+## Lazy values
+
+Just like for functions, `metacompiler` must be taught how to represent lazily computed values:
+
+```
+(js-repr LazyType (a :: type) :
+	(spec (lazy a))
+)
+
+(let use LazyWrap (a :: type) (x :: term a) = (js-expr :
+	(type (LazyType a))
+	(spec (wrap x))
+	(impl "function() { return x; }" :
+		(set "x" x)
+	)
+))
+
+(let use LazyUnwrap (a :: type) (x :: term (LazyType a)) = (js-expr :
+	(type a)
+	(spec (unwrap x))
+	(impl "x()" :
+		(set "x" x)
 	)
 ))
 ```
@@ -182,7 +252,7 @@ Translation language file:
 		= (js-expr :
 	(type res)
 	(spec (case subject of (Nothing) -> (nothingClause) (Just x) -> (justClause x)))
-	(impl "(function(s) { if (s == null) { return nc; } else { return jc; }})(subj)"
+	(impl "(function(s) { if (s == null) { return nc; } else { return jc; }})(subj)" :
 		(set "subj" subject)
 		(free "s")
 		(set "nc" nothingClause)
@@ -199,7 +269,7 @@ Note that we do not say `(let use ...` or `(use ...`. This is because the `Maybe
 (use (MaybeAsNullCase NatAsNumber))
 ```
 
-## Special-case translations of functions
+## Optimizing `factorial`
 
 Suppose that we have the following SL implementation of factorial:
 
@@ -217,6 +287,66 @@ Suppose that we have the following SL implementation of factorial:
 	(type (FunctionType NatAsNumber NatAsNumber))
 	(spec factorial)
 	(impl "function(a) { var x = 1; while (a > 0) { x *= a; a--; } return x; }")
+))
+```
+
+## Another simple example: lists and `map`
+
+SL:
+
+```
+(data List (a :: *) = (Nil) (Cons a (List a)))
+
+(let map (f :: fun a -> b) (l :: List a) :: List b =
+	case l of
+		(Nil) -> (Nil)
+		(Cons x xs) -> (Cons (f x) (map f xs))
+)
+```
+
+Translations:
+
+```
+(js-repr ListAsArray (a :: type) :
+	(spec (List a))
+)
+
+(let use ListAsArrayNil (a :: type) = (js-expr :
+	(type (ListAsArray a))
+	(spec Nil)
+	(impl "[]")
+))
+
+(let use ListAsArrayCons
+		(a :: type) (x :: term a) (xs :: term (ListAsArray a))
+		= (js-expr :
+	(type (ListAsArray a))
+	(spec (Cons x xs))
+	(impl "[x].concat(xs)" : (set "x" x) (set "xs" xs))
+))
+
+(let use ListAsArrayCase
+		(a :: type) (res :: type)
+		(subject :: term (ListAsArray a))
+		(nilClause :: term res)
+		(consClause :: fun (term a) (term (ListAsArray a)) -> term res)
+		= (js-expr :
+	(type res)
+	(spec (case subject of (Nil) -> (nilClause) (Cons x xs) -> (ConsClause x xs)))
+	(impl "(function(s) { if (s.length == 0) { return nc; } else { return cc; }})(subj)" :
+		(set "subj" subject)
+		(set "nc" nilClause)
+		(set "cc" (consClause "s[0]" "s.slice(1, s.length)"))
+		(free "s")
+	)
+))
+
+(let use ListAsArrayMap
+		(a :: type) (b :: type)
+		= (js-expr :
+	(type (Function2Type (FunctionType a b) (ListAsArray a) (ListAsArray b)))
+	(spec map)
+	(impl "function(f, l) { var l2 = []; for (var x in l) { l2.push(f(x)); } return l2; }")
 ))
 ```
 
