@@ -81,7 +81,7 @@ SL definition:
 Translations:
 
 ```
-(js-repr EitherAsPair (l :: type) (r :: type) :
+(js-repr EitherAsPair (l :: type) (r :: type) =
 	(spec (Either l r))
 )
 
@@ -123,7 +123,7 @@ Translations:
 
 ```
 (js-repr FunctionType
-		(a :: type) (r :: type) :
+		(a :: type) (r :: type) =
 	(spec (fun a -> r))
 )
 
@@ -158,7 +158,7 @@ Suppose that we want `metacompiler` to turn SL functions that take multiple para
 
 ```
 (js-repr Function2Type
-		(a1 :: type) (a2 :: type) (r :: type) :
+		(a1 :: type) (a2 :: type) (r :: type) =
 	(spec (fun a1 a2 -> r))
 )
 
@@ -194,7 +194,7 @@ Suppose that we want `metacompiler` to turn SL functions that take multiple para
 Just like for functions, `metacompiler` must be taught how to represent lazily computed values:
 
 ```
-(js-repr LazyType (a :: type) :
+(js-repr LazyType (a :: type) =
 	(spec (lazy a))
 )
 
@@ -228,7 +228,7 @@ SL file:
 Translation language file:
 
 ```
-(js-repr MaybeAsNull (a :: type) :
+(js-repr MaybeAsNull (a :: type) =
 	(spec (Maybe a))
 )
 
@@ -307,7 +307,7 @@ SL:
 Translations:
 
 ```
-(js-repr ListAsArray (a :: type) :
+(js-repr ListAsArray (a :: type) =
 	(spec (List a))
 )
 
@@ -348,5 +348,86 @@ Translations:
 	(spec map)
 	(impl "function(f, l) { var l2 = []; for (var x in l) { l2.push(f(x)); } return l2; }")
 ))
+```
+
+## Advanced example: optimizing lists of consecutive integers
+
+In the Python programming language (and many others), there is the concept of an "iterable". The consumer of an iterable object can repeatedly request values from it until they reach the end. Python lists are iterables, but so are many other things. For example, iterating over a file will produce each line of the file. Python's `reversed()` function will return an iterable object that lazily returns elements from the end of a list. Python's `xrange()` function will return an object that acts like a list of evenly spaced integers, but internally is represented by only three values (start, stop, and step).
+
+Haskell programmers usually use lists for everything that Python programmers use iterables for. This is possible because Haskell lists are lazy, so in practice creating a list of all the numbers from one to a billion and then iterating over it takes a constant amount of space. But SL discourages laziness, so this is impractical. We can get a similar effect with `metacompiler` by special-casing lists of consecutive integers in the translation file. Here's how it's done.
+
+First, we need a SL function to generate ranges of integers:
+
+```
+(let allNatsLessThan (a :: Nat) :: (List Nat) = case a of
+	(Zero) -> (Nil)
+	(Succ a') -> (Cons a' (allNatsLessThan a'))
+)
+```
+
+(This will generate lists that count down; that's simpler to implement than the reverse.)
+
+`metacompiler` will infer a perfectly valid implementation of this that produces lists of numbers. But the point was to make a better implementation. Here it is:
+
+```
+; A `CountDownList` represents a list of integers decreasing to 0 as a single
+; number, namely one more than the first integer in the list.
+(js-repr CountDownList =
+	(spec (List Nat))
+)
+
+(let CountDownListNil = (js-expr
+	(spec Nil)
+	(type CountDownList)
+	(impl "0")
+))
+
+(let CountDownListAllNatsLessThan (a :: term NatAsNumber) = (js-expr
+	(spec (allNatsLessThan a))
+	(type CountDownList)
+	(impl "a" (set "a" a))
+))
+
+(let CountDownListCase
+		(res :: type)
+		(subject :: term CountDownList)
+		(nilClause :: term res)
+		(consClause :: fun (term NatAsNumber) (term CountDownList) -> term res)
+		= (js-expr
+	(spec (case subject of (Nil) -> (nilClause) (Cons x xs) -> (consClause x xs)))
+	(type res)
+	(impl "(function(n) { if (n == 0) { return nc; } else { return cc; } }(subj)"
+		(free "n")
+		(set "nc" nilClause)
+		(set "cc" (consClause "n" "n-1"))
+		(set "subj" subject)
+	)
+))
+```
+
+If an SL term creates a list using `allNatsLessThan` and then recursively decomposes it using `case ... of ...`, but does nothing else with it, then `metacompiler` can use `CountDownList` in place of `ListAsArray NatAsNumber`, and the performance will be better. (Of course, the performance improvement is probably insignificant except for very large lists.)
+
+Note that even though the SL equivalent of `CountDownList` is `List Nat`, not all values of type `List Nat` can be represented as a `CountDownList`. But that's OK.
+
+We can also teach `metacompiler` how to convert `CountDownList`s into `ListAsArray NatAsNumber`s:
+
+```
+(let ConvertCountDownList (in :: CountDownList) = (js-expr
+	(type (ListAsArray NatAsNumber))
+	(spec in)
+	(impl "(function() { var i = in, l = []; while (i-- >= 0) { l.push(i); } return l; })()"
+		(set "in" in)
+		(free "i")
+		(free "l")
+	)
+))
+```
+
+The main use of this type of converter is for when there is one part of the code that represents `List Nat` as a `ListAsArray NatAsNumber` and another part that represents `List Nat` as `CountDownList` and there is a case where we need to convert between.
+
+As an aside, because of the details of our current implementations of these various functions and of how `metacompiler` works, the following is probably more efficient than the implementation that the compiler would infer for `allNatsLessThan a`:
+
+```
+(ConvertCountDownList (CountDownAllNatsLessThan a))
 ```
 
