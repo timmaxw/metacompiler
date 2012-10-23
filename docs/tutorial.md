@@ -26,25 +26,25 @@ Ignoring integer overflow, a natural translation is to express `Nat` as a Javasc
 	(spec Nat)
 )
 
-(let use NatAsNumberZero = (js-expr :
+(let use NatAsNumberZero = (js-expr
 	(type NatAsNumber)
 	(spec Zero)
 	(impl "0")
 ))
 
-(let use NatAsNumberSucc (x :: term NatAsNumber) = (js-expr :
+(let use NatAsNumberSucc (x :: term NatAsNumber) = (js-expr
 	(type NatAsNumber)
 	(spec (Succ x))
 	(impl "x + 1" : (set "x" x))
 ))
 
-(let use NatAsNumberPlus (x :: term NatAsNumber) (y :: term NatAsNumber) = (js-expr :
+(let use NatAsNumberPlus (x :: term NatAsNumber) (y :: term NatAsNumber) = (js-expr
 	(type NatAsNumber)
 	(spec (plus x y))
 	(impl "x + y" : (set "x" x) (set "y" y))
 ))
 
-(let use NatAsNumberTimes (x :: term NatAsNumber) (y :: term NatAsNumber) = (js-expr :
+(let use NatAsNumberTimes (x :: term NatAsNumber) (y :: term NatAsNumber) = (js-expr
 	(type NatAsNumber)
 	(spec (times x y))
 	(impl "x * y" : (set "x" x) (set "y" y))
@@ -85,13 +85,13 @@ Translations:
 	(spec (Either l r))
 )
 
-(let use EitherAsPairLeft (l :: type) (r :: type) (x :: term l) = (js-expr :
+(let use EitherAsPairLeft (l :: type) (r :: type) (x :: term l) = (js-expr
 	(type (EitherAsPair l r))
 	(spec (Left l r x))
 	(impl "['left', x]" : (set "x" x))
 ))
 
-(let use EitherAsPairRight (l :: type) (r :: type) (x :: term r) = (js-expr :
+(let use EitherAsPairRight (l :: type) (r :: type) (x :: term r) = (js-expr
 	(type (EitherAsPair l r))
 	(spec (Right l r x))
 	(impl "['right', x]" : (set "x" x))
@@ -102,7 +102,7 @@ Translations:
 		(subject :: term (EitherAsPair l r))
 		(leftClause :: fun (term l) -> term res)
 		(rightClause :: fun (term r) -> term res)
-		= (js-expr :
+		= (js-expr
 	(type res)
 	(spec (case subject of
 		(Left x) -> (leftClause x)
@@ -130,7 +130,7 @@ Translations:
 (let use FunctionLambda
 		(a :: type) (r :: type)
 		(body :: fun (term a) -> term r)
-		= (js-expr :
+		= (js-expr
 	(type (FunctionType a r))
 	(spec (\\ x -> body x))
 	(impl "function(x) { return body; }" :
@@ -142,7 +142,7 @@ Translations:
 (let use FunctionApply
 		(a :: type) (r :: type)
 		(fun :: term (FunctionType a r)) (arg :: term a)
-		= (js-expr :
+		= (js-expr
 	(type r)
 	(spec (fun arg))
 	(impl "fun(arg)"
@@ -165,7 +165,7 @@ Suppose that we want `metacompiler` to turn SL functions that take multiple para
 (let use Function2Lambda
 		(a1 :: type) (a2 :: type) (r :: type)
 		(body :: fun (term a1) (term a2) -> term r)
-		= (js-expr :
+		= (js-expr
 	(type (Function2Type a1 a2 r))
 	(spec (\\ x1 x2 -> body x1 x2))
 	(impl "function(x1, x2) { return body; }" :
@@ -178,7 +178,7 @@ Suppose that we want `metacompiler` to turn SL functions that take multiple para
 (let use Function2Apply
 		(a1 :: type) (a2 :: type) (r :: type)
 		(fun :: term (Function2Type a1 a2 r)) (arg1 :: term a1) (arg2 :: term a2)
-		= (js-expr :
+		= (js-expr
 	(type r)
 	(spec (fun arg1 arg2))
 	(impl "fun(arg1, arg2)" :
@@ -198,7 +198,7 @@ Just like for functions, `metacompiler` must be taught how to represent lazily c
 	(spec (lazy a))
 )
 
-(let use LazyWrap (a :: type) (x :: term a) = (js-expr :
+(let use LazyWrap (a :: type) (x :: term a) = (js-expr
 	(type (LazyType a))
 	(spec (wrap x))
 	(impl "function() { return x; }" :
@@ -206,7 +206,7 @@ Just like for functions, `metacompiler` must be taught how to represent lazily c
 	)
 ))
 
-(let use LazyUnwrap (a :: type) (x :: term (LazyType a)) = (js-expr :
+(let use LazyUnwrap (a :: type) (x :: term (LazyType a)) = (js-expr
 	(type a)
 	(spec (unwrap x))
 	(impl "x()" :
@@ -232,13 +232,13 @@ Translation language file:
 	(spec (Maybe a))
 )
 
-(let MaybeAsNullNothing (a :: type) = (js-expr :
+(let MaybeAsNullNothing (a :: type) = (js-expr
 	(type (MaybeAsNull a))
 	(spec (Nothing a))
 	(impl "null")
 ))
 
-(let MaybeAsNullJust (a :: type) (val :: term a) = (js-expr :
+(let MaybeAsNullJust (a :: type) (val :: term a) = (js-expr
 	(type (MaybeAsNull a))
 	(spec (Just a val))
 	(impl "x" (set "x" val))
@@ -249,7 +249,7 @@ Translation language file:
 		(subject :: term (MaybeAsNull a))
 		(nothingClause :: term res)
 		(justClause :: fun (term a) -> term res)
-		= (js-expr :
+		= (js-expr
 	(type res)
 	(spec (case subject of (Nothing) -> (nothingClause) (Just x) -> (justClause x)))
 	(impl "(function(s) { if (s == null) { return nc; } else { return jc; }})(subj)" :
@@ -283,7 +283,7 @@ Suppose that we have the following SL implementation of factorial:
 `metacompiler` will by default generate a recursive implementation of this, but suppose that we want an iterative implementation for performance reasons. We can get it as follows:
 
 ```
-(let use Factorial = (js-expr :
+(let use Factorial = (js-expr
 	(type (FunctionType NatAsNumber NatAsNumber))
 	(spec factorial)
 	(impl "function(a) { var x = 1; while (a > 0) { x *= a; a--; } return x; }")
@@ -311,7 +311,7 @@ Translations:
 	(spec (List a))
 )
 
-(let use ListAsArrayNil (a :: type) = (js-expr :
+(let use ListAsArrayNil (a :: type) = (js-expr
 	(type (ListAsArray a))
 	(spec Nil)
 	(impl "[]")
@@ -319,7 +319,7 @@ Translations:
 
 (let use ListAsArrayCons
 		(a :: type) (x :: term a) (xs :: term (ListAsArray a))
-		= (js-expr :
+		= (js-expr
 	(type (ListAsArray a))
 	(spec (Cons x xs))
 	(impl "[x].concat(xs)" : (set "x" x) (set "xs" xs))
@@ -330,7 +330,7 @@ Translations:
 		(subject :: term (ListAsArray a))
 		(nilClause :: term res)
 		(consClause :: fun (term a) (term (ListAsArray a)) -> term res)
-		= (js-expr :
+		= (js-expr
 	(type res)
 	(spec (case subject of (Nil) -> (nilClause) (Cons x xs) -> (ConsClause x xs)))
 	(impl "(function(s) { if (s.length == 0) { return nc; } else { return cc; }})(subj)" :
@@ -343,7 +343,7 @@ Translations:
 
 (let use ListAsArrayMap
 		(a :: type) (b :: type)
-		= (js-expr :
+		= (js-expr
 	(type (Function2Type (FunctionType a b) (ListAsArray a) (ListAsArray b)))
 	(spec map)
 	(impl "function(f, l) { var l2 = []; for (var x in l) { l2.push(f(x)); } return l2; }")

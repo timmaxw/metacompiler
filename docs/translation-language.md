@@ -101,7 +101,7 @@ A `js-repr` directive describes a way in which some SL type can be represented i
 A `js-repr` directive looks like this:
 
 ```
-('js-repr' <name> (<name> '::' <meta-type>)* ':'
+('js-repr' <name> (<name> '::' <meta-type>)* '='
 	('spec' <SL-type>)
 )
 ```
@@ -115,7 +115,7 @@ The `spec` clause specifies the SL equivalent of the newly created type.
 `js-expr` is a special meta-object form that only produces terms, not types. It looks like this:
 
 ```
-('js-expr' ':'
+('js-expr'
 	('type' <type>)
 	('spec' <SL-term>)
 	('impl' <Javascript-block>)
@@ -125,7 +125,7 @@ The `spec` clause specifies the SL equivalent of the newly created type.
 where `<Javascript-block>` looks like
 
 ```
-"<Javascript-code-string>" {':' ('set' "<Javascript-var>" <term>)* ('free' "<Javascript-var>")*}?
+"<Javascript-code-string>" ('set' "<Javascript-var>" <term>)* ('free' "<Javascript-var>")*
 ```
 
 The things after `js-expr` are called clauses and they can go in any order. The things that come after "<Javascript-code-string>" can also be reordered arbitrarily.
