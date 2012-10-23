@@ -134,6 +134,8 @@ A `let` directive binds a term to a name. It looks like this:
 
 It binds the name `<name>` to a function of zero or more parameters, evaluating to the thing on the right-hand side of the `=`. The type of the thing on the right-hand side of the `=` must evaluate to the `<type>` after the `::`. This is to simplify type inference.
 
+`<expr>` will be evaluated strictly. If it doesn't terminate, the compiler's behavior is undefined; it may lock up the first time it is used, or when the program is started, or during compilation.
+
 ## Notes
 
 `let` and `data` directives can refer to names that were bound later in the file. So, order of directives does not matter.

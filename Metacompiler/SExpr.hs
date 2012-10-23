@@ -139,4 +139,6 @@ parse string1 = do
 format :: SExpr a -> String
 format (SList _ elems) = "(" ++ Data.List.intercalate " " (map format elems) ++ ")"
 format (SAtom _ x) = x
+-- This is incorrect because Haskell escape sequences are different from the escape sequences that
+-- `parse` accepts. So sometimes `format` will generate something that `parse` will choke on.
 format (SString _ x) = show x
