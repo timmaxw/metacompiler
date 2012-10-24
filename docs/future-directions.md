@@ -10,6 +10,8 @@
 
  *  Right now, all terms are represented as Javascript expressions which can be evaluated arbitrarily many times and have no side effects. If `metacompiler` allowed terms to destroy their arguments as long as they indicated that they were doing so, then `metacompiler` could generate imperative code. This would require making meta-types more complicated, and there are some subtle issues involving how to represent object ownership.
 
+ *  While we're talking about producing imperative Javascript code: Javascript's expression syntax is much weaker than Haskell's. For example, Javascript has no inline equivalent for `let`. This is because Javascript programmers are supposed to use statements instead of expressions. This means that a lot of translations end up looking like `function(){ ... }()` so that they can use `var`. Even if `metacompiler` does not allow mutability, allowing translations to produce Javascript statements instead of expressions would make the resulting Javascript code much more efficient.
+
  *  Sometimes the simple pattern-matching approach to inferring translations isn't enough. For example, it would be nice to have integer literals in SL that can be translated automatically to Javascript integer literals. Right now, that's impossible without manually adding a translation for each integer. The same goes for strings. It might be possible to extend the translation system to allow people to write their own translators. Alternatively, it might be reasonable to special-case integers and strings.
 
  *  `metacompiler` should have something resembling a module system. SL should have a standard library, and there should be a set of translations to go along with the standard library.
