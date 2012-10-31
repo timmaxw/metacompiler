@@ -3,9 +3,15 @@ module Metacompiler.SExprToSL where
 import Metacompiler.SExpr
 import Metacompiler.SL as SL
 
+-- `errorContext` puts a line before every error message that occurs within it,
+-- to make the error messages more readable.
+
 errorContext :: String -> Either String a -> Either String a
 errorContext s (Left m) = Left (s ++ "\n" ++ m)
 errorContext s (Right x) = Right x
+
+-- `parseSLKindFromSExpr` tries to interpret an S-expression as a `SL.Kind`. If
+-- it doesn't work, then it returns `Left <error>`.
 
 parseSLKindFromSExpr :: SExpr -> Either String (SL.Kind Range)
 parseSLKindFromSExpr (Atom r "*") =
@@ -14,6 +20,9 @@ parseSLKindFromSExpr (List _ xs) =
 	parseSLKindFromSExprs xs
 parseSLKindFromSExpr other =
 	Left ("invalid kind " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
+
+-- `parseSLKindFromSExpr` tries to interpret a list of S-expressions as a
+-- `SL.Kind`.
 
 parseSLKindFromSExprs :: SExprs -> Either String (SL.Kind Range)
 parseSLKindFromSExprs (Cons a (Nil _)) =
@@ -30,6 +39,8 @@ parseSLKindFromSExprs whole@(Cons (Atom _ "fun") rest) = do
 parseSLKindFromSExprs other =
 	Left ("invalid kind " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
 
+-- `parseSLTypeFromSExpr` tries to interpret a S-expression as a `SL.Type`.
+
 parseSLTypeFromSExpr :: SExpr -> Either String (SL.Type Range)
 parseSLTypeFromSExpr (Atom r a) =
 	return (SL.TypeName r a)
@@ -37,6 +48,9 @@ parseSLTypeFromSExpr (List _ xs) =
 	parseSLTypeFromSExprs xs
 parseSLTypeFromSExpr other =
 	Left ("invalid type " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
+
+-- `parseSLTypeFromSExpr` tries to interpret a list of S-expressions as a
+-- `SL.Type`.
 
 parseSLTypeFromSExprs :: SExprs -> Either String (SL.Type Range)
 parseSLTypeFromSExprs whole@(Cons (Atom _ "fun") rest) = do
@@ -70,6 +84,8 @@ parseSLTypeFromSExprs whole@(Cons first args) = do
 parseSLTypeFromSExprs other =
 	Left ("invalid type " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
 
+-- `parseSLTermFromSExpr` tries to interpret a S-expression as a `SL.Term`.
+
 parseSLTermFromSExpr :: SExpr -> Either String (SL.Term Range)
 parseSLTermFromSExpr (Atom r a) =
 	return (SL.TermName r a [])
@@ -77,6 +93,9 @@ parseSLTermFromSExpr (List _ xs) =
 	parseSLTermFromSExprs xs
 parseSLTermFromSExpr other =
 	Left ("invalid term " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
+
+-- `parseSLTermFromSExpr` tries to interpret a list of S-expressions as a
+-- `SL.Term`.
 
 parseSLTermFromSExprs :: SExprs -> Either String (SL.Term Range)
 parseSLTermFromSExprs whole@(Cons (Atom _ "\\") rest) = do
