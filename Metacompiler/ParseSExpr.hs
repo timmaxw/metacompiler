@@ -1,13 +1,44 @@
-module Metacompiler.ParseSExpr where
+module Metacompiler.ParseSExpr (parseSExprs) where
+
+-- This module contains facilities for parsing a string into an `SExpr`.
 
 import Control.Monad (unless)
 import Control.Monad.Error
 import Data.List
-import Metacompiler.ParseUtils
 import Metacompiler.SExpr
 
-parse :: String -> Either String [SExpr Range]
-parse string1 = do
+-- `stepPoint` is used every time we advance one character in the source file.
+-- `stepNewlinePoint` is used when we encounter a newline. `stepPoint'` is used
+-- to step more than one point at a time.
+
+stepPoint :: Point -> Point
+stepPoint = stepPoint' 1
+
+stepPoint' :: Int -> Point -> Point
+stepPoint' n (Point l c) = (Point l (c+n))
+
+stepNewlinePoint :: Point -> Point
+stepNewlinePoint (Point l c) = (Point (l+1) 0)
+
+-- `summarize` returns the input in quotes, truncated if it is long.
+
+summarize :: String -> String
+summarize s
+	| length s < 10 = show s
+	| otherwise = show (take 10 s ++ "...")
+
+-- `errorContext` puts the given message on top of any error messages as they
+-- bubble up.
+
+errorContext :: String -> Either String a -> Either String a
+errorContext s (Left m) = Left (s ++ "\n" ++ m)
+errorContext s (Right x) = Right x
+
+-- `parseSExprs` takes a string and interprets it as a sequence of
+-- S-expressions.
+
+parseSExprs :: String -> Either String SExprs
+parseSExprs string1 = do
 	let (string2, point2) = strip (string1, Point 0 0)
 	(topLevels, (string3, point3)) <- parseMany (string2, point2)
 	let (string4, point4) = strip (string3, point3)
@@ -16,17 +47,17 @@ parse string1 = do
 	return topLevels
 
 	where
-		parseMany :: (String, Point) -> Either String ([SExpr Range], (String, Point))
+		parseMany :: (String, Point) -> Either String (SExprs, (String, Point))
 		parseMany (string1, _) | not (isStripped string1) = error "input wasn't stripped properly"
-		parseMany ("", point) = return ([], ("", point))
-		parseMany (')':string2, point1) = return ([], (')':string2, point1))
+		parseMany ("", point) = return (Nil point, ("", point))
+		parseMany (')':string2, point1) = return (Nil point1, (')':string2, point1))
 		parseMany (string1, point1) = do
 			(elem, (string2, point2)) <- parseOne (string1, point1)
 			let (string3, point3) = strip (string2, point2)
 			(elems, (string4, point4)) <- parseMany (string3, point3)
-			return (elem:elems, (string4, point4))
+			return (Cons elem elems, (string4, point4))
 
-		parseOne :: (String, Point) -> Either String (SExpr Range, (String, Point))
+		parseOne :: (String, Point) -> Either String (SExpr, (String, Point))
 		parseOne (string1, _) | not (isStripped string1) = error "input wasn't stripped properly"
 		parseOne ('(':string2, point1) = do
 			let point2 = stepPoint point1
@@ -117,9 +148,3 @@ parse string1 = do
 			in strip (s3, p3)
 		strip (s1, p1) = (s1, p1)
 
-format :: SExpr a -> String
-format (List _ elems) = "(" ++ Data.List.intercalate " " (map format elems) ++ ")"
-format (Atom _ x) = x
--- This is incorrect because Haskell escape sequences are different from the escape sequences that
--- `parse` accepts. So sometimes `format` will generate something that `parse` will choke on.
-format (Quoted _ x) = show x
