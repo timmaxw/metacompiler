@@ -35,10 +35,10 @@ This is the meta-type of unparameterized translation-language terms. `<type>` me
 ### The meta-type of parameterized meta-objects: `fun`
 
 ```
-'fun' (<meta-type>)+ '->' <meta-type>
+'fun' (<name> '::' <meta-type>)+ '->' <meta-type>
 ```
 
-This is the meta-type of meta-types parameterized on other meta-types. The parentheses can be omitted if `<meta-type>` is one word.
+This is the meta-type of meta-types parameterized on other meta-types. Note that dependent types are possible.
 
 ## Meta-object common terms
 
