@@ -61,9 +61,9 @@ data MetaObject a
 
 	-- Term with a manually-specified JS equivalent:
 	--     ('js-expr'
-    --         ('type' <type>)
-    --         ('spec' <SL-term>)
-    --         ('impl' <Javascript-block>)
+	--         ('type' <type>)
+	--         ('spec' <SL-term>)
+	--         ('impl' <Javascript-block>)
 	--     )
 	| MOJSExpr {
 		tagOfMetaObject :: a,
@@ -86,8 +86,8 @@ data MetaObject a
 data Directive a
 	-- `let` directive:
 	--     ('let' <name> (<name> '::' <meta-type>)* {'::' (<meta-type>)}? '='
-    --         <meta-object>
-    --     )
+	--         <meta-object>
+	--     )
 	= DLet {
 		tagOfDirective :: a,
 		nameOfDirective :: String,
@@ -98,8 +98,8 @@ data Directive a
 
 	-- `js-repr` directive:
 	--     ('js-repr' <name> (<name> '::' <meta-type>)* '='
-    --         ('spec' <SL-type>)
-    --     )
+	--         ('spec' <SL-type>)
+	--     )
 	| DJSRepr {
 		tagOfDirective :: a,
 		nameOfDirective :: String,
