@@ -44,7 +44,7 @@ main = do
 	goodMetaObject "\\ (a :: type) -> a"
 	goodMetaObject "a b c d"
 	goodMetaObject "(((((((((blah)))))))))"
-	goodMetaObject "(js-expr (spec a) (type b) (impl [[c]] (set \"c\" d) (free \"e\"))"
+	goodMetaObject "(js-expr (spec a) (type b) (impl [[c]] (set \"c\" d) (free \"e\")))"
 	goodMetaObject "\\ (a :: type) -> \\ (b :: type) -> c"
 
 	goodDirective "(let foo = bar)"

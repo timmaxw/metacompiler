@@ -1,6 +1,7 @@
 module Metacompiler.TL where
 
 import qualified Data.Map as M
+import Language.JavaScript.Parser
 import qualified Metacompiler.SL as SL
 
 -- `MetaType` represents a translation-language meta-type. It is more of a
@@ -76,7 +77,7 @@ data MetaObject a
 	-- block.
 	| MOJSSubstitution {
 		tagOfMetaObject :: a,
-		jsSubstitutionOfMetaObject :: String
+		jsSubstitutionOfMetaObject :: JSNode
 	}
 
 	deriving Show
@@ -114,7 +115,7 @@ data Directive a
 
 data JavascriptBlock a = JavascriptBlock {
 	tagOfJavascriptBlock :: a,
-	codeOfJavascriptBlock :: String,
+	codeOfJavascriptBlock :: JSNode,
 	varsOfJavascriptBlock :: [(String, JavascriptBlockVar a)]
 	}
 	deriving Show

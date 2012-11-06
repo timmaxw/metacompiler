@@ -2,6 +2,7 @@ module Metacompiler.SExprToTL where
 
 import Control.Monad (when, unless)
 import qualified Data.Map as M
+import Language.JavaScript.Parser
 import Metacompiler.SExpr
 import Metacompiler.SExprToSL
 import qualified Metacompiler.SL as SL
@@ -158,8 +159,12 @@ parseTLMetaObjectFromSExpr (Atom range x) =
 		}
 parseTLMetaObjectFromSExpr (List _ stuff) =
 	parseTLMetaObjectFromSExprs stuff
-parseTLMetaObjectFromSExpr other =
-	Left ("invalid meta-object " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
+parseTLMetaObjectFromSExpr (Quoted cr code) = do
+	code' <- Language.JavaScript.Parser.parse code ("embedded JS substitution at " ++ formatRange cr)
+	return TL.MOJSSubstitution {
+		TL.tagOfMetaObject = cr,
+		TL.jsSubstitutionOfMetaObject = code'
+		}
 
 -- `parseTLMetaObjectFromSExprs` tries to interpret a list of S-expressions as
 -- a `TL.MetaObject`.
@@ -221,7 +226,8 @@ parseTLMetaObjectFromSExprs other =
 -- block followed by a series of variable substitutions.
 
 parseTLJavascriptBlockFromSExprs :: SExprs -> Either String (TL.JavascriptBlock Range)
-parseTLJavascriptBlockFromSExprs whole@(Cons (Quoted _ code) vars) = do
+parseTLJavascriptBlockFromSExprs whole@(Cons (Quoted cr code) vars) = do
+	code' <- Language.JavaScript.Parser.parse code ("embedded js-expr block at " ++ formatRange cr)
 	let
 		parseVar :: SExpr -> Either String (String, TL.JavascriptBlockVar Range)
 		parseVar (List _ (Cons (Atom _ "set") (Cons (Quoted _ var) value))) = do
@@ -234,7 +240,7 @@ parseTLJavascriptBlockFromSExprs whole@(Cons (Quoted _ code) vars) = do
 	vars' <- mapM parseVar (sExprsToList vars)
 	return $ TL.JavascriptBlock {
 		TL.tagOfJavascriptBlock = rangeOfSExprs whole,
-		TL.codeOfJavascriptBlock = code,
+		TL.codeOfJavascriptBlock = code',
 		TL.varsOfJavascriptBlock = vars'
 		}
 
