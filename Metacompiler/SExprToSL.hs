@@ -1,7 +1,7 @@
 module Metacompiler.SExprToSL where
 
 import Metacompiler.SExpr
-import Metacompiler.SL as SL
+import Metacompiler.SLSyntax as SL
 
 -- `errorContext` puts a line before every error message that occurs within it,
 -- to make the error messages more readable.

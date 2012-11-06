@@ -1,8 +1,8 @@
-module Metacompiler.TL where
+module Metacompiler.TLSyntax where
 
 import qualified Data.Map as M
 import Language.JavaScript.Parser
-import qualified Metacompiler.SL as SL
+import qualified Metacompiler.SLSyntax as SL
 
 -- `MetaType` represents a translation-language meta-type. It is more of a
 -- syntactic representation than a semantic one; for example, it doesn't

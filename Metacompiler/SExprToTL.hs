@@ -5,8 +5,8 @@ import qualified Data.Map as M
 import Language.JavaScript.Parser
 import Metacompiler.SExpr
 import Metacompiler.SExprToSL
-import qualified Metacompiler.SL as SL
-import qualified Metacompiler.TL as TL
+import qualified Metacompiler.SLSyntax as SL
+import qualified Metacompiler.TLSyntax as TL
 
 -- `parseTLDirectiveFromSExpr` tries to interpret an S-expression as a
 -- `TL.Directive`. If it doesn't work, then it returns `Left <error>`.

@@ -1,4 +1,4 @@
-module Metacompiler.SL where
+module Metacompiler.SLSyntax where
 
 data Kind a
 	= KindType a
