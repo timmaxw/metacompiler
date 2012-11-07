@@ -9,6 +9,12 @@ import Metacompiler.SExpr
 import Metacompiler.SExprToTL
 import Metacompiler.TLRuntime
 
+-- `test` takes two inputs. The first will be interpreted as a TL input file;
+-- that is, a series of TL directives. The second will be interpreted as a TL
+-- meta-object, that must evaluate to a JS term. It will return the JS
+-- equivalent of the latter, with access to any variables defined by the
+-- directives.
+
 test :: String -> String -> IO ()
 test directives target = case parseSExprs directives of
 	Left err -> putStrLn ("MALFORMED S-EXPR: " ++ show err)
