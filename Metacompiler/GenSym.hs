@@ -1,5 +1,7 @@
 module Metacompiler.GenSym where
 
+import Control.Monad.State
+
 data GenSym a = GenSym { internalStateOfGenSym :: State [String] a }
 
 instance Monad GenSym where
@@ -8,7 +10,10 @@ instance Monad GenSym where
 
 genSym :: GenSym String
 genSym = GenSym $ do
-	(symbol:rest) <- getState
-	putState rest
+	(symbol:rest) <- get
+	put rest
 	return symbol
+
+runGenSym :: GenSym a -> a
+runGenSym (GenSym s) = evalState s ["_" ++ show i | i <- [1..]]
 

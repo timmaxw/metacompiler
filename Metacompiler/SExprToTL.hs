@@ -2,11 +2,13 @@ module Metacompiler.SExprToTL where
 
 import Control.Monad (when, unless)
 import qualified Data.Map as M
-import Language.JavaScript.Parser
+import qualified Language.ECMAScript3.Parser as JS
+import qualified Language.ECMAScript3.Syntax as JS
 import Metacompiler.SExpr
 import Metacompiler.SExprToSL
 import qualified Metacompiler.SLSyntax as SL
 import qualified Metacompiler.TLSyntax as TL
+import Text.Parsec.String ()   -- So `String` is an instance of `Stream`
 
 -- `parseTLDirectiveFromSExpr` tries to interpret an S-expression as a
 -- `TL.Directive`. If it doesn't work, then it returns `Left <error>`.
@@ -160,7 +162,7 @@ parseTLMetaObjectFromSExpr (Atom range x) =
 parseTLMetaObjectFromSExpr (List _ stuff) =
 	parseTLMetaObjectFromSExprs stuff
 parseTLMetaObjectFromSExpr (Quoted cr code) = do
-	code' <- Language.JavaScript.Parser.parse code ("embedded JS substitution at " ++ formatRange cr)
+	code' <- parseJavascriptExprFromString code
 	return TL.MOJSSubstitution {
 		TL.tagOfMetaObject = cr,
 		TL.jsSubstitutionOfMetaObject = code'
@@ -227,7 +229,9 @@ parseTLMetaObjectFromSExprs other =
 
 parseTLJavascriptBlockFromSExprs :: SExprs -> Either String (TL.JavascriptBlock Range)
 parseTLJavascriptBlockFromSExprs whole@(Cons (Quoted cr code) vars) = do
-	code' <- Language.JavaScript.Parser.parse code ("embedded js-expr block at " ++ formatRange cr)
+	code' <-
+		errorContext ("embedded js-expr block at " ++ formatRange cr) $
+		parseJavascriptExprFromString code
 	let
 		parseVar :: SExpr -> Either String (String, TL.JavascriptBlockVar Range)
 		parseVar (List _ (Cons (Atom _ "set") (Cons (Quoted _ var) value))) = do
@@ -244,4 +248,12 @@ parseTLJavascriptBlockFromSExprs whole@(Cons (Quoted cr code) vars) = do
 		TL.varsOfJavascriptBlock = vars'
 		}
 
-	
+-- `parseJavascriptExprFromString` tries to interpret the given string as a
+-- Javascript expression.
+
+parseJavascriptExprFromString :: String -> Either String (JS.Expression JS.SourcePos)
+parseJavascriptExprFromString string =
+	case JS.parse JS.parseExpression "<string>" string of
+		Left err -> Left (show err)
+		Right x -> return x
+

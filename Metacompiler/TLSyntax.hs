@@ -1,7 +1,7 @@
 module Metacompiler.TLSyntax where
 
 import qualified Data.Map as M
-import Language.JavaScript.Parser
+import qualified Language.ECMAScript3.Syntax as JS
 import qualified Metacompiler.SLSyntax as SL
 
 -- `MetaType` represents a translation-language meta-type. It is more of a
@@ -77,7 +77,7 @@ data MetaObject a
 	-- block.
 	| MOJSSubstitution {
 		tagOfMetaObject :: a,
-		jsSubstitutionOfMetaObject :: JSNode
+		jsSubstitutionOfMetaObject :: JS.Expression JS.SourcePos
 	}
 
 	deriving Show
@@ -115,7 +115,7 @@ data Directive a
 
 data JavascriptBlock a = JavascriptBlock {
 	tagOfJavascriptBlock :: a,
-	codeOfJavascriptBlock :: JSNode,
+	codeOfJavascriptBlock :: JS.Expression JS.SourcePos,
 	varsOfJavascriptBlock :: [(String, JavascriptBlockVar a)]
 	}
 	deriving Show
