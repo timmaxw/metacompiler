@@ -4,6 +4,7 @@ import Control.Monad (foldM)
 import qualified Data.Map as M
 import Language.ECMAScript3.PrettyPrint
 import Metacompiler.GenSym
+import Metacompiler.JSEval
 import Metacompiler.ParseSExpr
 import Metacompiler.SExpr
 import Metacompiler.SExprToTL
@@ -28,12 +29,33 @@ test directives target = case parseSExprs directives of
 					let target''' = runGenSym $ do
 						vars <- foldM processDirective M.empty directives''
 						reduce vars M.empty target''
-					putStrLn ("ok, " ++ renderExpression (jsEquivalentOfJSTerm target'''))
+					let targetJS = jsEquivalentOfJSTerm target'''
+					let targetString = renderExpression targetJS
+					result <- evalJS targetJS
+					case result of
+						Left err -> do
+							putStrLn "------------------"
+							putStrLn "RUN ERROR:"
+							putStrLn targetString
+							putStr err
+						Right answer -> do
+							putStrLn "------------------"
+							putStrLn "ok:"
+							putStrLn targetString
+							putStr answer
+
 
 main = do
-	test "" "(js-expr (spec a) (type a) (impl [[test]]))"
-	test "" "(\\ (x :: js-term a) -> x) (js-expr (spec a) (type a) (impl [[test]]))"
-	test "" "(js-expr (spec a) (type a) (impl [[test]] (free [[test]])))"
+	-- Basic test
+	test "" "(js-expr (spec a) (type a) (impl [[1]]))"
+
+	-- Test of `MOAbs` and `MOApp`
+	test "" "(\\ (x :: js-term a) -> x) (js-expr (spec a) (type a) (impl [[1]]))"
+
+	-- Test of the variable substitution mechanism
+	test "" "(js-expr (spec a) (type a) (impl [[(function (x) { return x; })(1)]] (free [[x]])))"
+
+	-- First example from `tutorial.md`
 	test "\
 		\(let NatAsNumberZero = (js-expr \
 		\    (type NatAsNumber) \
