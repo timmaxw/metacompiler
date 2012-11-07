@@ -47,11 +47,12 @@ safeUnion :: (Ord k, Show k) => M.Map k v -> M.Map k v -> M.Map k v
 safeUnion = M.unionWithKey (\k -> error ("redefinition of " ++ show k))
 
 safeFromList :: (Ord k, Show k) => [(k, v)] -> M.Map k v
-safeFromList [] = M.empty
-safeFromList ((k, v):xs) = case M.lookup k rest of
+safeFromList = foldr (uncurry safeInsert) M.empty
+
+safeInsert :: (Ord k, Show k) => k -> v -> M.Map k v -> M.Map k v
+safeInsert k v m = case M.lookup k m of
 	Just _ -> error ("redefinition of " ++ show k)
-	Nothing -> M.insert k v rest
-	where rest = safeFromList xs
+	Nothing -> M.insert k v m
 
 expandJavascriptBlock :: M.Map String ReducedMetaObject -> M.Map String (JS.Expression ()) -> JavascriptBlock a -> GenSym (JS.Expression ())
 expandJavascriptBlock vars jsVars (JavascriptBlock { codeOfJavascriptBlock = code, varsOfJavascriptBlock = jsvs }) = do
@@ -153,4 +154,16 @@ substituteJSVars jsVars = sE
 
 		sV :: JS.VarDecl () -> JS.VarDecl ()
 		sV (JS.VarDecl () name value) = JS.VarDecl () (sI name) (fmap sE value)
+
+processDirective :: M.Map String ReducedMetaObject -> Directive a -> GenSym (M.Map String ReducedMetaObject)
+processDirective vars directive@(DLet { }) = do
+	let
+		applyParams vars' [] =
+			reduce vars' M.empty (valueOfDirective directive)
+		applyParams vars' ((n, t):rest) = return $ RMOFun $ \ value ->
+			applyParams (safeInsert n value vars') rest 
+	newValue <- applyParams vars (paramsOfDirective directive)
+	return $ safeInsert (nameOfDirective directive) newValue vars
+processDirective vars directive@(DJSRepr { }) =
+	undefined
 
