@@ -32,19 +32,19 @@ Ignoring integer overflow, a natural translation is to express `Nat` as a Javasc
 	(impl "0")
 ))
 
-(let use NatAsNumberSucc (x :: term NatAsNumber) = (js-expr
+(let use NatAsNumberSucc (x :: js-term NatAsNumber) = (js-expr
 	(type NatAsNumber)
 	(spec (Succ x))
 	(impl "x + 1" (set "x" x))
 ))
 
-(let use NatAsNumberPlus (x :: term NatAsNumber) (y :: term NatAsNumber) = (js-expr
+(let use NatAsNumberPlus (x :: js-term NatAsNumber) (y :: js-term NatAsNumber) = (js-expr
 	(type NatAsNumber)
 	(spec (plus x y))
 	(impl "x + y" (set "x" x) (set "y" y))
 ))
 
-(let use NatAsNumberTimes (x :: term NatAsNumber) (y :: term NatAsNumber) = (js-expr
+(let use NatAsNumberTimes (x :: js-term NatAsNumber) (y :: js-term NatAsNumber) = (js-expr
 	(type NatAsNumber)
 	(spec (times x y))
 	(impl "x * y" (set "x" x) (set "y" y))
@@ -76,9 +76,9 @@ In our definition of `NatAsNumber` above, we haven't told the compiler how to tr
 
 ```
 (let use NatAsNumberCase
-		(res :: type)
-		(subject :: term NatAsNumber)
-		(zeroClause :: term res) (succClause :: fun (term NatAsNumber) -> term res)
+		(res :: js-type)
+		(subject :: js-term NatAsNumber)
+		(zeroClause :: js-term res) (succClause :: fun (js-term NatAsNumber) -> js-term res)
 		= (js-expr
 	(type res)
 	(spec (case subject of (Zero) -> (zeroClause) (Succ a) -> (succClause a)))
@@ -109,27 +109,27 @@ SL definition:
 Translations:
 
 ```
-(js-repr EitherAsPair (l :: type) (r :: type) =
+(js-repr EitherAsPair (l :: js-type) (r :: js-type) =
 	(spec (Either l r))
 )
 
-(let use EitherAsPairLeft (l :: type) (r :: type) (x :: term l) = (js-expr
+(let use EitherAsPairLeft (l :: js-type) (r :: js-type) (x :: js-term l) = (js-expr
 	(type (EitherAsPair l r))
 	(spec (Left l r x))
 	(impl "['left', x]" (set "x" x))
 ))
 
-(let use EitherAsPairRight (l :: type) (r :: type) (x :: term r) = (js-expr
+(let use EitherAsPairRight (l :: js-type) (r :: js-type) (x :: js-term r) = (js-expr
 	(type (EitherAsPair l r))
 	(spec (Right l r x))
 	(impl "['right', x]" (set "x" x))
 ))
 
 (let use EitherAsPairCase
-		(l :: type) (r :: type) (res :: type)
-		(subject :: term (EitherAsPair l r))
-		(leftClause :: fun (term l) -> term res)
-		(rightClause :: fun (term r) -> term res)
+		(l :: js-type) (r :: js-type) (res :: js-type)
+		(subject :: js-term (EitherAsPair l r))
+		(leftClause :: fun (js-term l) -> js-term res)
+		(rightClause :: fun (js-term r) -> js-term res)
 		= (js-expr
 	(type res)
 	(spec (case subject of
@@ -156,13 +156,13 @@ Translations:
 
 ```
 (js-repr FunctionType
-		(a :: type) (r :: type) =
+		(a :: js-type) (r :: js-type) =
 	(spec (fun a -> r))
 )
 
 (let use FunctionLambda
-		(a :: type) (r :: type)
-		(body :: fun (term a) -> term r)
+		(a :: js-type) (r :: js-type)
+		(body :: fun (js-term a) -> js-term r)
 		= (js-expr
 	(type (FunctionType a r))
 	(spec (\\ x -> body x))
@@ -173,8 +173,8 @@ Translations:
 ))
 
 (let use FunctionApply
-		(a :: type) (r :: type)
-		(fun :: term (FunctionType a r)) (arg :: term a)
+		(a :: js-type) (r :: js-type)
+		(fun :: js-term (FunctionType a r)) (arg :: js-term a)
 		= (js-expr
 	(type r)
 	(spec (fun arg))
@@ -191,13 +191,13 @@ Suppose that we want `metacompiler` to turn SL functions that take multiple para
 
 ```
 (js-repr Function2Type
-		(a1 :: type) (a2 :: type) (r :: type) =
+		(a1 :: js-type) (a2 :: js-type) (r :: js-type) =
 	(spec (fun a1 a2 -> r))
 )
 
 (let use Function2Lambda
-		(a1 :: type) (a2 :: type) (r :: type)
-		(body :: fun (term a1) (term a2) -> term r)
+		(a1 :: js-type) (a2 :: js-type) (r :: js-type)
+		(body :: fun (js-term a1) (js-term a2) -> js-term r)
 		= (js-expr
 	(type (Function2Type a1 a2 r))
 	(spec (\\ x1 x2 -> body x1 x2))
@@ -209,8 +209,8 @@ Suppose that we want `metacompiler` to turn SL functions that take multiple para
 ))
 
 (let use Function2Apply
-		(a1 :: type) (a2 :: type) (r :: type)
-		(fun :: term (Function2Type a1 a2 r)) (arg1 :: term a1) (arg2 :: term a2)
+		(a1 :: js-type) (a2 :: js-type) (r :: js-type)
+		(fun :: js-term (Function2Type a1 a2 r)) (arg1 :: js-term a1) (arg2 :: js-term a2)
 		= (js-expr
 	(type r)
 	(spec (fun arg1 arg2))
@@ -227,11 +227,11 @@ Suppose that we want `metacompiler` to turn SL functions that take multiple para
 Just like for functions, `metacompiler` must be taught how to represent lazily computed values:
 
 ```
-(js-repr LazyType (a :: type) =
+(js-repr LazyType (a :: js-type) =
 	(spec (lazy a))
 )
 
-(let use LazyWrap (a :: type) (x :: term a) = (js-expr
+(let use LazyWrap (a :: js-type) (x :: js-term a) = (js-expr
 	(type (LazyType a))
 	(spec (wrap x))
 	(impl "function() { return x; }"
@@ -239,7 +239,7 @@ Just like for functions, `metacompiler` must be taught how to represent lazily c
 	)
 ))
 
-(let use LazyUnwrap (a :: type) (x :: term (LazyType a)) = (js-expr
+(let use LazyUnwrap (a :: js-type) (x :: js-term (LazyType a)) = (js-expr
 	(type a)
 	(spec (unwrap x))
 	(impl "x()"
@@ -261,27 +261,27 @@ SL file:
 Translation language file:
 
 ```
-(js-repr MaybeAsNull (a :: type) =
+(js-repr MaybeAsNull (a :: js-type) =
 	(spec (Maybe a))
 )
 
-(let MaybeAsNullNothing (a :: type) = (js-expr
+(let MaybeAsNullNothing (a :: js-type) = (js-expr
 	(type (MaybeAsNull a))
 	(spec (Nothing a))
 	(impl "null")
 ))
 
-(let MaybeAsNullJust (a :: type) (val :: term a) = (js-expr
+(let MaybeAsNullJust (a :: js-type) (val :: js-term a) = (js-expr
 	(type (MaybeAsNull a))
 	(spec (Just a val))
 	(impl "x" (set "x" val))
 ))
 
 (let MaybeAsNullCase
-		(a :: type) (res :: type)
-		(subject :: term (MaybeAsNull a))
-		(nothingClause :: term res)
-		(justClause :: fun (term a) -> term res)
+		(a :: js-type) (res :: js-type)
+		(subject :: js-term (MaybeAsNull a))
+		(nothingClause :: js-term res)
+		(justClause :: fun (js-term a) -> js-term res)
 		= (js-expr
 	(type res)
 	(spec (case subject of (Nothing) -> (nothingClause) (Just x) -> (justClause x)))
@@ -355,18 +355,18 @@ SL:
 Translations:
 
 ```
-(js-repr ListAsArray (a :: type) =
+(js-repr ListAsArray (a :: js-type) =
 	(spec (List a))
 )
 
-(let use ListAsArrayNil (a :: type) = (js-expr
+(let use ListAsArrayNil (a :: js-type) = (js-expr
 	(type (ListAsArray a))
 	(spec Nil)
 	(impl "[]")
 ))
 
 (let use ListAsArrayCons
-		(a :: type) (x :: term a) (xs :: term (ListAsArray a))
+		(a :: js-type) (x :: js-term a) (xs :: js-term (ListAsArray a))
 		= (js-expr
 	(type (ListAsArray a))
 	(spec (Cons x xs))
@@ -374,10 +374,10 @@ Translations:
 ))
 
 (let use ListAsArrayCase
-		(a :: type) (res :: type)
-		(subject :: term (ListAsArray a))
-		(nilClause :: term res)
-		(consClause :: fun (term a) (term (ListAsArray a)) -> term res)
+		(a :: js-type) (res :: js-type)
+		(subject :: js-term (ListAsArray a))
+		(nilClause :: js-term res)
+		(consClause :: fun (js-term a) (js-term (ListAsArray a)) -> js-term res)
 		= (js-expr
 	(type res)
 	(spec (case subject of (Nil) -> (nilClause) (Cons x xs) -> (ConsClause x xs)))
@@ -395,7 +395,7 @@ Translations:
 ))
 
 (let use ListAsArrayMap
-		(a :: type) (b :: type)
+		(a :: js-type) (b :: js-type)
 		= (js-expr
 	(type (Function2Type (FunctionType a b) (ListAsArray a) (ListAsArray b)))
 	(spec map)
@@ -444,17 +444,17 @@ First, we need a SL function to generate ranges of integers:
 	(impl "0")
 ))
 
-(let CountDownListAllNatsLessThan (a :: term NatAsNumber) = (js-expr
+(let CountDownListAllNatsLessThan (a :: js-term NatAsNumber) = (js-expr
 	(spec (allNatsLessThan a))
 	(type CountDownList)
 	(impl "a" (set "a" a))
 ))
 
 (let CountDownListCase
-		(res :: type)
-		(subject :: term CountDownList)
-		(nilClause :: term res)
-		(consClause :: fun (term NatAsNumber) (term CountDownList) -> term res)
+		(res :: js-type)
+		(subject :: js-term CountDownList)
+		(nilClause :: js-term res)
+		(consClause :: fun (js-term NatAsNumber) (js-term CountDownList) -> js-term res)
 		= (js-expr
 	(spec (case subject of (Nil) -> (nilClause) (Cons x xs) -> (consClause x xs)))
 	(type res)
@@ -479,7 +479,7 @@ Note that even though the SL equivalent of `CountDownList` is `List Nat`, not al
 We can also teach `metacompiler` how to convert `CountDownList`s into `ListAsArray NatAsNumber`s:
 
 ```
-(let ConvertCountDownList (in :: CountDownList) = (js-expr
+(let ConvertCountDownList (in :: js-term CountDownList) = (js-expr
 	(type (ListAsArray NatAsNumber))
 	(spec in)
 	(impl [[

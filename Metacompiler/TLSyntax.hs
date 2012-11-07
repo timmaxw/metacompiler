@@ -11,15 +11,15 @@ import qualified Metacompiler.SLSyntax as SL
 -- typically be `Range`.
 
 data MetaType a
-	-- The meta-type of unparameterized types:
-	--     'type'
-	= MTType {
+	-- The meta-type of unparameterized Javascript types:
+	--     'js-type'
+	= MTJSType {
 		tagOfMetaType :: a
 	}
 
 	-- The meta-type of unparameterized terms:
-	--     'term' (<type>)
-	| MTTerm {
+	--     'js-term' (<type>)
+	| MTJSTerm {
 		tagOfMetaType:: a,
 		typeOfMetaType :: MetaObject a
 	}

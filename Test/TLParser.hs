@@ -31,25 +31,25 @@ goodDirective = good (expectOne >=> parseTLDirectiveFromSExpr)
 badDirective = bad (expectOne >=> parseTLDirectiveFromSExpr)
 
 main = do
-	goodMetaType "type"
-	goodMetaType "((type))"
-	goodMetaType "term A"
-	goodMetaType "term (A B)"
-	badMetaType "term A B"
+	goodMetaType "js-type"
+	goodMetaType "((js-type))"
+	goodMetaType "js-term A"
+	goodMetaType "js-term (A B)"
+	badMetaType "js-term A B"
 	badMetaType "[[]]"
 	badMetaType "()"
-	goodMetaType "fun (a :: type) -> type"
+	goodMetaType "fun (a :: js-type) -> js-type"
 
 	goodMetaObject "foo"
-	goodMetaObject "\\ (a :: type) -> a"
+	goodMetaObject "\\ (a :: js-type) -> a"
 	goodMetaObject "a b c d"
 	goodMetaObject "(((((((((blah)))))))))"
 	goodMetaObject "(js-expr (spec a) (type b) (impl [[c]] (set \"c\" d) (free \"e\")))"
-	goodMetaObject "\\ (a :: type) -> \\ (b :: type) -> c"
+	goodMetaObject "\\ (a :: js-type) -> \\ (b :: js-type) -> c"
 
 	goodDirective "(let foo = bar)"
-	goodDirective "(let foo :: type = bar)"
-	goodDirective "(let foo (a :: term a) :: (term b) = bar)"
-	goodDirective "(js-repr FooAsFoo (x :: type) = (spec foo))"
+	goodDirective "(let foo :: js-type = bar)"
+	goodDirective "(let foo (a :: js-term a) :: (js-term b) = bar)"
+	goodDirective "(js-repr FooAsFoo (x :: js-type) = (spec foo))"
 
 

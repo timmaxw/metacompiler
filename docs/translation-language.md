@@ -16,21 +16,21 @@ For the purposes of this document, we will introduce some terminology that isn't
 
 The following syntactic forms are for meta-types:
 
-### The meta-type of unparameterized types: `type`
+### The meta-type of unparameterized types: `js-type`
 
 ```
-'type'
+'js-type'
 ```
 
-This is the meta-type of unparameterized translation-language types.
+This is the meta-type of unparameterized translation-language types which have Javascript equivalents.
 
-### The meta-type of unparameterized terms: `term`
+### The meta-type of unparameterized terms: `js-term`
 
 ```
-'term' (<type>)
+'js-term' (<type>)
 ```
 
-This is the meta-type of unparameterized translation-language terms. `<type>` means, naturally, a meta-object that has meta-type `type`. The parentheses can be omitted if `<type>` is one word.
+This is the meta-type of unparameterized translation-language terms which have Javascript equivalents. `<type>` is, naturally, a meta-object that has meta-type `js-type`. The parentheses can be omitted if `<type>` is one word.
 
 ### The meta-type of parameterized meta-objects: `fun`
 

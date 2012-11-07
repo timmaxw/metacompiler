@@ -109,8 +109,8 @@ parseClausesFromSExprs mandatoryClauses optionalClauses seq = do
 -- `TL.MetaType`.
 
 parseTLMetaTypeFromSExpr :: SExpr -> Either String (TL.MetaType Range)
-parseTLMetaTypeFromSExpr (Atom range "type") =
-	return $ TL.MTType {
+parseTLMetaTypeFromSExpr (Atom range "js-type") =
+	return $ TL.MTJSType {
 		TL.tagOfMetaType = range
 		}
 parseTLMetaTypeFromSExpr (List _ stuff) =
@@ -122,14 +122,14 @@ parseTLMetaTypeFromSExpr other =
 -- `TL.MetaType`.
 
 parseTLMetaTypeFromSExprs :: SExprs -> Either String (TL.MetaType Range)
-parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "term") rest) =
-	errorContext ("in \"term\" meta-type at " ++ formatRange (rangeOfSExprs whole)) $ do
+parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-term") rest) =
+	errorContext ("in \"js-term\" meta-type at " ++ formatRange (rangeOfSExprs whole)) $ do
 		ty <- case rest of
 			Nil p -> Left ("missing term-type at " ++ formatPoint p)
 			Cons t (Nil _) -> parseTLMetaObjectFromSExpr t
 			Cons _ _ -> Left ("term-type at " ++ formatRange (rangeOfSExprs rest) ++
 				" must be enclosed in parentheses")
-		return $ TL.MTTerm {
+		return $ TL.MTJSTerm {
 			TL.tagOfMetaType = rangeOfSExprs whole,
 			TL.typeOfMetaType = ty
 			}
