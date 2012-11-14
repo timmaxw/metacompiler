@@ -3,8 +3,8 @@ module Test.JavascriptEquivalent where
 import Control.Monad (foldM)
 import qualified Data.Map as M
 import Language.ECMAScript3.PrettyPrint
-import Metacompiler.GenSym
 import Metacompiler.JSEval
+import Metacompiler.JSUtils
 import Metacompiler.ParseSExpr
 import Metacompiler.SExpr
 import Metacompiler.SExprToTL
@@ -26,10 +26,10 @@ test directives target = case parseSExprs directives of
 			Right target' -> case parseTLMetaObjectFromSExprs target' of
 				Left err -> putStrLn ("MALFORMED META-OBJECT: " ++ show err)
 				Right target'' -> do
-					let target''' = runGenSym $ do
+					let targetJS = runRenameSymbols $ do
 						vars <- foldM processDirective M.empty directives''
-						reduce vars M.empty target''
-					let targetJS = jsEquivalentOfJSTerm target'''
+						term <- reduce vars M.empty target''
+						return (jsEquivalentOfJSTerm term)
 					let targetString = renderExpression targetJS
 					result <- evalJS targetJS
 					case result of
@@ -53,7 +53,7 @@ main = do
 	test "" "(\\ (x :: js-term a) -> x) (js-expr (spec a) (type a) (impl [[1]]))"
 
 	-- Test of the variable substitution mechanism
-	test "" "(js-expr (spec a) (type a) (impl [[(function (x) { return x; })(1)]] (free [[x]])))"
+	test "" "(js-expr (spec a) (type a) (impl [[(function (x) { return x; })(1)]]))"
 
 	-- First example from `tutorial.md`
 	test "\
@@ -82,3 +82,4 @@ main = do
 		\)) \
 		\ "
 		"(NatAsNumberPlus (NatAsNumberSucc (NatAsNumberZero)) (NatAsNumberSucc (NatAsNumberZero)))"
+

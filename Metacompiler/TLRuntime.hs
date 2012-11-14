@@ -4,7 +4,9 @@ import Control.Monad (liftM)
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.Syntax as JS
 import qualified Language.ECMAScript3.Syntax.Annotations as JS
-import Metacompiler.GenSym
+import qualified Metacompiler.JSUtils as JSUtils
+import Metacompiler.SExpr (Range, formatRange)
+import Metacompiler.SExprToSL (errorContext)   -- TODO: Move `errorContext` into its own file
 import qualified Metacompiler.SLSyntax as SL
 import Metacompiler.TLSyntax
 
@@ -90,7 +92,7 @@ computeMetaType vars (MOAbs tag params result) = do
 
 computeMetaType vars (MOVar tag name) = case M.lookup name vars of
 	Just (type_, _) -> return type_
-	Nothing -> Left ("variable \"" ++ name ++ \" is not in scope")
+	Nothing -> Left ("variable \"" ++ name ++ "\" is not in scope")
 
 computeMetaType vars (MOJSExpr tag type_ spec impl) = do
 	shouldBeJSType <-
@@ -151,7 +153,7 @@ data ReducedMetaObject
 	-- eventually resolve to a `js-expr` or substitution term.
 	-- `jsEquivalentOfJSTerm` is the Javascript equivalent of that term.
 	| RMOJSTerm {
-		jsEquivalentOfJSTerm :: GenSym (JS.Expression ())
+		jsEquivalentOfJSTerm :: JSUtils.RenameSymbols (JS.Expression ())
 	}
 
 -- `reduce` reduces a `MetaObject` to a `ReducedMetaObject`. Because recursion
@@ -198,17 +200,15 @@ safeInsert k v m = case M.lookup k m of
 -- `expandJavascriptBlock` performs the variable substitutions in the given
 -- `JavascriptBlock` and returns the result as a `JS.Expression`.
 
-expandJavascriptBlock :: M.Map String ReducedMetaObject -> JavascriptBlock a -> GenSym (JS.Expression ())
+expandJavascriptBlock :: M.Map String ReducedMetaObject -> JavascriptBlock a -> JSUtils.RenameSymbols (JS.Expression ())
 expandJavascriptBlock vars (JavascriptBlock { codeOfJavascriptBlock = code, varsOfJavascriptBlock = substitutions }) = do
 	substitutions' <- liftM safeFromList $ sequence [do
 		RMOJSTerm jsEquivalent <- reduce vars value
 		js <- jsEquivalent
-		js' <- JSUtils.swapFreeVariables js
+		js' <- JSUtils.revariableExpression M.empty js
 		return (name, js')
 		| (name, value) <- substitutions]
-	code' <- JSUtils.substituteVariables substitutions code
-	code'' <- JSUtils.swapFreeVariables code'
-	return code''
+	JSUtils.revariablizeExpression substitutions code
 
 -- `processDirective` processes a single TL directive. As input, it takes the
 -- map of globally defined meta-objects before the directive. As output, it

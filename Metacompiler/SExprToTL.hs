@@ -233,7 +233,7 @@ parseTLJavascriptBlockFromSExprs whole@(Cons (Quoted cr code) vars) = do
 		errorContext ("embedded js-expr block at " ++ formatRange cr) $
 		parseJavascriptExprFromString code
 	let
-		parseVar :: SExpr -> Either String (String, TL.MetaObject range)
+		parseVar :: SExpr -> Either String (String, TL.MetaObject Range)
 		parseVar (List _ (Cons (Atom _ "set") (Cons (Quoted _ var) value))) = do
 			value' <- parseTLMetaObjectFromSExprs value
 			return (var, value')

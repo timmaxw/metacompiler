@@ -1,6 +1,11 @@
 module Metacompiler.JSUtils where
 
+import Control.Applicative
+import Control.Monad.State.Lazy hiding (sequence, mapM)
+import qualified Data.Map as M
+import Data.Traversable
 import Language.ECMAScript3.Syntax
+import Prelude hiding (sequence, mapM)
 
 -- `traverseExpression`, `traverseLValue`, and `traverseStatement` are very
 -- general functions that can be used to implement all sorts of traversals of
@@ -22,7 +27,7 @@ data Visitor f a = Visitor {
 -- Users are advised to define `visitor = (defaultVisitor visitor) {...}` so
 -- that they only need to override the `visit*` functions that they care about.
 
-defaultVisitor :: Visitor f a -> Visitor f a
+defaultVisitor :: Applicative f => Visitor f a -> Visitor f a
 defaultVisitor subVisitor = Visitor {
 	visitExpression = traverseExpression subVisitor,
 	visitLValue = traverseLValue subVisitor,
@@ -52,10 +57,10 @@ traverseExpression visitor expression = case expression of
 	UnaryAssignExpr a op x -> liftA (UnaryAssignExpr a op) (visitLValue visitor x)
 	InfixExpr a op x y -> liftA2 (InfixExpr a op) (visitE x) (visitE y)
 	CondExpr a test true false -> liftA3 (CondExpr a) (visitE test) (visitE true) (visitE false)
-	AssignExpr a op x y = liftA2 (AssignExpr a op) (visitLValue visitor x) (visitE y)
+	AssignExpr a op x y -> liftA2 (AssignExpr a op) (visitLValue visitor x) (visitE y)
 	ListExpr a m -> liftA (ListExpr a) (traverse visitE m)
 	CallExpr a fun args -> liftA2 (CallExpr a) (visitE fun) (traverse visitE args)
-	FuncExpr a name args body -> liftA (FuncExpr a name args) (visitStatements visitor body)
+	FuncExpr a name args body -> liftA (FuncExpr a name args) (traverse (visitStatement visitor) body)
 	where
 		visitE = visitExpression visitor
 
@@ -63,7 +68,7 @@ traverseExpression visitor expression = case expression of
 -- of the given L-value, substitutes the return values in, and then returns the
 -- result.
 
-traverseLValue :: Applicative f => Visitor f a -> Expression a -> f (Expression a)
+traverseLValue :: Applicative f => Visitor f a -> LValue a -> f (LValue a)
 traverseLValue visitor lvalue = case lvalue of
 	LVar a i -> pure (LVar a i)
 	LDot a obj id -> liftA2 (LDot a) (visitExpression visitor obj) (pure id)
@@ -101,14 +106,16 @@ traverseStatement visitor statement = case statement of
 				NoInit -> pure NoInit
 				VarInit vars -> pure (VarInit vars)
 				ExprInit e -> liftA ExprInit (visitE e)
-	TryStmt a body (CatchClause a2 exc catch) finally ->
-		liftA3 (TryStmt a) (visitS body) (liftA (CatchClause a2 exc) (visitS catch)) (visitS finally)
+	TryStmt a body Nothing finally ->
+		liftA3 (TryStmt a) (visitS body) (pure Nothing) (traverse visitS finally)
+	TryStmt a body (Just (CatchClause a2 exc catch)) finally ->
+		liftA3 (TryStmt a) (visitS body) (liftA (Just . CatchClause a2 exc) (visitS catch)) (traverse visitS finally)
 	ThrowStmt a exc -> liftA (ThrowStmt a) (visitE exc)
-	ReturnStmt a val -> liftA (ReturnStmt a) (visitE val)
+	ReturnStmt a val -> liftA (ReturnStmt a) (traverse visitE val)
 	WithStmt a subj body -> liftA2 (WithStmt a) (visitE subj) (visitS body)
 	VarDeclStmt a vars -> liftA (VarDeclStmt a)
 		(sequenceA [liftA (VarDecl a name) (traverse visitE value) | VarDecl a name value <- vars])
-	FunctionStmt a name args body -> liftA (FunctionStmt a name args) (visitS body)
+	FunctionStmt a name args body -> liftA (FunctionStmt a name args) (traverse visitS body)
 	where
 		visitE = visitExpression visitor
 		visitS = visitStatement visitor
@@ -129,13 +136,19 @@ instance Monad RenameSymbols where
 
 instance Applicative RenameSymbols where
 	pure = return
-	(<*>) = (>>)
+	(<*>) = liftM2 ($)
+
+instance Functor RenameSymbols where
+	fmap f = RenameSymbols . fmap f . unRenameSymbols
 
 renameSymbol :: String -> RenameSymbols String
 renameSymbol original = do
 	num <- RenameSymbols get
 	RenameSymbols (put (num + 1))
 	return (original ++ "_" ++ show num)
+
+runRenameSymbols :: RenameSymbols a -> a
+runRenameSymbols x = evalState (unRenameSymbols x) 1
 
 -- `makeRevariableVisitor` creates a `Visitor` that will revariable whatever
 -- expression or statement it is applied to, with the given substitutions.
@@ -166,40 +179,42 @@ makeRevariableVisitor subs = (defaultVisitor (makeRevariableVisitor subs)) {
 -- end result would be:
 --     function (x_1) { var x_1, y_1; }
 
-revariableScope :: M.Map String (Expression ()) -> M.Map String String -> Statement () -> RenameSymbols (Statement ())
+revariableScope :: M.Map String (Expression ()) -> M.Map String String -> [Statement ()] -> RenameSymbols [Statement ()]
 revariableScope subs paramSubs root = do
-	(varSubs, root') <- lookForVarDecls paramSubs root
-	let subs' = M.union subs (M.map (VarDecl () . Id ()) varSubs)
-	revariableStatement subs' root'
+	(root', varSubs) <- runStateT (mapM (traverseStatement lookForVarDecls) root) paramSubs
+	let subs' = M.union subs (M.map (VarRef () . Id ()) varSubs)
+	traverse (revariableStatement subs') root'
 
 -- `revariableExpression` revariables the given expression.
 
 revariableExpression :: M.Map String (Expression ()) -> Expression () -> RenameSymbols (Expression ())
-revariableExpression subs (VarRef () (Id () name)) = case Map.lookup name subs of
+revariableExpression subs (VarRef () (Id () name)) = case M.lookup name subs of
 	Just value -> return value
 	Nothing -> return (VarRef () (Id () name))
-revariableExpression subs (FuncExpr name params body) = do
-	params' <- mapM renameSymbol params
-	let paramSubs = M.fromList (zip params params')
+revariableExpression subs (FuncExpr () name params body) = do
+	let paramNames = [str | Id () str <- params]
+	paramNames' <- mapM renameSymbol paramNames
+	let paramSubs = M.fromList (zip paramNames paramNames')
 	body' <- revariableScope subs paramSubs body
-	return (FuncExpr name params' body')
+	return (FuncExpr () name [Id () str | str <- paramNames'] body')
 revariableExpression subs other = traverseExpression (makeRevariableVisitor subs) other
 
 -- `revariableStatement` revariables the given statement.
 
 revariableStatement :: M.Map String (Expression ()) -> Statement () -> RenameSymbols (Statement ())
-revariableStatement subs (FuncStmt name params body) = do
-	params' <- mapM renameSymbol params
-	let paramSubs = M.fromList (zip params params')
+revariableStatement subs (FunctionStmt () name params body) = do
+	let paramNames = [str | Id () str <- params]
+	paramNames' <- mapM renameSymbol paramNames
+	let paramSubs = M.fromList (zip paramNames paramNames')
 	body' <- revariableScope subs paramSubs body
-	return (FuncStmt name params' body')
-revariableStatement subs (TryStmt () body (CatchClause () (Id () exc) catch) finally) = do
+	return (FunctionStmt () name [Id () str | str <- paramNames'] body')
+revariableStatement subs (TryStmt () body (Just (CatchClause () (Id () exc) catch)) finally) = do
 	body' <- revariableStatement subs body
 	exc' <- renameSymbol exc
 	let subs' = M.insert exc (VarRef () (Id () exc')) subs
 	catch' <- revariableStatement subs' catch
-	finally' <- revariableStatement subs finally
-	return (TryStmt () body' (CatchClause () (Id () exc') catch') finally')
+	finally' <- traverse (revariableStatement subs) finally
+	return (TryStmt () body' (Just (CatchClause () (Id () exc') catch')) finally')
 revariableStatement subs other = traverseStatement (makeRevariableVisitor subs) other
 
 -- `lookForVarDecls` recursively searches the given statement for `var`
@@ -211,42 +226,41 @@ revariableStatement subs other = traverseStatement (makeRevariableVisitor subs) 
 -- variable in place of generating a new one. For example, `var x, x;` would be
 -- transformed to `var x_1, x_1;` or something like that. 
 
-lookForVarDecls :: M.Map String String -> Statement () -> RenameSymbols (M.Map String String, Statement ())
-lookForVarDecls existingVarDecls stmt = runStateT (traverseStatement visitor) existingVarDecls
+lookForVarDecls :: Visitor (StateT (M.Map String String) RenameSymbols) ()
+lookForVarDecls = (defaultVisitor lookForVarDecls) {
+	visitStatement = (\ statement -> case statement of
+		VarDeclStmt () vars -> do
+			vars' <- sequence [do
+				var' <- foundAVarDecl var
+				value' <- traverse (traverseExpression lookForVarDecls) value
+				return (VarDecl () (Id () var') value')
+				| VarDecl () (Id () var) value <- vars]
+			return (VarDeclStmt () vars)
+		ForInStmt () (ForInVar (Id () var)) subj body -> do
+			var' <- foundAVarDecl var
+			subj' <- traverseExpression lookForVarDecls subj
+			body' <- traverseStatement lookForVarDecls body
+			return (ForInStmt () (ForInVar (Id () var')) subj' body')
+		ForStmt () (VarInit vars) test step body -> do
+			vars' <- sequence [do
+				var' <- foundAVarDecl var
+				return (VarDecl () (Id () var') value)
+				| VarDecl () (Id () var) value <- vars]
+			test' <- traverse (traverseExpression lookForVarDecls) test
+			step' <- traverse (traverseExpression lookForVarDecls) step
+			body' <- traverseStatement lookForVarDecls body
+			return (ForStmt () (VarInit vars') test' step' body')
+		FunctionStmt () name params body ->
+			return (FunctionStmt () name params body)
+		_ -> traverseStatement lookForVarDecls statement
+		),
+	visitExpression = (\ expression -> case expression of
+		FuncExpr () name params body ->
+			return (FuncExpr () name params body)
+		_ -> traverseExpression lookForVarDecls expression
+		)
+	}
 	where
-		visitor :: Visitor (StateT (M.Map String String) RenameSymbols) ()
-		visitor = (defaultVisitor visitor) {
-			visitStatement = \ statement -> case statement of
-				VarDeclStmt () vars -> do
-					vars' <- sequence [do
-						var' <- foundAVarDecl var
-						value' <- traverseExpression visitor value
-						return (VarDecl () (Id () var') value')
-						| VarDecl () (Id () var) value <- vars]
-					return (VarDeclStmt () vars)
-				ForInStmt () (ForInVar (Id () var)) subj body -> do
-					var' <- foundAVarDecl var
-					subj' <- traverseExpression visitor subj
-					body' <- traverseExpression visitor body
-					return (ForInStmt () (ForInVar (Id () var')) subj' body')
-				ForStmt () (VarInit vars) test step body -> do
-					vars' <- sequence [do
-						var' <- foundAVarDecl var
-						return (VarDecl () (Id () var') value)
-						| VarDecl () (Id () var) value <- vars]
-					test' <- traverseExpression visitor test
-					step' <- traverseExpression visitor step
-					body' <- traverseExpression visitor body
-					return (ForStmt () (VarInit vars') test' step' body')
-				FuncStmt () params body ->
-					return (FuncStmt () params body)
-				_ -> traverseStatement visitor statement
-			visitExpression = \ expression -> case expression of
-				FuncExpr () params body ->
-					return (FuncExpr () params body)
-				_ -> traverseExpression visitor expression
-			}
-
 		foundAVarDecl :: String -> StateT (M.Map String String) RenameSymbols String
 		foundAVarDecl old = do
 			oldState <- get
