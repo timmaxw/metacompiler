@@ -8,6 +8,112 @@ import Metacompiler.GenSym
 import qualified Metacompiler.SLSyntax as SL
 import Metacompiler.TLSyntax
 
+-- A `NormedMetaType' is the result of de-sugaring a type and evaluating any
+-- variables in the types of `js-term ...` meta-types.
+
+data NormedMetaType
+
+	= NMTFun NormedMetaType NormedMetaType
+
+	| NMTJSType
+
+	-- This is `Nothing` if the term comes from a bare string, and `Just ...`
+	-- where `...` is the type of the term otherwise. This `JSType` is the only
+	-- is the only context where a `JSTypePlaceholder` should ever occur.
+	| NMTJSTerm (Maybe JSType)
+
+	deriving (Show, Eq)
+
+tryToCastNormedMetaType :: NormedMetaType -> NormedMetaType -> Either String ()
+tryToCastNormedMetaType a b
+	| canCast a b = return ()
+	| otherwise = Left ("expected a value of type " ++ formatNormedMetaType b ++
+		", but instead got a value of type " ++ formatNormedMetaType a)
+	where
+		canCast :: NormedMetaType -> NormedMetaType -> Bool
+		canCast (NMTFun arg1 ret1) (NMTFun arg2 ret2) =
+			(arg1 == ret1) && (arg2 == ret2)
+		canCast (NMTJSType) (NMTJSType) = True
+		canCast (NMTJSTerm Nothing) (NMTJSTerm _) = True
+		canCast (NMTJSTerm (Just type1)) (NMTJSTerm (Just type2)) =
+			type1 == type2
+		canCast _ _ = False
+
+computeMetaType :: M.Map String NormedMetaType ->  MetaObject Range -> Either String NormedMetaType
+computeMetaType vars (MOApp tag fun arg) = do
+	funType <-
+		errorContext ("in function of application at " ++ formatRange tag) $
+		computeMetaType vars fun
+	argType <-
+		errorContext ("in argument of application at " ++ formatRange tag) $
+		computeMetaType vars arg
+	case funType of
+		NMTFun argType' retType -> do
+			errorContext ("for argument of application at " ++
+					formatRange tag) $
+				tryToCastNormedMetaType argType argType'
+			return res
+		_ -> Left ("in application at " ++ formatRange tag ++ ", the thing to \
+			\be called has type " ++ formatNormedMetaType funType ++ ", which \
+			\is not the type of a function.")
+computeMetaType vars (MOAbs tag params result) = do
+	let
+		processParams :: M.Map String NormedMetaType
+		              -> [(String, MetaType Range)]
+		              -> Either String (M.Map String NormedMetaType, NormedMetaType)
+		processParams vars' [] = do
+			resultType <-
+				errorContext ("in return value of function at " ++
+					formatRange tag)
+				computeMetaType vars' result
+			return (vars', resultType)
+		processParams vars' ((paramName, paramType):params') = do
+			paramType' <-
+				errorContext ("in type of parameter \"" ++ paramName ++ "\" \
+					\to function at " ++ formatRange tag) $
+				normMetaType vars' paramType
+			vars'' <- checkedInsert paramName paramType' vars'
+			resultType <- processParams vars'' params'
+			return (NMTFun paramType' resultType)
+	processParams vars params
+computeMetaType vars (MOVar tag name) = case M.lookup name vars of
+	Just type_ -> return type_
+	Nothing -> Left ("variable \"" ++ name ++ \" is not in scope")
+computeMetaType vars (MOJSExpr tag type_ spec impl) = do
+	shouldBeJSType <-
+		errorContext ("in \"type\" clause of \"js-expr\" at " ++
+			formatRange tag) $
+		computeMetaType vars type_
+	unless (shouldBeJSType == NMTJSType) $
+		Left ("in \"js-expr\" at " ++ formatRange tag ++ ", expected the type \
+			\to have meta-type " ++ formatNormedMetaType NMTJSType ++ ", but \
+			\it had meta-type " ++ formatNormedMetaType shouldBeJSType)
+	sequence [do
+		shouldBeJSTerm <- computeMetaType vars value
+		unless (shouldBeJSTerm == NMTJSTerm) $
+			Left ("in \"impl\" clause of \"js-expr\" at " ++ formatRange tag ++
+				", in \"(set " ++ show name ++ " ...)\" clause, value should \
+				\have meta-type " ++ formatNormedMetaType NMTJSTerm ++ ", but \
+				\it had meta-type " ++ formatNormedMetaType shouldBeJSTerm)
+		| (name, JBVSet value) <- varsOfJavascriptBlock impl]
+	-- TODO: Check validity of spec clause.
+	return (NMTJSType (mapTagsOfMetaObject (const ()) type_))
+
+-- A `JSType` is a Javascript representation of an SL type.
+
+data JSType
+
+	-- `JSType`s can only come from `js-repr` directives. `nameOfJSType` is the
+	-- name of the original directive that produced this JS type.
+	-- `paramsOfJSType` are what the parameters came out to.
+	= JSType {
+		nameOfJSType :: String,
+		paramsOfJSType :: [JSType]
+	}
+
+	-- This is used for dependent type checking.
+	| JSTypePlaceholder String
+
 -- A `ReducedMetaObject` is the result of resolving variable references and
 -- function applications in a `MetaObject` until no further reductions can be
 -- performed.
@@ -19,26 +125,17 @@ data ReducedMetaObject
 	-- reason its return value is wrapped in `GenSym` is so that we can
 	-- generate unique variable substitutions for any Javascript chunks
 	-- contained within for every time we invoke the function.
-	= RMOFun
-		(ReducedMetaObject -> GenSym ReducedMetaObject)
+	= RMOFun (ReducedMetaObject -> GenSym ReducedMetaObject)
 
-	-- If the original `MetaObject`'s meta-type was `type`, then it must
-	-- eventually resolve to some `js-repr` directive. `nameOfJSType` is the
-	-- name of that directive. `paramsOfJSType` are any parameters that we
-	-- provided to the directive.
-	| RMOJSType {
-		nameOfJSType :: String,
-		paramsOfJSType :: [ReducedMetaObject]
-	}
+	-- If the original `MetaObject`'s meta-type was `type`, then the result of
+	-- reduction will be `RMOJSType`.
+	| RMOJSType JSType
 
 	-- If the original `MetaObject`'s meta-type was `term ...`, then it must
 	-- eventually resolve to a `js-expr` or substitution term.
 	-- `jsEquivalentOfJSTerm` is the Javascript equivalent of that term.
 	| RMOJSTerm {
 		jsEquivalentOfJSTerm :: JS.Expression ()
-
-		-- TODO: Make this work later
-		-- slEquivalentOfJSTerm :: SL.Term ()
 	}
 
 -- `reduce` reduces a `MetaObject` to a `ReducedMetaObject`. Because recursion
