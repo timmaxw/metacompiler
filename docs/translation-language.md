@@ -125,18 +125,16 @@ The `spec` clause specifies the SL equivalent of the newly created type.
 where `<Javascript-block>` looks like
 
 ```
-"<Javascript-code-string>" ('set' "<Javascript-var>" <term>)* ('free' "<Javascript-var>")*
+"<Javascript-code-string>" ('set' "<Javascript-var>" <term>)*
 ```
 
-The things after `js-expr` are called clauses and they can go in any order. The things that come after "<Javascript-code-string>" can also be reordered arbitrarily.
+The things after `js-expr` are called clauses and they can go in any order.
 
 Its meta-type is `term <type>`, where `<type>` is the `<type>` from the `type` clause. Its SL equivalent is `<SL-term>`. Naturally, the SL equivalent of `<type>` must be the type of `<SL-term>`.
 
-Its Javascript implementation is `Javascript-code-string`, but with certain variables substituted:
+Its Javascript implementation is `Javascript-code-string`, but with any variable whose name appears in a `set` clause replaced with the Javascript equivalent of the expression in the `set` clause. Within the `set` clause, literal strings are interpreted as terms whose Javascript equivalents are those literal strings, whose SL equivalents are undefined, and whose JS types can be anything.
 
-  * `set` means to substitute the `<Javascript-var>` with the Javascript equivalent of the `<term>`. As a special case, within `<term>`, literal strings will evaluate to terms whose Javascript equivalents are those literal strings, and whose SL equivalents are undefined.
-
-  * `free` means to substitute the `<Javascript-var>` with a unique new variable.
+In addition, any variables that are bound within the Javascript block itself will be replaced with new, unique variable names. For example, `function (x) { return (x + y); }` might become `function (x_1) { return (x_1 + y); }`.
 
 ## `use` directives and meta-object `infer` terms
 

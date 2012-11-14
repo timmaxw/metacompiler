@@ -91,7 +91,6 @@ In our definition of `NatAsNumber` above, we haven't told the compiler how to tr
 		(set "zc" zeroClause)
 		(set "sc" (succClause "s-1"))
 		(set "subj" subject)
-		(free s)
 	)
 ))
 ```
@@ -145,7 +144,6 @@ Translations:
 		(set "subject" subject)
 		(set "leftClause"  (leftClause  "s[1]"))
 		(set "rightClause" (rightClause "s[1]"))
-		(free "s")
 	)
 ))
 ```
@@ -167,7 +165,6 @@ Translations:
 	(type (FunctionType a r))
 	(spec (\\ x -> body x))
 	(impl "function(x) { return body; }"
-		(free "x")
 		(set "body" (body "x"))
 	)
 ))
@@ -202,8 +199,6 @@ Suppose that we want `metacompiler` to turn SL functions that take multiple para
 	(type (Function2Type a1 a2 r))
 	(spec (\\ x1 x2 -> body x1 x2))
 	(impl "function(x1, x2) { return body; }"
-		(free "x1")
-		(free "x2")
 		(set "body" (body "x1" "x2"))
 	)
 ))
@@ -292,7 +287,6 @@ Translation language file:
 		})(subj)
 		]]
 		(set "subj" subject)
-		(free "s")
 		(set "nc" nothingClause)
 		(set "jc" (justClause "s"))
 	)
@@ -390,7 +384,6 @@ Translations:
 		(set "subj" subject)
 		(set "nc" nilClause)
 		(set "cc" (consClause "s[0]" "s.slice(1, s.length)"))
-		(free "s")
 	)
 ))
 
@@ -464,7 +457,6 @@ First, we need a SL function to generate ranges of integers:
 			else { return cc; }
 		}(subj)
 		]]
-		(free "n")
 		(set "nc" nilClause)
 		(set "cc" (consClause "n" "n-1"))
 		(set "subj" subject)
@@ -492,8 +484,6 @@ We can also teach `metacompiler` how to convert `CountDownList`s into `ListAsArr
 		})()
 		]]
 		(set "in" in)
-		(free "i")
-		(free "l")
 	)
 ))
 ```

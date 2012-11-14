@@ -116,18 +116,7 @@ data Directive a
 data JavascriptBlock a = JavascriptBlock {
 	tagOfJavascriptBlock :: a,
 	codeOfJavascriptBlock :: JS.Expression JS.SourcePos,
-	varsOfJavascriptBlock :: [(String, JavascriptBlockVar a)]
-	}
-	deriving Show
-
-data JavascriptBlockVar a
-
-	-- `('free' <var>)`
-	= JBVFree
-
-	-- `('set' <var> <meta-object>)`
-	| JBVSet {
-		valueOfJavascriptBlockVar :: MetaObject a
+	varsOfJavascriptBlock :: [(String, MetaObject a)]
 	}
 	deriving Show
 

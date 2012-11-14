@@ -198,20 +198,17 @@ safeInsert k v m = case M.lookup k m of
 -- `expandJavascriptBlock` performs the variable substitutions in the given
 -- `JavascriptBlock` and returns the result as a `JS.Expression`.
 
-expandJavascriptBlock :: M.Map String ReducedMetaObject -> M.Map String (JS.Expression ()) -> JavascriptBlock a -> GenSym (JS.Expression ())
-expandJavascriptBlock vars jsVars (JavascriptBlock { codeOfJavascriptBlock = code, varsOfJavascriptBlock = jsvs }) = do
-	freeVars <- liftM safeFromList $ sequence [do
-		uniqueSymbol <- genSym
-		return (name, JS.VarRef () (JS.Id () (name ++ uniqueSymbol)))
-		| (name, JBVFree) <- jsvs]
-	let bannedVars = safeFromList [(name, error "ambiguous substitution") | (name, JBVSet _) <- jsvs]
-	setVars <- liftM safeFromList $ sequence [do
-		let reduced = reduce vars (jsVars `safeUnion` freeVars `safeUnion` bannedVars) value
-		expanded <- jsEquivalentOfJSTerm reduced
-		return (name, expanded)
-		| (name, JBVSet value) <- jsvs]
-	return (substituteJSVars (jsVars `safeUnion` freeVars `safeUnion` setVars) (JS.removeAnnotations code))
-
+expandJavascriptBlock :: M.Map String ReducedMetaObject -> JavascriptBlock a -> GenSym (JS.Expression ())
+expandJavascriptBlock vars (JavascriptBlock { codeOfJavascriptBlock = code, varsOfJavascriptBlock = substitutions }) = do
+	substitutions' <- liftM safeFromList $ sequence [do
+		RMOJSTerm jsEquivalent <- reduce vars value
+		js <- jsEquivalent
+		js' <- JSUtils.swapFreeVariables js
+		return (name, js')
+		| (name, value) <- substitutions]
+	code' <- JSUtils.substituteVariables substitutions code
+	code'' <- JSUtils.swapFreeVariables code'
+	return code''
 
 -- `processDirective` processes a single TL directive. As input, it takes the
 -- map of globally defined meta-objects before the directive. As output, it
