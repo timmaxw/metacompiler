@@ -120,3 +120,7 @@ JavaScript:
 
 	the_answer = _1(1 + (1 + (1 + (1 + (1 + 0)))))
 
+## Extensions
+
+The code produced by this process is sometimes unnecessarily verbose. If it's trivial to prove that `referentOfMetaObject` always terminates, and if there are no arguments, then the `function() { return ...; }` can be omitted.
+
