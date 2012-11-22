@@ -92,7 +92,7 @@ The parentheses around the optional `<meta-type>` after the `::` can be omitted 
 
 The optional `'use'` is equivalent to putting a `('use' <name>)` directive after the `let` directive.
 
-The name brought into scope by a `let` directive is only visible after the `let` directive in the file.
+The order of `let` directives in the file does not matter; a name defined by a `let` directive is visible everywhere in the file.
 
 ## `js-repr` directives
 
