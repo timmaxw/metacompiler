@@ -1,6 +1,6 @@
 module Metacompiler.TLRuntime where
 
-import Control.Monad (liftM)
+import Control.Monad (liftM, unless)
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.Syntax as JS
 import qualified Language.ECMAScript3.Syntax.Annotations as JS
@@ -25,6 +25,11 @@ data NormedMetaType
 	| NMTJSTerm (Maybe JSType)
 
 	deriving (Show, Eq)
+
+formatNormedMetaType :: NormedMetaType -> String
+-- TODO: Make error messages prettier. This may have to wait until the `js-term`
+-- type issues are sorted out.
+formatNormedMetaType = show
 
 tryToCastNormedMetaType :: NormedMetaType -> NormedMetaType -> Either String ()
 tryToCastNormedMetaType a b
@@ -55,22 +60,22 @@ computeMetaType vars (MOApp tag fun arg) = do
 			errorContext ("for argument of application at " ++
 					formatRange tag) $
 				tryToCastNormedMetaType argType argType'
-			return res
+			return retType
 		_ -> Left ("in application at " ++ formatRange tag ++ ", the thing to \
 			\be called has type " ++ formatNormedMetaType funType ++ ", which \
 			\is not the type of a function.")
 
 computeMetaType vars (MOAbs tag params result) = do
 	let
-		processParams :: M.Map String NormedMetaType
+		processParams :: M.Map String (NormedMetaType, ReducedMetaObject)
 		              -> [(String, MetaType Range)]
-		              -> Either String (M.Map String NormedMetaType, NormedMetaType)
+		              -> Either String NormedMetaType
 		processParams vars' [] = do
 			resultType <-
 				errorContext ("in return value of function at " ++
-					formatRange tag)
+					formatRange tag) $
 				computeMetaType vars' result
-			return (vars', resultType)
+			return resultType
 		processParams vars' ((paramName, paramType):params') = do
 			paramType' <-
 				errorContext ("in type of parameter \"" ++ paramName ++ "\" \
@@ -84,11 +89,12 @@ computeMetaType vars (MOAbs tag params result) = do
 				-- tries to use the value.
 				_ -> error "dependent types should only ever depend on JS types"
 
-			vars'' <- checkedInsert paramName (paramType', placeholderValue) vars'
+			let vars'' = M.insert paramName (paramType', placeholderValue) vars'
 			resultType <- processParams vars'' params'
 			return (NMTFun paramType' resultType)
 
-	processParams vars params
+	ty <- processParams vars params
+	return ty
 
 computeMetaType vars (MOVar tag name) = case M.lookup name vars of
 	Just (type_, _) -> return type_
@@ -101,24 +107,69 @@ computeMetaType vars (MOJSExpr tag type_ spec impl) = do
 		computeMetaType vars type_
 	unless (shouldBeJSType == NMTJSType) $
 		Left ("in \"js-expr\" at " ++ formatRange tag ++ ", expected the type \
-			\to have meta-type " ++ formatNormedMetaType NMTJSType ++ ", but \
-			\it had meta-type " ++ formatNormedMetaType shouldBeJSType)
-	actualType <- reduce (M.map snd vars) type_
+			\to have meta-type (js-type), but it had meta-type " ++
+			formatNormedMetaType shouldBeJSType)
+	let actualType = case reduce (M.map snd vars) type_ of
+		RMOJSType ty -> ty
+		_ -> error ("expected RMOJSType; type checker is broken")
 	sequence [do
 		shouldBeJSTerm <- computeMetaType vars value
 		case shouldBeJSTerm of
-			NMTJSTerm _ -> ()
+			NMTJSTerm _ -> return ()
 			_ -> Left ("in \"impl\" clause of \"js-expr\" at " ++
 				formatRange tag ++ ", in \"(set " ++ show name ++ " ...)\" \
-				\clause value should have meta-type " ++
-				formatNormedMetaType NMTJSTerm ++ ", but it had meta-type " ++
-				formatNormedMetaType shouldBeJSTerm)
-		| (name, JBVSet value) <- varsOfJavascriptBlock impl]
+				\clause value should have meta-type (js-term ...), but it had \
+				\meta-type " ++ formatNormedMetaType shouldBeJSTerm)
+		| (name, value) <- varsOfJavascriptBlock impl]
 	-- TODO: Check validity of spec clause.
-	return (NMTJSType (Just actualType))
+	return (NMTJSTerm (Just actualType))
 
 computeMetaType vars (MOJSSubstitution _ _) =
-	return (NMTJSType Nothing)
+	return (NMTJSTerm Nothing)
+
+normMetaType :: M.Map String (NormedMetaType, ReducedMetaObject) ->  MetaType Range -> Either String NormedMetaType
+
+normMetaType vars (MTJSType tag) = return NMTJSType
+
+normMetaType vars (MTJSTerm tag ty) = do
+	shouldBeJSType <- computeMetaType vars ty
+	unless (shouldBeJSType == NMTJSType) $
+		Left ("in \"js-term\" at " ++ formatRange tag ++ ", expected the type \
+			\to have meta-type (js-type), but it had meta-type " ++
+			formatNormedMetaType shouldBeJSType)
+	case reduce (M.map snd vars) ty of
+		RMOJSType ty' -> return (NMTJSTerm (Just ty'))
+		_ -> error "should have been a RMOJSType"
+
+normMetaType vars (MTFun tag params ret) = do
+	let
+		processParams :: M.Map String (NormedMetaType, ReducedMetaObject)
+		              -> [(String, MetaType Range)]
+		              -> Either String NormedMetaType
+		processParams vars' [] = do
+			resultType <-
+				errorContext ("in return type of function type at " ++
+					formatRange tag) $
+				normMetaType vars' ret
+			return resultType
+		processParams vars' ((paramName, paramType):params') = do
+			paramType' <-
+				errorContext ("in type of parameter \"" ++ paramName ++ "\" \
+					\to function type at " ++ formatRange tag) $
+				normMetaType vars' paramType
+
+			let placeholderValue = case paramType' of
+				NMTJSType -> RMOJSType (JSTypePlaceholder paramName)
+				-- `placeholderValue` is not strictly evaluated; this error
+				-- message will sit harmlessly in the map unless something
+				-- tries to use the value.
+				_ -> error "dependent types should only ever depend on JS types"
+
+			let vars'' = safeInsert paramName (paramType', placeholderValue) vars'
+			resultType <- processParams vars'' params'
+			return (NMTFun paramType' resultType)
+
+	processParams vars params
 
 -- A `JSType` is a Javascript representation of an SL type.
 
@@ -134,6 +185,8 @@ data JSType
 
 	-- This is used for dependent type checking.
 	| JSTypePlaceholder String
+
+	deriving (Show, Eq)
 
 -- A `ReducedMetaObject` is the result of resolving variable references and
 -- function applications in a `MetaObject` until no further reductions can be
@@ -203,27 +256,27 @@ safeInsert k v m = case M.lookup k m of
 expandJavascriptBlock :: M.Map String ReducedMetaObject -> JavascriptBlock a -> JSUtils.RenameSymbols (JS.Expression ())
 expandJavascriptBlock vars (JavascriptBlock { codeOfJavascriptBlock = code, varsOfJavascriptBlock = substitutions }) = do
 	substitutions' <- liftM safeFromList $ sequence [do
-		RMOJSTerm jsEquivalent <- reduce vars value
+		let RMOJSTerm jsEquivalent = reduce vars value
 		js <- jsEquivalent
 		js' <- JSUtils.revariableExpression M.empty js
 		return (name, js')
 		| (name, value) <- substitutions]
-	JSUtils.revariablizeExpression substitutions code
+	JSUtils.revariableExpression substitutions' (JS.removeAnnotations code)
 
 -- `processDirective` processes a single TL directive. As input, it takes the
 -- map of globally defined meta-objects before the directive. As output, it
 -- returns the map of globally defined meta-objects after the directive.
 
-processDirective :: M.Map String ReducedMetaObject -> Directive a -> Either String (M.Map String ReducedMetaObject)
+processDirective :: M.Map String (NormedMetaType, ReducedMetaObject) -> Directive Range -> Either String (M.Map String (NormedMetaType, ReducedMetaObject))
 processDirective vars directive@(DLet { }) = do
-	type_ <- computeMetaType (valueOfDirective directive)
+	type_ <- computeMetaType vars (valueOfDirective directive)
 	let
 		applyParams vars' [] =
-			reduce vars' M.empty (valueOfDirective directive)
-		applyParams vars' ((n, t):rest) = return $ RMOFun $ \ value ->
-			applyParams (safeInsert n value vars') rest 
-	let newValue = applyParams vars (paramsOfDirective directive)
-	return $ safeInsert (nameOfDirective directive) newValue vars
+			reduce vars' (valueOfDirective directive)
+		applyParams vars' ((n, t):rest) = RMOFun $ \ value ->
+			applyParams (safeInsert n value vars') rest
+	let newValue = applyParams (M.map snd vars) (paramsOfDirective directive)
+	return $ safeInsert (nameOfDirective directive) (type_, newValue) vars
 processDirective vars directive@(DJSRepr { }) =
 	undefined
 

@@ -17,33 +17,35 @@ import Metacompiler.TLRuntime
 -- directives.
 
 test :: String -> String -> IO ()
-test directives target = case parseSExprs directives of
-	Left err -> putStrLn ("MALFORMED S-EXPR: " ++ show err)
-	Right directives' -> case sequence (map parseTLDirectiveFromSExpr (sExprsToList directives')) of
-		Left err -> putStrLn ("MALFORMED DIRECTIVE: " ++ show err)
-		Right directives'' -> case parseSExprs target of
-			Left err -> putStrLn ("MALFORMED S-EXPR: " ++ show err)
-			Right target' -> case parseTLMetaObjectFromSExprs target' of
-				Left err -> putStrLn ("MALFORMED META-OBJECT: " ++ show err)
-				Right target'' -> do
-					let targetJS = runRenameSymbols $ do
-						vars <- foldM processDirective M.empty directives''
-						term <- reduce vars M.empty target''
-						return (jsEquivalentOfJSTerm term)
-					let targetString = renderExpression targetJS
-					result <- evalJS targetJS
-					case result of
-						Left err -> do
-							putStrLn "------------------"
-							putStrLn "RUN ERROR:"
-							putStrLn targetString
-							putStr err
-						Right answer -> do
-							putStrLn "------------------"
-							putStrLn "ok:"
-							putStrLn targetString
-							putStr answer
-
+test directives target = do
+	let maybeTargetTerm = do
+		directives' <- parseSExprs directives
+		directives'' <- sequence (map parseTLDirectiveFromSExpr (sExprsToList directives'))
+		vars <- foldM processDirective M.empty directives''
+		target' <- parseSExprs target
+		target'' <- parseTLMetaObjectFromSExprs target'
+		ty <- computeMetaType vars target''
+		case ty of
+			NMTJSTerm _ -> return ()
+			other -> Left ("target should have type (js-term ...), but instead had type " ++ show ty)
+		return (reduce (M.map snd vars) target'')
+	case maybeTargetTerm of
+		Left err -> putStrLn ("MALFORMED: " ++ show err)
+		Right targetTerm -> do
+			let targetAST = runRenameSymbols (jsEquivalentOfJSTerm targetTerm)
+			let targetString = renderExpression targetAST
+			result <- evalJS targetAST
+			case result of
+				Left err -> do
+					putStrLn "------------------"
+					putStrLn "RUN ERROR:"
+					putStrLn targetString
+					putStr err
+				Right answer -> do
+					putStrLn "------------------"
+					putStrLn "ok:"
+					putStrLn targetString
+					putStr answer
 
 main = do
 	-- Basic test
