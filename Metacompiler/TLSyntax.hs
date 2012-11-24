@@ -61,23 +61,16 @@ data MetaObject a
 	}
 
 	-- Term with a manually-specified JS equivalent:
-	--     ('js-expr'
-	--         ('type' <type>)
+	--     ('js-expr' "<JS-code>" '::' <type>
 	--         ('spec' <SL-term>)
-	--         ('impl' <Javascript-block>)
+	--         ('=' "<JS-var>" <value>)
 	--     )
 	| MOJSExpr {
 		tagOfMetaObject :: a,
+		codeOfMetaObject :: JS.Expression JS.SourcePos,
 		typeOfMetaObject :: MetaObject a,
-		specOfMetaObject :: SL.Term a,
-		implOfMetaObject :: JavascriptBlock a
-	}
-
-	-- Special form used only within a `(set <var> ...)` clause of a Javascript
-	-- block.
-	| MOJSSubstitution {
-		tagOfMetaObject :: a,
-		jsSubstitutionOfMetaObject :: JS.Expression JS.SourcePos
+		specOfMetaObject :: Maybe (SL.Term a),
+		subsOfMetaObject :: [(String, MetaObject a)]
 	}
 
 	deriving Show
@@ -108,16 +101,6 @@ data Directive a
 		specOfDirective :: SL.Type a
 	}
 
-	deriving Show
-
--- `JavascriptBlock` represents a Javascript string and associated variable
--- substitutions.
-
-data JavascriptBlock a = JavascriptBlock {
-	tagOfJavascriptBlock :: a,
-	codeOfJavascriptBlock :: JS.Expression JS.SourcePos,
-	varsOfJavascriptBlock :: [(String, MetaObject a)]
-	}
 	deriving Show
 
 
