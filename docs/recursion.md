@@ -91,7 +91,7 @@ SL:
 	(let factorial (a :: Nat) :: Nat =
 		(case a of
 			(Zero) -> (Succ Zero)
-			(Succ b) -> (prod a (factorial b))
+			(Succ b) -> (times a (factorial b))
 		)
 	)
 
@@ -102,10 +102,10 @@ TL:
 			NatAsNumber
 			a
 			(NatAsNumberSucc NatAsNumberZero)
-			(fun (b :: NatAsNumber) -> NatAsNumberProd a (Factorial b))
+			(fun (b :: NatAsNumber) -> NatAsNumberTimes a (Factorial b))
 		))
 
-	(emit "the_answer = x;" (set "x"
+	(emit "the_answer = x;" (= "x"
 		(Factorial (Succ (Succ (Succ (Succ (Succ Zero))))))
 		)
 

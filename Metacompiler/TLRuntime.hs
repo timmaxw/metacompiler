@@ -263,46 +263,4 @@ expandJavascriptBlock vars (JavascriptBlock { codeOfJavascriptBlock = code, vars
 		| (name, value) <- substitutions]
 	JSUtils.revariableExpression substitutions' (JS.removeAnnotations code)
 
--- `processDirective` processes a single TL directive. As input, it takes the
--- map of globally defined meta-objects before the directive. As output, it
--- returns the map of globally defined meta-objects after the directive.
-
-processDirective :: M.Map String (NormedMetaType, ReducedMetaObject) -> Directive Range -> Either String (M.Map String (NormedMetaType, ReducedMetaObject))
-processDirective vars directive@(DLet { }) =
-	errorContext ("in (let ...) directive at " ++ formatRange (tagOfDirective directive)) $ do
-		resultType <- computeMetaType vars (valueOfDirective directive)
-		let
-			checkParams :: M.Map String (NormedMetaType, ReducedMetaObject) -> 
-		let
-			applyParams vars' [] =
-				reduce vars' (valueOfDirective directive)
-			applyParams vars' ((n, t):rest) = RMOFun $ \ value ->
-				applyParams (safeInsert n value vars') rest
-		let newValue = applyParams (M.map snd vars) (paramsOfDirective directive)
-		return $ safeInsert (nameOfDirective directive) (type_, newValue) vars
-processDirective vars directive@(DJSRepr { }) =
-	errorContext ("in (js-repr ...) directive at " ++ formatRange (tagOfDirective directive)) $ do
-		let
-			checkParams :: M.Map String (NormedMetaType, ReducedMetaObject) -> [(String, MetaType Range)] -> Either String ()
-			checkParams vars' [] = return ()
-			checkParams vars' ((n, t):rest) = do
-				shouldBeJSType <- computeMetaType vars' t
-				unless (shouldBeJSType == NMTJSType) $
-					Left ("It's illegal to parameterize a (js-repr ...) on \
-						\anything but a (js-type).")
-				-- TODO: this will crash if two parameters have the same name; it should
-				-- error or work correctly instead
-				checkParams (safeInsert n (NMTJSType, RMOJSType (JSTypePlaceholder n)) vars') rest
-		checkParams vars (paramsOfDirective directive)
-		let
-			applyParams :: [JSType] -> [(String, MetaType Range)] -> ReducedMetaObject
-			applyParams paramValues [] =
-				RMOJSType (JSType {
-					nameOfJSType = (nameOfDirective directive),
-					paramsOfJSType = paramValues
-					})
-			applyParams paramValues ((n, t):rest) =
-				RMOFun $ \ (RMOJSType value) -> applyParams (paramValues ++ [value]) rest
-		let newValue = applyParams (M.map snd vars) (paramsOfDirective directive)
-		return $ safeInsert (nameOfDirective directive) (type_, newValue) vars
 

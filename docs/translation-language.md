@@ -115,33 +115,25 @@ The `spec` clause specifies the SL equivalent of the newly created type.
 `js-expr` is a special meta-object form that only produces terms, not types. It looks like this:
 
 ```
-('js-expr'
+('js-expr' "<JS-code>"
 	('type' <type>)
-	('spec' <SL-term>)
-	('impl' <Javascript-block>)
+	('spec' <SL-term>)?
+	('=' "<JS-var>" <expr>)*
 )
 ```
 
-where `<Javascript-block>` looks like
+The things after `"<JS-code>"` are called clauses and they can go in any order.
 
-```
-"<Javascript-code-string>" ('set' "<Javascript-var>" <term>)*
-```
+Its meta-type is `js-term <type>`. Its SL equivalent is `<SL-term>`, if `<SL-term>` is present. Naturally, the SL equivalent of `<type>` must be the type of `<SL-term>`.
 
-The things after `js-expr` are called clauses and they can go in any order.
-
-Its meta-type is `term <type>`, where `<type>` is the `<type>` from the `type` clause. Its SL equivalent is `<SL-term>`. Naturally, the SL equivalent of `<type>` must be the type of `<SL-term>`.
-
-Its Javascript implementation is `Javascript-code-string`, but with any variable whose name appears in a `set` clause replaced with the Javascript equivalent of the expression in the `set` clause. Within the `set` clause, literal strings are interpreted as terms whose Javascript equivalents are those literal strings, whose SL equivalents are undefined, and whose JS types can be anything.
-
-In addition, any variables that are bound within the Javascript block itself will be replaced with new, unique variable names. For example, `function (x) { return (x + y); }` might become `function (x_1) { return (x_1 + y); }`.
+Its Javascript implementation is `<JS-code>`, but with any variable whose name appears in a `=` clause replaced with the Javascript equivalent of the `<expr>` in the `=` clause. In addition, any variables that are bound within the Javascript block itself will be replaced with new, unique variable names. For example, `function (x) { return (x + y); }` might become `function (x_1) { return (x_1 + y); }`.
 
 ## `use` directives and meta-object `infer` terms
 
 `infer` is a special meta-object form that only produces terms. It looks like this:
 
 ```
-('infer' :
+('infer'
 	('goal' <SL-term>)
 	('type' <type>)
 )
@@ -162,8 +154,8 @@ This enters `<meta-object>` into `metacompiler`'s lookup table, indexed by its S
 An `emit` directive determines what `metacompiler` will actually write to the output file. An `emit` directive looks like this:
 
 ```
-('emit' <Javascript-block>)
+('emit' "<JS-code>" ('=' "<JS-var>" <expr>)*)
 ```
 
-where `<Javascript-block>` is defined as before. `metacompiler` will take the Javascript block, perform the requested substitutions on it, and then write it to the output file.
+`metacompiler` will perform substitutions on `<JS-code>` as described in the `js-expr` section, and then write the result to the file at the top level.
 

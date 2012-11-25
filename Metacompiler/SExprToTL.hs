@@ -45,7 +45,7 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-repr") rest)) =
 			_ -> Left ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs rest)))
 		(unparsedParams, rest3) <- breakOnAtom "=" rest2
 		params <- mapM parseTLParameterFromSExpr (sExprsToList unparsedParams)
-		clauses <- parseClausesFromSExprs ["spec"] [] rest3
+		clauses <- parseClausesFromSExprs [("spec", False, False)] rest3
 		spec <- let (range, spec) = (M.!) clauses "spec" in
 			errorContext ("in \"spec\" clause at " ++ formatRange range) $
 			parseSLTypeFromSExprs spec
@@ -76,36 +76,33 @@ parseTLParameterFromSExpr other =
 		" at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseClausesFromSExprs` expects a series of clauses of the form
--- `(keyword ...)`. The first two parameters specify the allowed keywords.
--- Mandatory clauses must appear exactly once; optional clauses must appear at
--- most once. It returns a map containing the clauses, without parsing their
--- contents.
+-- `(keyword ...)`. The first parameter specifies the allowed keywords, and how
+-- many times each one must appear; the first boolean specifies if it's OK for
+-- the keyword to be missing, and the second specifies if it's OK for the
+-- keyword to appear multiple times. The results are returned unparsed.
 
-parseClausesFromSExprs :: [String] -> [String] -> SExprs -> Either String (M.Map String (Range, SExprs))
-parseClausesFromSExprs mandatoryClauses optionalClauses seq = do
+parseClausesFromSExprs :: [(String, Bool, Bool)] -> SExprs -> Either String (M.Map String [(Range, SExprs)])
+parseClausesFromSExprs spec seq = do
 	clauses <- parseClauses' seq
 	sequence [
-		unless (name `M.member` clauses) $
+		let numFound = length (clauses ! name)
+		when (numFound == 0 && not zeroOk) $
 			Left ("missing mandatory clause \"" ++ name ++ "\" at " ++ formatRange (rangeOfSExprs seq))
-		| name <- mandatoryClauses]
+		when (numFound > 1 && not multiOk) $
+			Left ("clause \"" ++ name ++ "\" should not appear more than once in " ++ formatRange (rangeOfSExprs seq))
+		| (name, zeroOk, multiOk) <- spec]
 	return clauses
 	where
-		parseClauses' :: SExprs -> Either String (M.Map String (Range, SExprs))
-		parseClauses' (Nil _) = return M.empty
+		parseClauses' :: SExprs -> Either String (M.Map String [Range, SExprs])
+		parseClauses' (Nil _) = return (M.fromList [(name, []) | (name, _, _) <- spec])
 		parseClauses' (Cons c rest) = do
 			(name, value) <- case c of
 				List _ (Cons (Atom _ name) value) -> return (name, value)
 				_ -> Left ("invalid clause " ++ summarizeSExpr c ++ " at " ++ formatRange (rangeOfSExpr c))
-			unless (name `elem` optionalClauses || name `elem` mandatoryClauses) $
-				Left ("invalid clause type \"" ++ name ++ "\"")
+			unless (any (\(name', _, _) <- name == name') spec) $
+				Left ("invalid clause type \"" ++ name ++ "\" at " ++ formatRange (rangeOfSExpr c))
 			rest' <- parseClauses' rest
-			case M.lookup name rest' of
-				Nothing ->
-					return ()
-				Just (range, _) ->
-					Left ("duplicated clause \"" ++ name ++ "\" at " ++
-						formatRange (rangeOfSExpr c) ++ " and " ++ formatRange range)
-			return (M.insert name (rangeOfSExpr c, value) rest')
+			return (M.adjust ((rangeOfSExpr c, value):) name rest')
 
 -- `parseTLMetaTypeFromSExpr` tries to interpret an S-expression as a
 -- `TL.MetaType`.
@@ -161,12 +158,6 @@ parseTLMetaObjectFromSExpr (Atom range x) =
 		}
 parseTLMetaObjectFromSExpr (List _ stuff) =
 	parseTLMetaObjectFromSExprs stuff
-parseTLMetaObjectFromSExpr (Quoted cr code) = do
-	code' <- parseJavascriptExprFromString code
-	return TL.MOJSSubstitution {
-		TL.tagOfMetaObject = cr,
-		TL.jsSubstitutionOfMetaObject = code'
-		}
 
 -- `parseTLMetaObjectFromSExprs` tries to interpret a list of S-expressions as
 -- a `TL.MetaObject`.
@@ -184,19 +175,35 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "\\") rest) =
 			}
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) =
 	errorContext ("in \"js-expr\" at " ++ formatRange (rangeOfSExprs whole)) $ do
-		clauses <- parseClausesFromSExprs ["type", "spec", "impl"] [] rest
-		ty <- let (range, rest) = (M.!) clauses "type" in
-			errorContext ("in \"type\" clause at " ++ formatRange range) $
-			parseTLMetaObjectFromSExprs rest
-		spec <- let (range, rest) = (M.!) clauses "spec" in
-			errorContext ("in \"spec\" clause at " ++ formatRange range) $
-			parseSLTermFromSExprs rest
-		impl <- let (range, rest) = (M.!) clauses "impl" in
-			errorContext ("in \"impl\" clause at " ++ formatRange range) $
-			parseTLJavascriptBlockFromSExprs rest
+		(codeRange, unparsedCode, rest') <- case rest of
+			Cons (Quoted codeRange unparsedCode) rest') ->
+				return (codeRange, unparsedCode, rest')
+			_ -> Left ("expected (js-expr \"<code>\" <clauses...>)")
+		code <-
+			errorContext ("in code at " ++ formatRange codeRange) $
+			parseJavascriptExprFromString unparsedCode
+		clauses <- parseClausesFromSExprs [("type", False, False), ("spec", True, False), ("=", True, True)] rest'
+		type_ <- let [(_, unparsedType)] = (M.!) clauses "type" in
+			errorContext ("in type at " ++ formatRange (rangeOfSExpr unparsedType)) $
+			parseTLMetaObjectFromSExprs unparsedType
+		spec <- case (M.!) clauses "spec" of
+			[(range, rest)] ->
+				errorContext ("in (spec ...) clause at " ++ formatRange range) $ do
+					spec <- parseSLTermFromSExprs rest
+					return (Just spec)
+			[] -> return Nothing
+		subs <- sequence [do
+			(name, value) <- case rest of
+				Cons (Quoted _ name) value -> return (name, value)
+				_ -> Left ("malformed (= ...) clause at " ++ formatRange range ++
+					"; expected (= \"<name>\" <value>).")
+			value' <- parseTLMetaObjectFromSExprs value
+			return (name, value')
+			| (range, rest) <- (M.!) clauses "="]
 		return $ TL.MOJSExpr {
 			TL.tagOfMetaObject = rangeOfSExprs whole,
-			TL.typeOfMetaObject = ty,
+			TL.codeOfMetaObject = code,
+			TL.typeOfMetaObject = type_,
 			TL.specOfMetaObject = spec,
 			TL.implOfMetaObject = impl
 			}
@@ -222,29 +229,6 @@ parseTLMetaObjectFromSExprs whole@(Cons first args) = do
 		) first' args')
 parseTLMetaObjectFromSExprs other =
 	Left ("invalid meta-object " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
-
--- `parseTLJavascriptBlockFromSExprs` tries to interpret a list of
--- S-expressions as a `TL.JavascriptBlock`; that is, a quoted Javascript code
--- block followed by a series of variable substitutions.
-
-parseTLJavascriptBlockFromSExprs :: SExprs -> Either String (TL.JavascriptBlock Range)
-parseTLJavascriptBlockFromSExprs whole@(Cons (Quoted cr code) vars) = do
-	code' <-
-		errorContext ("embedded js-expr block at " ++ formatRange cr) $
-		parseJavascriptExprFromString code
-	let
-		parseVar :: SExpr -> Either String (String, TL.MetaObject Range)
-		parseVar (List _ (Cons (Atom _ "set") (Cons (Quoted _ var) value))) = do
-			value' <- parseTLMetaObjectFromSExprs value
-			return (var, value')
-		parseVar other =
-			Left ("invalid var specification " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
-	vars' <- mapM parseVar (sExprsToList vars)
-	return $ TL.JavascriptBlock {
-		TL.tagOfJavascriptBlock = rangeOfSExprs whole,
-		TL.codeOfJavascriptBlock = code',
-		TL.varsOfJavascriptBlock = vars'
-		}
 
 -- `parseJavascriptExprFromString` tries to interpret the given string as a
 -- Javascript expression.
