@@ -35,7 +35,7 @@ main = do
 		Right ((), results) -> do
 			hPutStrLn stderr ("note: found " ++ show (M.size (definitionsInResults results)) ++ " definitions")
 			forM_ (M.toList (definitionsInResults results)) $ \ (name, rmo) -> do
-				hPutStrLn stderr ("note: " ++ show name ++ " :: " ++ formatRMT (typeOfRMO rmo))
+				hPutStrLn stderr ("note:     " ++ name ++ " :: " ++ formatRMT (typeOfRMO rmo))
 			when (null (emittedCodeOfResults results)) $ do
 				hPutStrLn stderr "warning: there are no emit-directives, or all emit-directives are empty"
 			putStrLn (emittedCodeOfResults results)

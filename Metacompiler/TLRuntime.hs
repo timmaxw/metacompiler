@@ -147,11 +147,16 @@ reduceMetaObject vars (TL.MOJSExpr tag code type_ spec subs) = do
 		value' <- reduceMetaObject vars value
 		equiv <- case value' of
 			RMOJSTerm _ _ equiv -> return equiv
+			RMOVar (RMTJSTerm _ _) _ -> return $
+				-- If we are evaluating with free variables, then we are in the
+				-- type-checking phase, so our JS equivalent should never be
+				-- accessed. So this `error` should never be evaluated.
+				error "evaluation of js-term hit free variable"
 			_ -> Left ("in (js-expr ...) block at " ++ formatRange tag ++ ": \
 				\value for variable " ++ name ++ " at " ++
 				formatRange (TL.tagOfMetaObject value) ++ " should have type \
 				\(js-term ...) but instead had type " ++
-				formatRMT (typeOfRMO value') ++ ".")
+				formatRMT (typeOfRMO value') ++ ". Value is " ++ formatRMO value')
 		return (name, equiv)
 		| (name, value) <- subs]
 	let jsEquivalent = do
@@ -221,7 +226,7 @@ processDirective (TL.DEmit tag code subs) = do
 				\value for variable " ++ name ++ " at " ++
 				formatRange (TL.tagOfMetaObject value) ++ " should have type \
 				\(js-term ...) but instead had type " ++
-				formatRMT (typeOfRMO value') ++ ".")
+				formatRMT (typeOfRMO value') ++ ". Value is " ++ formatRMO value')
 		return (name, equiv)
 		| (name, value) <- subs]
 	let jsEquivalent = do
@@ -236,7 +241,10 @@ processDirective (TL.DEmit tag code subs) = do
 	let (newEmittedCode, symbolRenamingState') = runState jsEquivalent (symbolRenamingStateAfterResults results)
 	put (results {
 		symbolRenamingStateAfterResults = symbolRenamingState',
-		emittedCodeOfResults = emittedCodeOfResults results ++ "\n\n" ++ JS.renderExpression newEmittedCode
+		emittedCodeOfResults =
+			emittedCodeOfResults results ++
+			(if null (emittedCodeOfResults results) then "" else "\n\n") ++
+			JS.renderExpression newEmittedCode
 		})
 
 -- `makeAbstraction` is a common function used by anything that is
