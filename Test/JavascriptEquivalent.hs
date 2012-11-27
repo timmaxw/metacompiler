@@ -10,29 +10,40 @@ import Metacompiler.SExpr
 import Metacompiler.SExprToTL
 import Metacompiler.TLRuntime
 
+doDirectives :: M.Map String RMO -> String -> IO (M.Map String RMO)
+doDirectives originalVars directives = let
+	result = do
+		directives' <- parseSExprs directives
+		directives'' <- sequence (map parseTLDirectiveFromSExpr (sExprsToList directives'))
+		foldM processDirective originalVars directives''
+	in case result of
+		Left err -> do
+			putStrLn ("Error in predefined directives: " ++ err)
+			exitFailure
+		Right val -> return val
+
 -- `test` takes two inputs. The first will be interpreted as a TL input file;
 -- that is, a series of TL directives. The second will be interpreted as a TL
 -- meta-object, that must evaluate to a JS term. It will return the JS
 -- equivalent of the latter, with access to any variables defined by the
 -- directives.
 
-test :: String -> String -> IO ()
-test directives target = do
-	let maybeTargetTerm = do
+test :: M.Map String RMO -> String -> String -> IO ()
+test originalVars directives target = do
+	let jsEquivalent = do
 		directives' <- parseSExprs directives
 		directives'' <- sequence (map parseTLDirectiveFromSExpr (sExprsToList directives'))
-		vars <- foldM processDirective M.empty directives''
+		vars <- foldM processDirective originalVars directives''
 		target' <- parseSExprs target
 		target'' <- parseTLMetaObjectFromSExprs target'
-		ty <- computeMetaType vars target''
-		case ty of
-			NMTJSTerm _ -> return ()
-			other -> Left ("target should have type (js-term ...), but instead had type " ++ show ty)
-		return (reduce (M.map snd vars) target'')
+		target''' <- reduceMetaObject vars target''
+		case target''' of
+			RMOJSTerm _ _ equiv -> return equiv
+			other -> Left ("target should have type (js-term ...), but instead had type " ++ show (typeOfRMO target'''))
 	case maybeTargetTerm of
 		Left err -> putStrLn ("MALFORMED: " ++ show err)
 		Right targetTerm -> do
-			let targetAST = runRenameSymbols (jsEquivalentOfJSTerm targetTerm)
+			let targetAST = runRenameSymbols jsEquivalent
 			let targetString = renderExpression targetAST
 			result <- evalJS targetAST
 			case result of
@@ -48,17 +59,11 @@ test directives target = do
 					putStr answer
 
 main = do
-	-- Basic test
-	test "" "(js-expr (spec a) (type a) (impl [[1]]))"
-
-	-- Test of `MOAbs` and `MOApp`
-	test "" "(\\ (x :: js-term a) -> x) (js-expr (spec a) (type a) (impl [[1]]))"
-
-	-- Test of the variable substitution mechanism
-	test "" "(js-expr (spec a) (type a) (impl [[(function (x) { return x; })(1)]]))"
-
-	-- First example from `tutorial.md`
-	test "\
+	basics <- doDirectives "\
+		\(js-repr NatAsNumber = \
+		\    (spec Nat) \
+		\) \
+		\ \
 		\(let NatAsNumberZero = (js-expr \
 		\    (type NatAsNumber) \
 		\    (spec Zero) \
@@ -83,5 +88,18 @@ main = do
 		\    (impl \"x * y\" (set \"x\" x) (set \"y\" y)) \
 		\)) \
 		\ "
+
+	-- Basic test
+	test "" "(js-expr (spec a) (type a) (impl [[1]]))"
+
+	-- Test of `MOAbs` and `MOApp`
+	test "" "(\\ (x :: js-term a) -> x) (js-expr (spec a) (type a) (impl [[1]]))"
+
+	-- Test of the variable substitution mechanism
+	test "" "(js-expr (spec a) (type a) (impl [[(function (x) { return x; })(1)]]))"
+
+	-- First example from `tutorial.md`
+	test "\
+		
 		"(NatAsNumberPlus (NatAsNumberSucc (NatAsNumberZero)) (NatAsNumberSucc (NatAsNumberZero)))"
 

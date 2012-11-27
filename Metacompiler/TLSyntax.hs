@@ -18,9 +18,12 @@ data MetaType a
 	}
 
 	-- The meta-type of unparameterized terms:
+	--     'js-sl-term' (<type>)
+	-- or
 	--     'js-term' (<type>)
 	| MTJSTerm {
-		tagOfMetaType:: a,
+		tagOfMetaType :: a,
+		hasSLOfMetaType :: Bool,
 		typeOfMetaType :: MetaObject a
 	}
 
@@ -99,6 +102,17 @@ data Directive a
 		nameOfDirective :: String,
 		paramsOfDirective :: [(String, MetaType a)],
 		specOfDirective :: SL.Type a
+	}
+
+	-- `emit` directive:
+	--     ('emit'
+	--         "<JS-code>"
+	--         ('=' "<JS-var>" <term>)*
+	--     )
+	| DEmit {
+		tagOfDirective :: a,
+		codeOfDirective :: JS.Expression JS.SourcePos,
+		subsOfDirective :: [(String, MetaObject a)]
 	}
 
 	deriving Show

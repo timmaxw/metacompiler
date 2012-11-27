@@ -14,6 +14,7 @@ import Text.Parsec.String ()   -- So `String` is an instance of `Stream`
 -- `TL.Directive`. If it doesn't work, then it returns `Left <error>`.
 
 parseTLDirectiveFromSExpr :: SExpr -> Either String (TL.Directive Range)
+
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") rest)) =
 	errorContext ("in \"let\" directive at " ++ formatRange range) $ do
 		(name, rest2) <- case rest of
@@ -38,6 +39,7 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") rest)) =
 			TL.typeOfDirective = maybeType,
 			TL.valueOfDirective = value
 			}
+
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-repr") rest)) =
 	errorContext ("in \"js-repr\" directive at " ++ formatRange range) $ do
 		(name, rest2) <- case rest of
@@ -46,7 +48,7 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-repr") rest)) =
 		(unparsedParams, rest3) <- breakOnAtom "=" rest2
 		params <- mapM parseTLParameterFromSExpr (sExprsToList unparsedParams)
 		clauses <- parseClausesFromSExprs [("spec", False, False)] rest3
-		spec <- let (range, spec) = (M.!) clauses "spec" in
+		spec <- let [(range, spec)] = (M.!) clauses "spec" in
 			errorContext ("in \"spec\" clause at " ++ formatRange range) $
 			parseSLTypeFromSExprs spec
 		return $ TL.DJSRepr {
@@ -55,8 +57,34 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-repr") rest)) =
 			TL.paramsOfDirective = params,
 			TL.specOfDirective = spec
 			}
+
+parseTLDirectiveFromSExpr (List range (Cons (Atom _ "emit") rest)) =
+	errorContext ("in \"emit\" directive at " ++ formatRange range) $ do
+		(codeRange, unparsedCode, rest') <- case rest of
+			Cons (Quoted codeRange unparsedCode) rest' ->
+				return (codeRange, unparsedCode, rest')
+			_ -> Left ("expected (emit \"<code>\" <clauses...>)")
+		code <-
+			errorContext ("in code at " ++ formatRange codeRange) $
+			parseJavascriptExprFromString unparsedCode
+		clauses <- parseClausesFromSExprs [("=", True, True)] rest'
+		subs <- sequence [do
+			(name, value) <- case rest of
+				Cons (Quoted _ name) value -> return (name, value)
+				_ -> Left ("malformed (= ...) clause at " ++ formatRange range ++
+					"; expected (= \"<name>\" <value>).")
+			value' <- parseTLMetaObjectFromSExprs value
+			return (name, value')
+			| (range, rest) <- (M.!) clauses "="]
+		return $ TL.DEmit {
+			TL.tagOfDirective = range,
+			TL.codeOfDirective = code,
+			TL.subsOfDirective = subs
+			}
+
 parseTLDirectiveFromSExpr (List range (Cons (Atom r name) rest)) =
 	Left ("invalid directive type \"" ++ name ++ "\" at " ++ formatRange r)
+
 parseTLDirectiveFromSExpr other =
 	Left ("invalid directive at top level at " ++ formatRange (rangeOfSExpr other))
 
@@ -84,8 +112,8 @@ parseTLParameterFromSExpr other =
 parseClausesFromSExprs :: [(String, Bool, Bool)] -> SExprs -> Either String (M.Map String [(Range, SExprs)])
 parseClausesFromSExprs spec seq = do
 	clauses <- parseClauses' seq
-	sequence [
-		let numFound = length (clauses ! name)
+	sequence [do
+		let numFound = length ((M.!) clauses name)
 		when (numFound == 0 && not zeroOk) $
 			Left ("missing mandatory clause \"" ++ name ++ "\" at " ++ formatRange (rangeOfSExprs seq))
 		when (numFound > 1 && not multiOk) $
@@ -93,13 +121,13 @@ parseClausesFromSExprs spec seq = do
 		| (name, zeroOk, multiOk) <- spec]
 	return clauses
 	where
-		parseClauses' :: SExprs -> Either String (M.Map String [Range, SExprs])
+		parseClauses' :: SExprs -> Either String (M.Map String [(Range, SExprs)])
 		parseClauses' (Nil _) = return (M.fromList [(name, []) | (name, _, _) <- spec])
 		parseClauses' (Cons c rest) = do
 			(name, value) <- case c of
 				List _ (Cons (Atom _ name) value) -> return (name, value)
 				_ -> Left ("invalid clause " ++ summarizeSExpr c ++ " at " ++ formatRange (rangeOfSExpr c))
-			unless (any (\(name', _, _) <- name == name') spec) $
+			unless (any (\(name', _, _) -> name == name') spec) $
 				Left ("invalid clause type \"" ++ name ++ "\" at " ++ formatRange (rangeOfSExpr c))
 			rest' <- parseClauses' rest
 			return (M.adjust ((rangeOfSExpr c, value):) name rest')
@@ -121,8 +149,8 @@ parseTLMetaTypeFromSExpr other =
 -- `TL.MetaType`.
 
 parseTLMetaTypeFromSExprs :: SExprs -> Either String (TL.MetaType Range)
-parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-term") rest) =
-	errorContext ("in \"js-term\" meta-type at " ++ formatRange (rangeOfSExprs whole)) $ do
+parseTLMetaTypeFromSExprs whole@(Cons (Atom _ a) rest) | a `elem` ["js-term", "js-sl-term"] =
+	errorContext ("in \"" ++ a ++ "\" meta-type at " ++ formatRange (rangeOfSExprs whole)) $ do
 		ty <- case rest of
 			Nil p -> Left ("missing term-type at " ++ formatPoint p)
 			Cons t (Nil _) -> parseTLMetaObjectFromSExpr t
@@ -130,6 +158,7 @@ parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-term") rest) =
 				" must be enclosed in parentheses")
 		return $ TL.MTJSTerm {
 			TL.tagOfMetaType = rangeOfSExprs whole,
+			TL.hasSLOfMetaType = a == "js-sl-term",
 			TL.typeOfMetaType = ty
 			}
 parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "fun") rest) =
@@ -176,7 +205,7 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "\\") rest) =
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) =
 	errorContext ("in \"js-expr\" at " ++ formatRange (rangeOfSExprs whole)) $ do
 		(codeRange, unparsedCode, rest') <- case rest of
-			Cons (Quoted codeRange unparsedCode) rest') ->
+			Cons (Quoted codeRange unparsedCode) rest' ->
 				return (codeRange, unparsedCode, rest')
 			_ -> Left ("expected (js-expr \"<code>\" <clauses...>)")
 		code <-
@@ -184,7 +213,7 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) =
 			parseJavascriptExprFromString unparsedCode
 		clauses <- parseClausesFromSExprs [("type", False, False), ("spec", True, False), ("=", True, True)] rest'
 		type_ <- let [(_, unparsedType)] = (M.!) clauses "type" in
-			errorContext ("in type at " ++ formatRange (rangeOfSExpr unparsedType)) $
+			errorContext ("in type at " ++ formatRange (rangeOfSExprs unparsedType)) $
 			parseTLMetaObjectFromSExprs unparsedType
 		spec <- case (M.!) clauses "spec" of
 			[(range, rest)] ->
@@ -205,7 +234,7 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) =
 			TL.codeOfMetaObject = code,
 			TL.typeOfMetaObject = type_,
 			TL.specOfMetaObject = spec,
-			TL.implOfMetaObject = impl
+			TL.subsOfMetaObject = subs
 			}
 parseTLMetaObjectFromSExprs whole@(Cons x (Nil _)) =
 	parseTLMetaObjectFromSExpr x

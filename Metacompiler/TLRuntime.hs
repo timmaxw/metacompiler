@@ -1,266 +1,281 @@
 module Metacompiler.TLRuntime where
 
 import Control.Monad (liftM, unless)
+import Control.Monad.State
+import Control.Monad.Trans (lift)
+import qualified Data.Foldable
+import qualified Data.List as L
 import qualified Data.Map as M
+import qualified Data.Set as S
+import qualified Language.ECMAScript3.PrettyPrint as JS
 import qualified Language.ECMAScript3.Syntax as JS
 import qualified Language.ECMAScript3.Syntax.Annotations as JS
 import qualified Metacompiler.JSUtils as JSUtils
 import Metacompiler.SExpr (Range, formatRange)
 import Metacompiler.SExprToSL (errorContext)   -- TODO: Move `errorContext` into its own file
 import qualified Metacompiler.SLSyntax as SL
-import Metacompiler.TLSyntax
+import qualified Metacompiler.TLSyntax as TL
 
--- A `NormedMetaType' is the result of de-sugaring a type and evaluating any
--- variables in the types of `js-term ...` meta-types.
+-- `RMT` stands for `reduced meta-type`. It's an internal de-sugared
+-- representation of meta-types.
 
-data NormedMetaType
+data RMT
+	= RMTJSType
+	| RMTJSTerm RMO Bool
+	| RMTFun (String, RMT) RMT
 
-	= NMTFun NormedMetaType String NormedMetaType
+formatRMT :: RMT -> String
+formatRMT RMTJSType = "js-type"
+formatRMT (RMTJSTerm ty True) = "(js-sl-term " ++ formatRMO ty ++ ")"
+formatRMT (RMTJSTerm ty False) = "(js-term " ++ formatRMO ty ++ ")"
+formatRMT (RMTFun (name, arg) res) = "(fun (" ++ name ++ " :: " ++ formatRMT arg ++ ") -> " ++ formatRMT res ++ ")"
 
-	| NMTJSType
+-- `RMO` stands for `reduced meta-object`. Note that it's not necessarily in
+-- weak head normal form; it may have unbound variables in it.
 
-	-- This is `Nothing` if the term comes from a bare string, and `Just ...`
-	-- where `...` is the type of the term otherwise. This `JSType` is the only
-	-- is the only context where a `JSTypePlaceholder` should ever occur.
-	| NMTJSTerm (Maybe JSType)
+data RMO
+	= RMOVar RMT String
+	| RMOJSRepr String [RMO]
+	| RMOJSTerm RMO (Maybe (SL.Term Range)) (State JSUtils.SymbolRenaming (JS.Expression ()))
+	| RMOFun (String, RMT) RMT (RMO -> RMO)
 
-	deriving (Show, Eq)
+formatRMO :: RMO -> String
+formatRMO (RMOVar _ name) = name
+formatRMO (RMOJSRepr name params) = "(" ++ L.intercalate " " (name:map formatRMO params) ++ ")"
+formatRMO (RMOJSTerm _ _ _) = "<js-term>"
+formatRMO (RMOFun _ _ _) = "<function>"
 
-formatNormedMetaType :: NormedMetaType -> String
--- TODO: Make error messages prettier. This may have to wait until the `js-term`
--- type issues are sorted out.
-formatNormedMetaType = show
+-- `equivalentRMO` returns `True` if the two `RMO`s given are guaranteed to be
+-- equal as long as all of the pairs of variables in the first parameter are
+-- equal.
 
-tryToCastNormedMetaType :: NormedMetaType -> NormedMetaType -> Either String ()
-tryToCastNormedMetaType a b
-	| canCast a b = return ()
-	| otherwise = Left ("expected a value of type " ++ formatNormedMetaType b ++
-		", but instead got a value of type " ++ formatNormedMetaType a)
-	where
-		canCast :: NormedMetaType -> NormedMetaType -> Bool
-		canCast (NMTFun arg1 ret1) (NMTFun arg2 ret2) =
-			(arg1 == ret1) && (arg2 == ret2)
-		canCast (NMTJSType) (NMTJSType) = True
-		canCast (NMTJSTerm Nothing) (NMTJSTerm _) = True
-		canCast (NMTJSTerm (Just type1)) (NMTJSTerm (Just type2)) =
-			type1 == type2
-		canCast _ _ = False
+equivalentRMO :: S.Set (String, String) -> RMO -> RMO -> Bool
+equivalentRMO vars (RMOJSTerm _ _ _) _ = error "not comparable"
+equivalentRMO vars _ (RMOJSTerm _ _ _) = error "not comparable"
+equivalentRMO vars (RMOFun _ _ _) _ = error "not comparable"
+equivalentRMO vars _ (RMOFun _ _ _) = error "not comparable"
+equivalentRMO vars (RMOVar vty1 var1) (RMOVar vty2 var2) =
+	(var1, var2) `S.member` vars || var1 == var2 && Data.Foldable.all (\ (v1, v2) -> v1 /= var1 && v2 /= var2) vars
+equivalentRMO vars (RMOJSRepr name1 params1) (RMOJSRepr name2 params2) =
+	name1 == name2 &&
+	and (zipWith (equivalentRMO vars) params1 params2)
+equivalentRMO vars _ _ = False
 
-computeMetaType :: M.Map String (NormedMetaType, ReducedMetaObject) -> MetaObject Range -> Either String NormedMetaType
+-- `canCastRMT` returns `True` if it's safe to pass a value of the first `RMT`
+-- where a value of the second `RMT` is expected as long as all of the pairs of
+-- variables in the first parameter are equal.
 
-computeMetaType vars (MOApp tag fun arg) = do
-	funType <-
-		errorContext ("in function of application at " ++ formatRange tag) $
-		computeMetaType vars fun
-	argType <-
-		errorContext ("in argument of application at " ++ formatRange tag) $
-		computeMetaType vars arg
-	case funType of
-		NMTFun argType' retType -> do
-			errorContext ("for argument of application at " ++
-					formatRange tag) $
-				tryToCastNormedMetaType argType argType'
-			return retType
-		_ -> Left ("in application at " ++ formatRange tag ++ ", the thing to \
-			\be called has type " ++ formatNormedMetaType funType ++ ", which \
-			\is not the type of a function.")
+canCastRMT :: S.Set (String, String) -> RMT -> RMT -> Bool
+canCastRMT vars (RMTJSType) (RMTJSType) = True
+canCastRMT vars (RMTJSTerm ty1 hasSL1) (RMTJSTerm ty2 hasSL2) =
+	equivalentRMO vars ty1 ty2 &&
+	(hasSL1 || not hasSL2)
+canCastRMT vars (RMTFun (var1, arg1) ret1) (RMTFun (var2, arg2) ret2) =
+	canCastRMT vars arg2 arg1 &&
+	canCastRMT (S.insert (var1, var2) $ S.filter (\ (v1, v2) -> v1 /= var1 && v2 /= var2) $ vars) ret1 ret2
+canCastRMT vars _ _ = False
 
-computeMetaType vars (MOAbs tag params result) = do
+-- `typeOfRMO` returns the `RMT` representing the type of the given `RMO`
+
+typeOfRMO :: RMO -> RMT
+typeOfRMO (RMOVar ty _) = ty
+typeOfRMO (RMOJSRepr _ _) = RMTJSType
+typeOfRMO (RMOJSTerm ty (Just _) _) = RMTJSTerm ty True
+typeOfRMO (RMOJSTerm ty Nothing _) = RMTJSTerm ty False
+typeOfRMO (RMOFun (name, argTy) retTy _) = RMTFun (name, argTy) retTy
+
+-- `reduceMetaType` converts a `TL.MetaType Range` into a `RMT`. It will
+-- also check for validity of variable references and correctness of types as
+-- it traverses the AST.
+
+reduceMetaType :: M.Map String RMO -> TL.MetaType Range -> Either String RMT
+
+reduceMetaType vars (TL.MTJSType tag) = do
+	return RMTJSType
+
+reduceMetaType vars (TL.MTJSTerm tag hasSL ty) = do
+	ty' <- reduceMetaObject vars ty
+	case typeOfRMO ty' of
+		RMTJSType -> return ()
+		_ -> Left ("type at " ++ formatRange (TL.tagOfMetaObject ty) ++ " should \
+			\have meta-type (js-type) but instead has meta-type " ++
+			formatRMT (typeOfRMO ty'))
+	return (RMTJSTerm ty' hasSL)
+
+reduceMetaType vars (TL.MTFun tag params final) = do
 	let
-		processParams :: M.Map String (NormedMetaType, ReducedMetaObject)
-		              -> [(String, MetaType Range)]
-		              -> Either String NormedMetaType
-		processParams vars' [] = do
-			resultType <-
-				errorContext ("in return value of function at " ++
-					formatRange tag) $
-				computeMetaType vars' result
-			return resultType
-		processParams vars' ((paramName, paramType):params') = do
-			paramType' <-
-				errorContext ("in type of parameter \"" ++ paramName ++ "\" \
-					\to function at " ++ formatRange tag) $
-				normMetaType vars' paramType
+		f :: M.Map String RMO -> [(String, TL.MetaType Range)] -> Either String RMT
+		f vars' [] = do
+			reduceMetaType vars' final
+		f vars' ((paramName, paramMetaType):rest) = do
+			paramRMT <- reduceMetaType vars' paramMetaType
+			let vars'' = M.insert paramName (RMOVar paramRMT paramName) vars'
+			f vars'' rest
+	f vars params
 
-			let placeholderValue = case paramType' of
-				NMTJSType -> RMOJSType (JSTypePlaceholder paramName)
-				-- `placeholderValue` is not strictly evaluated; this error
-				-- message will sit harmlessly in the map unless something
-				-- tries to use the value.
-				_ -> error "dependent types should only ever depend on JS types"
+-- `reduceMetaObject` converts a `TL.MetaObject Range` into a `RMO`
+-- and also checks for validity of variable references and correctness of
+-- types.
 
-			let vars'' = M.insert paramName (paramType', placeholderValue) vars'
-			resultType <- processParams vars'' params'
-			return (NMTFun paramType' resultType)
+reduceMetaObject :: M.Map String RMO -> TL.MetaObject Range -> Either String RMO
 
-	ty <- processParams vars params
-	return ty
+reduceMetaObject vars (TL.MOApp tag fun arg) = do
+	funRMO <- reduceMetaObject vars fun
+	(argName, expectedArgRMT, retRMT, funBody) <- case funRMO of
+		RMOFun (n, t1) t2 b -> return (n, t1, t2, b)
+		_ -> Left ("term at " ++ formatRange (TL.tagOfMetaObject fun) ++ " is \
+			\being applied like a function, but has type " ++
+			formatRMT (typeOfRMO funRMO) ++ ".")
+	argRMO <- reduceMetaObject vars arg
+	unless (canCastRMT S.empty (typeOfRMO argRMO) expectedArgRMT) $
+		Left ("argument at " ++ formatRange (TL.tagOfMetaObject arg) ++ " has \
+			\type " ++ formatRMT (typeOfRMO argRMO) ++ ", but function at " ++
+			formatRange (TL.tagOfMetaObject fun) ++ " expects its argument to \
+			\have type " ++ formatRMT expectedArgRMT ++ ".")
+	return (funBody argRMO)
 
-computeMetaType vars (MOVar tag name) = case M.lookup name vars of
-	Just (type_, _) -> return type_
-	Nothing -> Left ("variable \"" ++ name ++ "\" is not in scope")
+reduceMetaObject vars (TL.MOAbs tag params result) =
+	makeAbstraction vars params (\vars' -> reduceMetaObject vars' result)
 
-computeMetaType vars (MOJSExpr tag type_ spec impl) = do
-	shouldBeJSType <-
-		errorContext ("in \"type\" clause of \"js-expr\" at " ++
-			formatRange tag) $
-		computeMetaType vars type_
-	unless (shouldBeJSType == NMTJSType) $
-		Left ("in \"js-expr\" at " ++ formatRange tag ++ ", expected the type \
-			\to have meta-type (js-type), but it had meta-type " ++
-			formatNormedMetaType shouldBeJSType)
-	let actualType = case reduce (M.map snd vars) type_ of
-		RMOJSType ty -> ty
-		_ -> error ("expected RMOJSType; type checker is broken")
-	sequence [do
-		shouldBeJSTerm <- computeMetaType vars value
-		case shouldBeJSTerm of
-			NMTJSTerm _ -> return ()
-			_ -> Left ("in \"impl\" clause of \"js-expr\" at " ++
-				formatRange tag ++ ", in \"(set " ++ show name ++ " ...)\" \
-				\clause value should have meta-type (js-term ...), but it had \
-				\meta-type " ++ formatNormedMetaType shouldBeJSTerm)
-		| (name, value) <- varsOfJavascriptBlock impl]
-	-- TODO: Check validity of spec clause.
-	return (NMTJSTerm (Just actualType))
+reduceMetaObject vars (TL.MOVar tag var) = case M.lookup var vars of
+	Just value -> return value
+	Nothing -> Left ("variable \"" ++ var ++ "\" not in scope at " ++ formatRange tag)
 
-computeMetaType vars (MOJSSubstitution _ _) =
-	return (NMTJSTerm Nothing)
+reduceMetaObject vars (TL.MOJSExpr tag code type_ spec subs) = do
+	typeRMO <- reduceMetaObject vars type_
+	subs' <- sequence [do
+		value' <- reduceMetaObject vars value
+		equiv <- case value' of
+			RMOJSTerm _ _ equiv -> return equiv
+			_ -> Left ("in (js-expr ...) block at " ++ formatRange tag ++ ": \
+				\value for variable " ++ name ++ " at " ++
+				formatRange (TL.tagOfMetaObject value) ++ " should have type \
+				\(js-term ...) but instead had type " ++
+				formatRMT (typeOfRMO value') ++ ".")
+		return (name, equiv)
+		| (name, value) <- subs]
+	let jsEquivalent = do
+		subs'' <- liftM M.fromList $ sequence [do
+			js <- equiv
+			js' <- JSUtils.revariableExpression M.empty js
+			return (name, js')
+			| (name, equiv) <- subs']
+		JSUtils.revariableExpression subs'' (JS.removeAnnotations code)
+	return (RMOJSTerm typeRMO spec jsEquivalent)
 
-normMetaType :: M.Map String (NormedMetaType, ReducedMetaObject) ->  MetaType Range -> Either String NormedMetaType
+-- `processDirective` processes a single TL directive. As input, it takes the
+-- map of globally defined meta-objects before the directive. As output, it
+-- returns the map of globally defined meta-objects after the directive.
 
-normMetaType vars (MTJSType tag) = return NMTJSType
+data Results = Results {
+	definitionsInResults :: M.Map String RMO,
+	emittedCodeOfResults :: String,
+	symbolRenamingStateAfterResults :: JSUtils.SymbolRenaming
+	}
 
-normMetaType vars (MTJSTerm tag ty) = do
-	shouldBeJSType <- computeMetaType vars ty
-	unless (shouldBeJSType == NMTJSType) $
-		Left ("in \"js-term\" at " ++ formatRange tag ++ ", expected the type \
-			\to have meta-type (js-type), but it had meta-type " ++
-			formatNormedMetaType shouldBeJSType)
-	case reduce (M.map snd vars) ty of
-		RMOJSType ty' -> return (NMTJSTerm (Just ty'))
-		_ -> error "should have been a RMOJSType"
+emptyResults :: Results
 
-normMetaType vars (MTFun tag params ret) = do
+emptyResults = Results {
+	definitionsInResults = M.empty,
+	emittedCodeOfResults = "",
+	symbolRenamingStateAfterResults = JSUtils.initialSymbolRenaming
+	}
+
+processDirective :: TL.Directive Range -> StateT Results (Either String) ()
+
+processDirective (TL.DLet tag name params maybeType final) = do
+	Results { definitionsInResults = vars } <- get
+
+	valueRMO <- lift $ errorContext ("in (let ...) directive at " ++ formatRange tag) $ do
+		makeAbstraction vars params $ \vars' -> do
+			finalRMO <- reduceMetaObject vars' final
+			case maybeType of
+				Nothing -> return ()
+				Just type_ -> do
+					rmt <- reduceMetaType vars' type_
+					unless (canCastRMT S.empty (typeOfRMO finalRMO) rmt) $ do
+						Left ("type signature says value should have type " ++
+							formatRMT rmt ++ ", but value actually has type " ++
+							formatRMT (typeOfRMO finalRMO))
+			return finalRMO
+
+	makeDefinition name valueRMO
+
+processDirective (TL.DJSRepr tag name params spec) = do
+	Results { definitionsInResults = vars } <- get
+
+	valueRMO <- lift $ errorContext ("in (js-repr ...) directive at " ++ formatRange tag) $ do
+		makeAbstraction vars params $ \vars' -> do
+			return (RMOJSRepr name [(M.!) vars name | (name, _) <- params])
+
+	makeDefinition name valueRMO
+
+processDirective (TL.DEmit tag code subs) = do
+	Results { definitionsInResults = vars } <- get
+
+	subs' <- lift $ sequence [do
+		value' <- reduceMetaObject vars value
+		equiv <- case value' of
+			RMOJSTerm _ _ equiv -> return equiv
+			_ -> Left ("in (emit ...) block at " ++ formatRange tag ++ ": \
+				\value for variable " ++ name ++ " at " ++
+				formatRange (TL.tagOfMetaObject value) ++ " should have type \
+				\(js-term ...) but instead had type " ++
+				formatRMT (typeOfRMO value') ++ ".")
+		return (name, equiv)
+		| (name, value) <- subs]
+	let jsEquivalent = do
+		subs'' <- liftM M.fromList $ sequence [do
+			js <- equiv
+			js' <- JSUtils.revariableExpression M.empty js
+			return (name, js')
+			| (name, equiv) <- subs']
+		JSUtils.revariableExpression subs'' (JS.removeAnnotations code)
+
+	results <- get
+	let (newEmittedCode, symbolRenamingState') = runState jsEquivalent (symbolRenamingStateAfterResults results)
+	put (results {
+		symbolRenamingStateAfterResults = symbolRenamingState',
+		emittedCodeOfResults = emittedCodeOfResults results ++ "\n\n" ++ JS.renderExpression newEmittedCode
+		})
+
+-- `makeAbstraction` is a common function used by anything that is
+-- parameterized on a series of parameters.
+
+makeAbstraction :: M.Map String RMO
+                -> [(String, TL.MetaType Range)]
+                -> (M.Map String RMO -> Either String RMO)
+                -> Either String RMO
+makeAbstraction vars params final = do
 	let
-		processParams :: M.Map String (NormedMetaType, ReducedMetaObject)
-		              -> [(String, MetaType Range)]
-		              -> Either String NormedMetaType
-		processParams vars' [] = do
-			resultType <-
-				errorContext ("in return type of function type at " ++
-					formatRange tag) $
-				normMetaType vars' ret
-			return resultType
-		processParams vars' ((paramName, paramType):params') = do
-			paramType' <-
-				errorContext ("in type of parameter \"" ++ paramName ++ "\" \
-					\to function type at " ++ formatRange tag) $
-				normMetaType vars' paramType
+		g :: M.Map String RMO -> [(String, TL.MetaType Range)] -> Either String ([RMT], RMT)
+		g vars' [] = do
+			res <- final vars'
+			return ([], typeOfRMO res)
+		g vars' ((paramName, paramType):params) = do
+			paramRMT <- reduceMetaType vars' paramType
+			let vars'' = M.insert paramName (RMOVar paramRMT paramName) vars'
+			(paramRMTs, resultRMT) <- g vars'' params
+			return (paramRMT:paramRMTs, resultRMT)
+	(paramRMTs, resultRMT) <- g vars params
+	let
+		f :: M.Map String RMO -> [((String, TL.MetaType Range), RMT)] -> RMO
+		f vars' [] = case final vars' of
+			Left err -> error ("this should have been caught already: " ++ err)
+			Right rmo -> rmo
+		f vars' (((paramName, _), paramRMT):params) = let
+			restRMT = foldr (\ ((pn, _), pt) rt -> RMTFun (pn, pt) rt) resultRMT params
+			in RMOFun (paramName, paramRMT) restRMT (\param -> f (M.insert paramName param vars') params)
+	return $ f vars (zip params paramRMTs)
 
-			let placeholderValue = case paramType' of
-				NMTJSType -> RMOJSType (JSTypePlaceholder paramName)
-				-- `placeholderValue` is not strictly evaluated; this error
-				-- message will sit harmlessly in the map unless something
-				-- tries to use the value.
-				_ -> error "dependent types should only ever depend on JS types"
+-- `makeDefinition` introduces a definition into the global scope
 
-			let vars'' = safeInsert paramName (paramType', placeholderValue) vars'
-			resultType <- processParams vars'' params'
-			return (NMTFun paramType' resultType)
-
-	processParams vars params
-
--- A `JSType` is a Javascript representation of an SL type.
-
-data JSType
-
-	-- `JSType`s can only come from `js-repr` directives. `nameOfJSType` is the
-	-- name of the original directive that produced this JS type.
-	-- `paramsOfJSType` are what the parameters came out to.
-	= JSType {
-		nameOfJSType :: String,
-		paramsOfJSType :: [JSType]
-	}
-
-	-- This is used for dependent type checking.
-	| JSTypePlaceholder String
-
-	deriving (Show, Eq)
-
--- A `ReducedMetaObject` is the result of resolving variable references and
--- function applications in a `MetaObject` until no further reductions can be
--- performed.
-
-data ReducedMetaObject
-
-	-- If the original `MetaObject`'s meta-type was `fun ...`, then the result
-	-- of reduction will be `RMOFun`. Unlike `MOFun`, `RMOFun` is curried.
-	= RMOFun (ReducedMetaObject -> ReducedMetaObject)
-
-	-- If the original `MetaObject`'s meta-type was `type`, then the result of
-	-- reduction will be `RMOJSType`.
-	| RMOJSType JSType
-
-	-- If the original `MetaObject`'s meta-type was `term ...`, then it must
-	-- eventually resolve to a `js-expr` or substitution term.
-	-- `jsEquivalentOfJSTerm` is the Javascript equivalent of that term.
-	| RMOJSTerm {
-		jsEquivalentOfJSTerm :: JSUtils.RenameSymbols (JS.Expression ())
-	}
-
--- `reduce` reduces a `MetaObject` to a `ReducedMetaObject`. Because recursion
--- is not allowed in TL, it should always terminate.
-
-reduce :: M.Map String ReducedMetaObject -> MetaObject a -> ReducedMetaObject
-reduce vars (MOApp { funOfMetaObject = f, argOfMetaObject = a }) = let
-	RMOFun f' = reduce vars f
-	a' = reduce vars a
-	in f' a'
-reduce vars (MOAbs { paramsOfMetaObject = params, resultOfMetaObject = result }) = build vars params
-	where
-		build vars [] =
-			reduce vars result
-		build vars ((paramName, paramType):params) =
-			RMOFun (\paramValue -> build (M.insert paramName paramValue vars) params)
-reduce vars (MOVar { varOfMetaObject = var }) = case M.lookup var vars of
-	Just value -> value
-	Nothing -> error ("var not in scope: " ++ show var)
-reduce vars (MOJSExpr { specOfMetaObject = s, implOfMetaObject = b }) =
-	RMOJSTerm {
-		jsEquivalentOfJSTerm = expandJavascriptBlock vars b
-	}
-reduce vars (MOJSSubstitution { jsSubstitutionOfMetaObject = x }) =
-	RMOJSTerm {
-		jsEquivalentOfJSTerm = return (JS.removeAnnotations x)
-	}
-
--- `safeUnion`, `safeFromList`, and `safeInsert` are like `M.union`,
--- `M.fromList`, and `M.insert` except that if there is a duplicate value, they
--- call `error` instead of silently overwriting it.
-
-safeUnion :: (Ord k, Show k) => M.Map k v -> M.Map k v -> M.Map k v
-safeUnion = M.unionWithKey (\k -> error ("redefinition of " ++ show k))
-
-safeFromList :: (Ord k, Show k) => [(k, v)] -> M.Map k v
-safeFromList = foldr (uncurry safeInsert) M.empty
-
-safeInsert :: (Ord k, Show k) => k -> v -> M.Map k v -> M.Map k v
-safeInsert k v m = case M.lookup k m of
-	Just _ -> error ("redefinition of " ++ show k)
-	Nothing -> M.insert k v m
-
--- `expandJavascriptBlock` performs the variable substitutions in the given
--- `JavascriptBlock` and returns the result as a `JS.Expression`.
-
-expandJavascriptBlock :: M.Map String ReducedMetaObject -> JavascriptBlock a -> JSUtils.RenameSymbols (JS.Expression ())
-expandJavascriptBlock vars (JavascriptBlock { codeOfJavascriptBlock = code, varsOfJavascriptBlock = substitutions }) = do
-	substitutions' <- liftM safeFromList $ sequence [do
-		let RMOJSTerm jsEquivalent = reduce vars value
-		js <- jsEquivalent
-		js' <- JSUtils.revariableExpression M.empty js
-		return (name, js')
-		| (name, value) <- substitutions]
-	JSUtils.revariableExpression substitutions' (JS.removeAnnotations code)
-
+makeDefinition :: String -> RMO -> StateT Results (Either String) ()
+makeDefinition name value = do
+	results <- get
+	case M.lookup name (definitionsInResults results) of
+		Just _ -> lift (Left ("name " ++ show name ++ " is already defined"))
+		Nothing -> put (results {
+			definitionsInResults = M.insert name value (definitionsInResults results)
+			})
 

@@ -2,33 +2,34 @@
 
 This document is a detailed specification for the translation files that `metacompiler` takes as input. It assumes you are already familiar with SL. Also, you are advised to "get the hang of" translation files by reading some examples before trying to read this dry document.
 
-`metacompiler` translates SL to Javascript by means of an intermediate language, the "translation language". Each type and term in the translation language has both a Javascript equivalent and an SL equivalent. A translation file contains a series of translation directives, which bring into scope types or terms in the translation language. When the compiler is asked to translate a SL term into Javascript, it constructs a translation-language term that is equivalent to the SL term and then emits the Javascript equivalent of that translation-language term.
-
-## Meta-objects and meta-types
+`metacompiler` is scripted and controlled by means of a language called the "translation language" or "TL". Technically, TL is a non-Turing-complete dependently-typed functional programming language, but its sole purpose is to script `metacompiler` so it isn't a very powerful or interesting language on its own.
 
 For the purposes of this document, we will introduce some terminology that isn't directly useful to a `metacompiler` user:
 
- *  A "meta-object" is a translation-language type or a translation-language term, parameterized on zero or more meta-objects.
+ *  A "meta-object" is a value in the translation language.
 
- *  A "meta-type" is the type of a meta-object: How many parameters does it take? What are their meta-types? Is the result a type or a term, and if it is a term, what is that term's type?
+ *  A "meta-type" is the type of a meta-object.
 
 ## Meta-types
 
-The following syntactic forms are for meta-types:
+The following meta-types exist in the translation language:
 
-### The meta-type of unparameterized types: `js-type`
+### The meta-type of Javascript type representations: `js-type`
 
 ```
 'js-type'
 ```
 
-This is the meta-type of unparameterized translation-language types which have Javascript equivalents.
+A meta-object of meta-type `js-type` represents a way to represent a SL type in Javascript. It has an SL equivalent, which is an SL type.
 
-### The meta-type of unparameterized terms: `js-term`
+### The meta-type of Javascript terms: `js-term` and `js-sl-term`
 
 ```
 'js-term' (<type>)
+'js-sl-term' (<type>)
 ```
+
+A meta-object of meta-type `js-term` represents a Javascript term. The Javascript term represents an SL value, which has type . A meta-object of meta-type `js-sl-term` 
 
 This is the meta-type of unparameterized translation-language terms which have Javascript equivalents. `<type>` is, naturally, a meta-object that has meta-type `js-type`. The parentheses can be omitted if `<type>` is one word.
 

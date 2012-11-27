@@ -126,34 +126,24 @@ traverseStatement visitor statement = case statement of
 -- behaviors are rolled together is that replacing bound variables with newly-
 -- generated symbols requires the ability to substitute recursively.
 
--- The `RenameSymbols` monad is used to generate unique names for symbols.
+-- The `State SymbolRenaming` monad is used to generate unique names for
+-- symbols.
 
-data RenameSymbols a = RenameSymbols { unRenameSymbols :: State Int a }
+data SymbolRenaming = SymbolRenaming Int
 
-instance Monad RenameSymbols where
-	return = RenameSymbols . return
-	a >>= b = RenameSymbols (unRenameSymbols a >>= unRenameSymbols . b)
-
-instance Applicative RenameSymbols where
-	pure = return
-	(<*>) = liftM2 ($)
-
-instance Functor RenameSymbols where
-	fmap f = RenameSymbols . fmap f . unRenameSymbols
-
-renameSymbol :: String -> RenameSymbols String
+renameSymbol :: String -> State SymbolRenaming String
 renameSymbol original = do
-	num <- RenameSymbols get
-	RenameSymbols (put (num + 1))
+	SymbolRenaming num <- get
+	put (SymbolRenaming (num + 1))
 	return (original ++ "_" ++ show num)
 
-runRenameSymbols :: RenameSymbols a -> a
-runRenameSymbols x = evalState (unRenameSymbols x) 1
+initialSymbolRenaming :: SymbolRenaming
+initialSymbolRenaming = SymbolRenaming 0
 
 -- `makeRevariableVisitor` creates a `Visitor` that will revariable whatever
 -- expression or statement it is applied to, with the given substitutions.
 
-makeRevariableVisitor :: M.Map String (Expression ()) -> Visitor RenameSymbols ()
+makeRevariableVisitor :: M.Map String (Expression ()) -> Visitor (State SymbolRenaming) ()
 makeRevariableVisitor subs = (defaultVisitor (makeRevariableVisitor subs)) {
 	visitExpression = revariableExpression subs,
 	visitStatement = revariableStatement subs
@@ -179,7 +169,7 @@ makeRevariableVisitor subs = (defaultVisitor (makeRevariableVisitor subs)) {
 -- end result would be:
 --     function (x_1) { var x_1, y_1; }
 
-revariableScope :: M.Map String (Expression ()) -> M.Map String String -> [Statement ()] -> RenameSymbols [Statement ()]
+revariableScope :: M.Map String (Expression ()) -> M.Map String String -> [Statement ()] -> State SymbolRenaming [Statement ()]
 revariableScope subs paramSubs root = do
 	(root', varSubs) <- runStateT (mapM (traverseStatement lookForVarDecls) root) paramSubs
 	let subs' = M.union subs (M.map (VarRef () . Id ()) varSubs)
@@ -187,7 +177,7 @@ revariableScope subs paramSubs root = do
 
 -- `revariableExpression` revariables the given expression.
 
-revariableExpression :: M.Map String (Expression ()) -> Expression () -> RenameSymbols (Expression ())
+revariableExpression :: M.Map String (Expression ()) -> Expression () -> State SymbolRenaming (Expression ())
 revariableExpression subs (VarRef () (Id () name)) = case M.lookup name subs of
 	Just value -> return value
 	Nothing -> return (VarRef () (Id () name))
@@ -201,7 +191,7 @@ revariableExpression subs other = traverseExpression (makeRevariableVisitor subs
 
 -- `revariableStatement` revariables the given statement.
 
-revariableStatement :: M.Map String (Expression ()) -> Statement () -> RenameSymbols (Statement ())
+revariableStatement :: M.Map String (Expression ()) -> Statement () -> State SymbolRenaming (Statement ())
 revariableStatement subs (FunctionStmt () name params body) = do
 	let paramNames = [str | Id () str <- params]
 	paramNames' <- mapM renameSymbol paramNames
@@ -226,7 +216,7 @@ revariableStatement subs other = traverseStatement (makeRevariableVisitor subs) 
 -- variable in place of generating a new one. For example, `var x, x;` would be
 -- transformed to `var x_1, x_1;` or something like that. 
 
-lookForVarDecls :: Visitor (StateT (M.Map String String) RenameSymbols) ()
+lookForVarDecls :: Visitor (StateT (M.Map String String) (State SymbolRenaming)) ()
 lookForVarDecls = (defaultVisitor lookForVarDecls) {
 	visitStatement = (\ statement -> case statement of
 		VarDeclStmt () vars -> do
@@ -261,7 +251,7 @@ lookForVarDecls = (defaultVisitor lookForVarDecls) {
 		)
 	}
 	where
-		foundAVarDecl :: String -> StateT (M.Map String String) RenameSymbols String
+		foundAVarDecl :: String -> StateT (M.Map String String) (State SymbolRenaming) String
 		foundAVarDecl old = do
 			oldState <- get
 			case M.lookup old oldState of
