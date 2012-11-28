@@ -29,3 +29,20 @@
 	(spec (times x y))
 ))
 
+(let NatAsNumberCase
+        (res :: js-type)
+        (subject :: js-term NatAsNumber)
+        (zeroClause :: js-term res) (succClause :: fun (a :: js-term NatAsNumber) -> js-term res)
+        = (js-expr
+    [[
+        (function(s) {
+            if (s == 0) { return zc; }
+            else { return sc; }
+        })(subj)
+    ]]
+    (= "zc" zeroClause)
+    (= "sc" (succClause (js-expr "s-1" (type NatAsNumber))))
+    (= "subj" subject)
+    (type res)
+    (spec (case subject of (Zero) -> (zeroClause) (Succ a) -> (succClause a)))
+))

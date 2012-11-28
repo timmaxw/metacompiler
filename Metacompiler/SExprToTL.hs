@@ -1,6 +1,7 @@
 module Metacompiler.SExprToTL where
 
 import Control.Monad (when, unless)
+import Data.Char (isSpace)
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.Parser as JS
 import qualified Language.ECMAScript3.Syntax as JS
@@ -264,7 +265,9 @@ parseTLMetaObjectFromSExprs other =
 
 parseJavascriptExprFromString :: String -> Either String (JS.Expression JS.SourcePos)
 parseJavascriptExprFromString string =
-	case JS.parse JS.parseExpression "<string>" string of
+	case JS.parse JS.parseExpression "<string>" string' of
 		Left err -> Left (show err)
 		Right x -> return x
+	where
+		string' = dropWhile isSpace string
 

@@ -18,7 +18,7 @@ stepPoint' :: Int -> Point -> Point
 stepPoint' n (Point l c) = (Point l (c+n))
 
 stepNewlinePoint :: Point -> Point
-stepNewlinePoint (Point l c) = (Point (l+1) 0)
+stepNewlinePoint (Point l c) = (Point (l+1) 1)
 
 -- `summarize` returns the input in quotes, truncated if it is long.
 
@@ -39,7 +39,7 @@ errorContext s (Right x) = Right x
 
 parseSExprs :: String -> Either String SExprs
 parseSExprs string1 = do
-	let (string2, point2) = strip (string1, Point 0 0)
+	let (string2, point2) = strip (string1, Point 1 1)
 	(topLevels, (string3, point3)) <- parseMany (string2, point2)
 	let (string4, point4) = strip (string3, point3)
 	unless (null string4) $

@@ -3,10 +3,9 @@ module Metacompiler.TLRuntime where
 import Control.Monad (liftM, unless)
 import Control.Monad.State
 import Control.Monad.Trans (lift)
-import qualified Data.Foldable
-import qualified Data.List as L
+import qualified Data.List (intercalate)
 import qualified Data.Map as M
-import qualified Data.Set as S
+import qualified Data.Maybe (isJust)
 import qualified Language.ECMAScript3.PrettyPrint as JS
 import qualified Language.ECMAScript3.Syntax as JS
 import qualified Language.ECMAScript3.Syntax.Annotations as JS
@@ -31,58 +30,137 @@ formatRMT (RMTJSTerm ty False) = "(js-term " ++ formatRMO ty ++ ")"
 formatRMT (RMTFun (name, arg) res) = "(fun (" ++ name ++ " :: " ++ formatRMT arg ++ ") -> " ++ formatRMT res ++ ")"
 
 -- `RMO` stands for `reduced meta-object`. Note that it's not necessarily in
--- weak head normal form; it may have unbound variables in it.
+-- weak head normal form because of `RMOUnknown`.
 
 data RMO
-	= RMOVar RMT String
+	-- `RMOUnknown ty _` represents an unknown value of type `ty`. These arise
+	-- when we try to evaluate a term which contains a variable whose value is
+	-- not known; this happens when we are reasoning about dependent types.
+	-- 
+	-- If the `RMOUnknown` corresponds exactly to a single variable, then the
+	-- second field will be `(Just name)` where `name` is the name of the
+	-- variable. This allows for comparison of dependent types in simple cases.
+	-- If the second field is `Nothing`, then the `RMOUnknown` could have any
+	-- value.
+	= RMOUnknown RMT (Maybe String)
+
+	-- `RMOJSRepr`, `RMOJSTerm`, and `RMOFun` are in weak head normal form.
 	| RMOJSRepr String [RMO]
 	| RMOJSTerm RMO (Maybe (SL.Term Range)) (State JSUtils.SymbolRenaming (JS.Expression ()))
 	| RMOFun (String, RMT) RMT (RMO -> RMO)
 
 formatRMO :: RMO -> String
-formatRMO (RMOVar _ name) = name
-formatRMO (RMOJSRepr name params) = "(" ++ L.intercalate " " (name:map formatRMO params) ++ ")"
-formatRMO (RMOJSTerm _ _ _) = "<js-term>"
-formatRMO (RMOFun _ _ _) = "<function>"
+formatRMO (RMOUnknown ty (Just name)) = name
+formatRMO (RMOUnknown ty Nothing) = "<unknown " ++ formatRMT ty ++ ">"
+formatRMO (RMOJSRepr name params) = "(" ++ Data.List.intercalate " " (name:map formatRMO params) ++ ")"
+formatRMO unprintable = "<" ++ formatRMT (typeOfRMO unprintable) ++ ">"
 
--- `equivalentRMO` returns `True` if the two `RMO`s given are guaranteed to be
--- equal as long as all of the pairs of variables in the first parameter are
--- equal.
+-- `equivalentRMO` checks if two `RMO`s are equivalent. `canCastRMT` checks if
+-- it's safe to cast from one `RMT` to another. Both return one of three
+-- outcomes: `Provably True`, `NotProvable`, or `Provably False`. Both take a
+-- mapping from pairs of variable names to `Provability Bool`, which indicates
+-- which variables in the first expression's context are provably equal /
+-- provably not equal to variables in the second expression's context.
 
-equivalentRMO :: S.Set (String, String) -> RMO -> RMO -> Bool
-equivalentRMO vars (RMOJSTerm _ _ _) _ = error "not comparable"
-equivalentRMO vars _ (RMOJSTerm _ _ _) = error "not comparable"
-equivalentRMO vars (RMOFun _ _ _) _ = error "not comparable"
-equivalentRMO vars _ (RMOFun _ _ _) = error "not comparable"
-equivalentRMO vars (RMOVar vty1 var1) (RMOVar vty2 var2) =
-	(var1, var2) `S.member` vars || var1 == var2 && Data.Foldable.all (\ (v1, v2) -> v1 /= var1 && v2 /= var2) vars
+data Provability a = Provably a | NotProvable
+
+provabilityAnd :: Provability Bool -> Provability Bool -> Provability Bool
+provabilityAnd (Provably True) (Provably True) = Provably True
+provabilityAnd (Provably False) _ = Provably False
+provabilityAnd _ (Provably False) = Provably False
+provabilityAnd _ _ = NotProvable
+
+equivalentRMO :: M.Map (String, String) (Provability Bool) -> RMO -> RMO -> Provability Bool
+equivalentRMO vars (RMOUnknown _ (Just var1)) (RMOUnknown _ (Just var2)) =
+	case M.lookup (var1, var2) vars of
+		Just res -> res
+		Nothing
+			| var1 == var2 && varsNotMentioned -> Provably True
+			| otherwise -> NotProvable
+			where varsNotMentioned = all (\ (v1, v2) -> v1 /= var1 && v2 /= var2) (M.keys vars)
 equivalentRMO vars (RMOJSRepr name1 params1) (RMOJSRepr name2 params2) =
-	name1 == name2 &&
-	and (zipWith (equivalentRMO vars) params1 params2)
-equivalentRMO vars _ _ = False
+	if name1 == name2
+		then foldr provabilityAnd (Provably True) (zipWith (equivalentRMO vars) params1 params2)
+		else Provably False
+equivalentRMO vars _ _ = NotProvable
 
--- `canCastRMT` returns `True` if it's safe to pass a value of the first `RMT`
--- where a value of the second `RMT` is expected as long as all of the pairs of
--- variables in the first parameter are equal.
-
-canCastRMT :: S.Set (String, String) -> RMT -> RMT -> Bool
-canCastRMT vars (RMTJSType) (RMTJSType) = True
+canCastRMT :: M.Map (String, String) (Provability Bool) -> RMT -> RMT -> Provability Bool
+canCastRMT vars (RMTJSType) (RMTJSType) = Provably True
 canCastRMT vars (RMTJSTerm ty1 hasSL1) (RMTJSTerm ty2 hasSL2) =
-	equivalentRMO vars ty1 ty2 &&
-	(hasSL1 || not hasSL2)
+	if (hasSL1 || not hasSL2)
+		then equivalentRMO vars ty1 ty2
+		else Provably False
 canCastRMT vars (RMTFun (var1, arg1) ret1) (RMTFun (var2, arg2) ret2) =
-	canCastRMT vars arg2 arg1 &&
-	canCastRMT (S.insert (var1, var2) $ S.filter (\ (v1, v2) -> v1 /= var1 && v2 /= var2) $ vars) ret1 ret2
-canCastRMT vars _ _ = False
+	canCastRMT vars arg2 arg1
+	`provabilityAnd`
+	canCastRMT
+		(M.insert (var1, var2) (Provably True) $ M.filterWithKey (\ (v1, v2) _ -> v1 /= var1 && v2 /= var2) $ vars)
+		ret1 ret2
+canCastRMT vars _ _ = Provably False
+
+checkCanCastRMT :: String -> RMT -> RMT -> Either String ()
+checkCanCastRMT what expectedRMT actualRMT = case canCastRMT M.empty actualRMT expectedRMT of
+	Provably True ->
+		return ()
+	Provably False ->
+		Left (firstPart ++ " It is impossible to cast the latter to the former.")
+	NotProvable ->
+		Left (firstPart ++ " metacompiler cannot prove that it is possible to \
+			\cast the latter to the former.")
+	where
+		firstPart = "The expected type of " ++ what ++ " is " ++
+			formatRMT expectedRMT ++ ", but the actual type was " ++
+			formatRMT actualRMT ++ "."
+
+checkCanCastRMTToJSTerm :: String -> Bool -> RMT -> Either String ()
+checkCanCastRMTToJSTerm what requireSL actualRMT = case actualRMT of
+	RMTJSTerm _ hasSL | hasSL || not requireSL ->
+		return ()
+	otherType ->
+		Left ("The expected type of " ++ what ++ " is " ++
+			(if requireSL then "(js-sl-term ...)" else "(js-term ...)") ++
+			", but the actual type was " ++ formatRMT actualRMT ++ ". It is \
+			\impossible to cast the latter to the former.")
 
 -- `typeOfRMO` returns the `RMT` representing the type of the given `RMO`
 
 typeOfRMO :: RMO -> RMT
-typeOfRMO (RMOVar ty _) = ty
+typeOfRMO (RMOUnknown ty _) = ty
 typeOfRMO (RMOJSRepr _ _) = RMTJSType
 typeOfRMO (RMOJSTerm ty (Just _) _) = RMTJSTerm ty True
 typeOfRMO (RMOJSTerm ty Nothing _) = RMTJSTerm ty False
 typeOfRMO (RMOFun (name, argTy) retTy _) = RMTFun (name, argTy) retTy
+
+-- `substituteRMT` and `substituteRMO` assign to the value of a variable in the
+-- given RMO.
+
+substituteRMT :: M.Map String RMO -> RMT -> RMT
+substituteRMT vars RMTJSType =
+	RMTJSType
+substituteRMT vars (RMTJSTerm ty hasSL) =
+	RMTJSTerm (substituteRMO vars ty) hasSL
+substituteRMT vars (RMTFun (argName, argType) retType) =
+	RMTFun
+		(argName, substituteRMT vars argType)
+		(substituteRMT (M.delete argName vars) retType)
+
+substituteRMO :: M.Map String RMO -> RMO -> RMO
+substituteRMO vars (RMOUnknown ty (Just name)) | name `M.member` vars =
+	(M.!) vars name
+substituteRMO vars (RMOUnknown ty val) =
+	RMOUnknown (substituteRMT vars ty) val
+substituteRMO vars (RMOJSRepr name params) =
+	RMOJSRepr name (map (substituteRMO vars) params)
+substituteRMO vars (RMOJSTerm ty maybeSL jsEquivalent) =
+	RMOJSTerm
+		(substituteRMO vars ty)
+		(fmap (const (error "SL not supported yet")) maybeSL)
+		jsEquivalent
+substituteRMO vars (RMOFun (argName, argType) retType impl) =
+	RMOFun
+		(argName, substituteRMT vars argType)
+		(substituteRMT (M.delete argName vars) retType)
+		(substituteRMO vars . impl)
 
 -- `reduceMetaType` converts a `TL.MetaType Range` into a `RMT`. It will
 -- also check for validity of variable references and correctness of types as
@@ -109,8 +187,9 @@ reduceMetaType vars (TL.MTFun tag params final) = do
 			reduceMetaType vars' final
 		f vars' ((paramName, paramMetaType):rest) = do
 			paramRMT <- reduceMetaType vars' paramMetaType
-			let vars'' = M.insert paramName (RMOVar paramRMT paramName) vars'
-			f vars'' rest
+			let vars'' = M.insert paramName (RMOUnknown paramRMT (Just paramName)) vars'
+			resultRMT <- f vars'' rest
+			return (RMTFun (paramName, paramRMT) resultRMT)
 	f vars params
 
 -- `reduceMetaObject` converts a `TL.MetaObject Range` into a `RMO`
@@ -119,54 +198,60 @@ reduceMetaType vars (TL.MTFun tag params final) = do
 
 reduceMetaObject :: M.Map String RMO -> TL.MetaObject Range -> Either String RMO
 
-reduceMetaObject vars (TL.MOApp tag fun arg) = do
-	funRMO <- reduceMetaObject vars fun
-	(argName, expectedArgRMT, retRMT, funBody) <- case funRMO of
-		RMOFun (n, t1) t2 b -> return (n, t1, t2, b)
-		_ -> Left ("term at " ++ formatRange (TL.tagOfMetaObject fun) ++ " is \
-			\being applied like a function, but has type " ++
-			formatRMT (typeOfRMO funRMO) ++ ".")
-	argRMO <- reduceMetaObject vars arg
-	unless (canCastRMT S.empty (typeOfRMO argRMO) expectedArgRMT) $
-		Left ("argument at " ++ formatRange (TL.tagOfMetaObject arg) ++ " has \
-			\type " ++ formatRMT (typeOfRMO argRMO) ++ ", but function at " ++
-			formatRange (TL.tagOfMetaObject fun) ++ " expects its argument to \
-			\have type " ++ formatRMT expectedArgRMT ++ ".")
-	return (funBody argRMO)
+reduceMetaObject vars (TL.MOApp tag fun arg) =
+	errorContext ("in application at " ++ formatRange tag) $ do
+		funRMO <- reduceMetaObject vars fun
+		case typeOfRMO funRMO of
+			RMTFun (argName, expectedArgRMT) retRMT -> do
+				argRMO <- reduceMetaObject vars arg
+				checkCanCastRMT
+					("the argument at " ++ formatRange (TL.tagOfMetaObject arg) ++
+						"to the function at " ++ formatRange (TL.tagOfMetaObject fun))
+					expectedArgRMT
+					(typeOfRMO argRMO)
+				case funRMO of
+					RMOFun _ _ funBody ->
+						return (funBody argRMO)
+					RMOUnknown _ _ ->
+						return (RMOUnknown (substituteRMT (M.singleton argName argRMO) retRMT) Nothing)
+					_ -> error "checkCanCastRMT should have caught this"
+			_ -> Left ("Term at " ++ formatRange (TL.tagOfMetaObject fun) ++ " is \
+						\being applied like a function, but has type " ++
+						formatRMT (typeOfRMO funRMO) ++ ".")
 
 reduceMetaObject vars (TL.MOAbs tag params result) =
-	makeAbstraction vars params (\vars' -> reduceMetaObject vars' result)
+	errorContext ("in abstraction at " ++ formatRange tag) $ do
+		makeAbstraction vars params (\vars' -> reduceMetaObject vars' result)
 
 reduceMetaObject vars (TL.MOVar tag var) = case M.lookup var vars of
 	Just value -> return value
 	Nothing -> Left ("variable \"" ++ var ++ "\" not in scope at " ++ formatRange tag)
 
-reduceMetaObject vars (TL.MOJSExpr tag code type_ spec subs) = do
-	typeRMO <- reduceMetaObject vars type_
-	subs' <- sequence [do
-		value' <- reduceMetaObject vars value
-		equiv <- case value' of
-			RMOJSTerm _ _ equiv -> return equiv
-			RMOVar (RMTJSTerm _ _) _ -> return $
-				-- If we are evaluating with free variables, then we are in the
-				-- type-checking phase, so our JS equivalent should never be
-				-- accessed. So this `error` should never be evaluated.
-				error "evaluation of js-term hit free variable"
-			_ -> Left ("in (js-expr ...) block at " ++ formatRange tag ++ ": \
-				\value for variable " ++ name ++ " at " ++
-				formatRange (TL.tagOfMetaObject value) ++ " should have type \
-				\(js-term ...) but instead had type " ++
-				formatRMT (typeOfRMO value') ++ ". Value is " ++ formatRMO value')
-		return (name, equiv)
-		| (name, value) <- subs]
-	let jsEquivalent = do
-		subs'' <- liftM M.fromList $ sequence [do
-			js <- equiv
-			js' <- JSUtils.revariableExpression M.empty js
-			return (name, js')
-			| (name, equiv) <- subs']
-		JSUtils.revariableExpression subs'' (JS.removeAnnotations code)
-	return (RMOJSTerm typeRMO spec jsEquivalent)
+reduceMetaObject vars (TL.MOJSExpr tag code type_ spec subs) =
+	errorContext ("in (js-expr ...) at " ++ formatRange tag) $ do
+		typeRMO <- reduceMetaObject vars type_
+		subs' <- sequence [errorContext ("in substitution for variable " ++ show name) $ do
+			value' <- reduceMetaObject vars value
+			checkCanCastRMTToJSTerm "the new value" False (typeOfRMO value')
+			case value' of
+				RMOJSTerm _ _ equiv ->
+					return (Just (name, equiv))
+				RMOUnknown (RMTJSTerm _ _) _ ->
+					return Nothing
+				_ -> error "checkCanCastRMTToJSTerm should have caught this"
+			| (name, value) <- subs]
+		case sequence subs' of
+			Just subs'' -> do
+				let jsEquivalent = do
+					subs''' <- liftM M.fromList $ sequence [do
+						js <- equiv
+						js' <- JSUtils.revariableExpression M.empty js
+						return (name, js')
+						| (name, equiv) <- subs'']
+					JSUtils.revariableExpression subs''' (JS.removeAnnotations code)
+				return (RMOJSTerm typeRMO spec jsEquivalent)
+			Nothing -> do
+				return (RMOUnknown (RMTJSTerm typeRMO (Data.Maybe.isJust spec)) Nothing)
 
 -- `processDirective` processes a single TL directive. As input, it takes the
 -- map of globally defined meta-objects before the directive. As output, it
@@ -198,10 +283,7 @@ processDirective (TL.DLet tag name params maybeType final) = do
 				Nothing -> return ()
 				Just type_ -> do
 					rmt <- reduceMetaType vars' type_
-					unless (canCastRMT S.empty (typeOfRMO finalRMO) rmt) $ do
-						Left ("type signature says value should have type " ++
-							formatRMT rmt ++ ", but value actually has type " ++
-							formatRMT (typeOfRMO finalRMO))
+					checkCanCastRMT "the value (according to the type signature)" rmt (typeOfRMO finalRMO)
 			return finalRMO
 
 	makeDefinition name valueRMO
@@ -218,16 +300,14 @@ processDirective (TL.DJSRepr tag name params spec) = do
 processDirective (TL.DEmit tag code subs) = do
 	Results { definitionsInResults = vars } <- get
 
-	subs' <- lift $ sequence [do
-		value' <- reduceMetaObject vars value
-		equiv <- case value' of
-			RMOJSTerm _ _ equiv -> return equiv
-			_ -> Left ("in (emit ...) block at " ++ formatRange tag ++ ": \
-				\value for variable " ++ name ++ " at " ++
-				formatRange (TL.tagOfMetaObject value) ++ " should have type \
-				\(js-term ...) but instead had type " ++
-				formatRMT (typeOfRMO value') ++ ". Value is " ++ formatRMO value')
-		return (name, equiv)
+	subs' <- lift $ errorContext ("in (emit ...) directive at " ++ formatRange tag) $ sequence [
+		errorContext ("in substitution for variable " ++ name) $ do
+			value' <- reduceMetaObject vars value
+			checkCanCastRMTToJSTerm "the new value" False (typeOfRMO value')
+			let equiv = case value' of
+				RMOJSTerm _ _ equiv -> equiv
+				_ -> error "checkCanCastRMTToJSTerm should have caught this"
+			return (name, equiv)
 		| (name, value) <- subs]
 	let jsEquivalent = do
 		subs'' <- liftM M.fromList $ sequence [do
@@ -262,7 +342,7 @@ makeAbstraction vars params final = do
 			return ([], typeOfRMO res)
 		g vars' ((paramName, paramType):params) = do
 			paramRMT <- reduceMetaType vars' paramType
-			let vars'' = M.insert paramName (RMOVar paramRMT paramName) vars'
+			let vars'' = M.insert paramName (RMOUnknown paramRMT (Just paramName)) vars'
 			(paramRMTs, resultRMT) <- g vars'' params
 			return (paramRMT:paramRMTs, resultRMT)
 	(paramRMTs, resultRMT) <- g vars params
@@ -282,7 +362,7 @@ makeDefinition :: String -> RMO -> StateT Results (Either String) ()
 makeDefinition name value = do
 	results <- get
 	case M.lookup name (definitionsInResults results) of
-		Just _ -> lift (Left ("name " ++ show name ++ " is already defined"))
+		Just _ -> lift (Left ("Name " ++ show name ++ " is already defined"))
 		Nothing -> put (results {
 			definitionsInResults = M.insert name value (definitionsInResults results)
 			})
