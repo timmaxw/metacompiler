@@ -253,13 +253,15 @@ reduceMetaObject vars (TL.MOJSExpr tag code type_ spec subs) =
 			Nothing -> do
 				return (RMOUnknown (RMTJSTerm typeRMO (Data.Maybe.isJust spec)) Nothing)
 
--- `processDirective` processes a single TL directive. As input, it takes the
--- map of globally defined meta-objects before the directive. As output, it
--- returns the map of globally defined meta-objects after the directive.
+-- `processDirectives` processes a group of TL directives. It works in a
+-- `StateT Results ...` monad so that it can make definitions and such at the
+-- global scope. Directives that are processed as part of the same group can
+-- refer to one another recursively.
 
 data Results = Results {
 	definitionsInResults :: M.Map String RMO,
 	emittedCodeOfResults :: String,
+	globalTableOfResults :: M.Map (JSGlobalUniqueId, M.Map String IndexRMO) 
 	symbolRenamingStateAfterResults :: JSUtils.SymbolRenaming
 	}
 
@@ -271,7 +273,9 @@ emptyResults = Results {
 	symbolRenamingStateAfterResults = JSUtils.initialSymbolRenaming
 	}
 
-processDirective :: TL.Directive Range -> StateT Results (Either String) ()
+processDirectives :: [TL.Directive Range] -> StateT Results (Either String) ()
+processDirectives directives = do
+	
 
 processDirective (TL.DLet tag name params maybeType final) = do
 	Results { definitionsInResults = vars } <- get

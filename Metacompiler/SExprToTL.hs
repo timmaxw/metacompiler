@@ -237,6 +237,14 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) =
 			TL.specOfMetaObject = spec,
 			TL.subsOfMetaObject = subs
 			}
+parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-global") rest) =
+	errorContext ("in \"js-global\" at " ++ formatRange (rangeOfSExprs whole)) $ do
+		content <- parseTLMetaObjectFromSExprs rest
+		return (TL.MOJSGlobal {
+			TL.tagOfMetaObject = rangeOfSExprs whole,
+			TL.uniqueIdOfMetaObject = JSGlobalUniqueId (formatRange (rangeOfSExprs whole)),
+			TL.contentOfMetaObject = content
+			})
 parseTLMetaObjectFromSExprs whole@(Cons x (Nil _)) =
 	parseTLMetaObjectFromSExpr x
 parseTLMetaObjectFromSExprs whole@(Cons first args) = do
