@@ -44,14 +44,6 @@ data RMO
 	-- value.
 	= RMOUnknown RMT (Maybe String)
 
-	-- `RMOLoopBreaker` is to make it easier to implement recursion. It's
-	-- equivalent to its third field. Its second field is the type of its third
-	-- field. This is so that the type can be checked without forcing
-	-- evaluation of the actual RMO. The first field should be unique on each
-	-- `RMOLoopBreaker`. In addition, its third field should contain no unbound
-	-- variables.
-	| RMOLoopBreaker String RMT RMO
-
 	-- `RMOJSRepr`, `RMOJSTerm`, and `RMOFun` are in weak head normal form.
 	| RMOJSRepr String [RMO]
 	| RMOJSTerm RMO (Maybe (SL.Term Range)) (State JSGlobals (JS.Expression ()))
@@ -60,7 +52,6 @@ data RMO
 formatRMO :: RMO -> String
 formatRMO (RMOUnknown ty (Just name)) = name
 formatRMO (RMOUnknown ty Nothing) = "<unknown " ++ formatRMT ty ++ ">"
-formatRMO (RMOLoopBreaker _ _ x) = formatRMO x
 formatRMO (RMOJSRepr name params) = "(" ++ Data.List.intercalate " " (name:map formatRMO params) ++ ")"
 formatRMO unprintable = "<" ++ formatRMT (typeOfRMO unprintable) ++ ">"
 
@@ -68,7 +59,6 @@ formatRMO unprintable = "<" ++ formatRMT (typeOfRMO unprintable) ++ ">"
 
 typeOfRMO :: RMO -> RMT
 typeOfRMO (RMOUnknown ty _) = ty
-typeOfRMO (RMOLoopBreaker _ ty _) = ty
 typeOfRMO (RMOJSRepr _ _) = RMTJSType
 typeOfRMO (RMOJSTerm ty (Just _) _) = RMTJSTerm ty True
 typeOfRMO (RMOJSTerm ty Nothing _) = RMTJSTerm ty False
@@ -92,8 +82,6 @@ substituteRMO vars (RMOUnknown ty (Just name)) | name `M.member` vars =
 	(M.!) vars name
 substituteRMO vars (RMOUnknown ty val) =
 	RMOUnknown (substituteRMT vars ty) val
-substituteRMO vars (RMOLoopBreaker n ty eq) =
-	RMOLoopBreaker n ty eq
 substituteRMO vars (RMOJSRepr name params) =
 	RMOJSRepr name (map (substituteRMO vars) params)
 substituteRMO vars (RMOJSTerm ty maybeSL jsEquivalent) =

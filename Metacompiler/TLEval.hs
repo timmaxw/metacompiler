@@ -1,5 +1,7 @@
 module Metacompiler.TLEval where
 
+import qualified Data.Graph   -- for `stronglyConnComp`
+
 -- `evalMetaType` converts a `TL.MetaType Range` into a `RMT`. It will
 -- also check for validity of variable references and correctness of types as
 -- it traverses the AST.
@@ -99,8 +101,32 @@ evalMetaObject vars (TL.MOJSExpr tag code type_ spec subs) =
 evalDirectives :: M.Map String RMO
                -> [TL.Directive Range]
                -> StateT JSGlobals (Either String) (M.Map String RMO)
-evalDirectives directives = do
+evalDirectives vars directives = do
+	let
+		-- `findUsesInMetaObject` and `findUsesInMetaType` return lists of
+		-- all of the names that the given metaobject refers to directly (i.e.
+		-- not through `js-global`)
+		findUsesInMetaObject :: TL.MetaObject Range -> S.Set String
+		findUsesInMetaObject = ...
+
+		findUsesInMetaType :: TL.MetaType Range -> S.Set String
+		findUsesInMetaType = ...
+
+		usesInAllLets :: M.Map String (S.Set String)
+		usesInAllLets = M.fromList [let
+			valueUses = findUsesInMetaObject value
+			paramUses = S.unions (map (findUsesInMetaType . snd) 
+			in (name, uses'')
+			| TL.DLet tag name params type_ value <- directives]
+
+	sequence [do
+		| CyclicSCC namesInCycle <- DataGraph.stronglyConnectedComp
+			[
+		]
 	
+
+
+		newDefinitions :: M.Map String 
 
 evalDirective (TL.DLet tag name params maybeType final) = do
 	Results { definitionsInResults = vars } <- get
