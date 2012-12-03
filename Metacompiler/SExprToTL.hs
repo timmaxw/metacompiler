@@ -9,6 +9,7 @@ import Metacompiler.SExpr
 import Metacompiler.SExprToSL
 import qualified Metacompiler.SLSyntax as SL
 import qualified Metacompiler.TLSyntax as TL
+import qualified Text.Parsec
 import Text.Parsec.String ()   -- So `String` is an instance of `Stream`
 
 -- `parseTLDirectiveFromSExpr` tries to interpret an S-expression as a
@@ -67,7 +68,7 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "emit") rest)) =
 			_ -> Left ("expected (emit \"<code>\" <clauses...>)")
 		code <-
 			errorContext ("in code at " ++ formatRange codeRange) $
-			parseJavascriptExprFromString unparsedCode
+			parseJavaScriptStatementsFromString unparsedCode
 		clauses <- parseClausesFromSExprs [("=", True, True)] rest'
 		subs <- sequence [do
 			(name, value) <- case rest of
@@ -229,7 +230,7 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) =
 			| (range, rest) <- (M.!) clauses "="]
 		code <-
 			errorContext ("in code at " ++ formatRange codeRange) $
-			parseJavascriptExprFromString unparsedCode
+			parseJavaScriptExprFromString unparsedCode
 		return $ TL.MOJSExpr {
 			TL.tagOfMetaObject = rangeOfSExprs whole,
 			TL.codeOfMetaObject = code,
@@ -284,12 +285,20 @@ parseTLMetaObjectFromSExprs whole@(Cons first args) = do
 parseTLMetaObjectFromSExprs other =
 	Left ("invalid meta-object " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
 
--- `parseJavascriptExprFromString` tries to interpret the given string as a
--- Javascript expression.
+-- `parseJavaScriptExprFromString` and `parseJavaScriptStatementsFromString`
+-- try to interpret the given string as a JavaScript expression.
 
-parseJavascriptExprFromString :: String -> Either String (JS.Expression JS.SourcePos)
-parseJavascriptExprFromString string =
+parseJavaScriptExprFromString :: String -> Either String (JS.Expression JS.SourcePos)
+parseJavaScriptExprFromString string =
 	case JS.parse JS.parseExpression "<string>" string' of
+		Left err -> Left (show err)
+		Right x -> return x
+	where
+		string' = dropWhile isSpace string
+
+parseJavaScriptStatementsFromString :: String -> Either String [JS.Statement JS.SourcePos]
+parseJavaScriptStatementsFromString string =
+	case JS.parse (JS.parseStatement `Text.Parsec.sepBy` Text.Parsec.whiteSpace) of
 		Left err -> Left (show err)
 		Right x -> return x
 	where

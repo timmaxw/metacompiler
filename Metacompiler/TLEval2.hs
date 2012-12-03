@@ -27,32 +27,43 @@ The general procedure for compiling is as follows:
 -}
 
 -- `ProtoCompileVar` is used to keep track of variables during
--- proto-compilation. A global variable that came earlier in the top-sort will
--- be represented as `ProtoCompileVarPresent`, with its actual value present.
--- A global variable that comes later in the top-sort, or the global variable
--- that we're currently processing, will be represented as
--- `ProtoCompileVarFuture`. Local variables will be represented as
--- `ProtoCompileVarLocal`.
+-- proto-compilation:
+--  *  A global variable that came earlier in the top-sort will be represented
+--     as `ProtoCompileVarPresent`, with its actual value present.
+--  *  A global variable that comes later in the top-sort, or the global
+--     variable that we're currently processing, will be represented as
+--     `ProtoCompileVarFuture`.
+--  *  Local variables will be represented as `ProtoCompileVarLocal`.
+--  *  When a local variable is in scope at the point where a `(js-global ...)`
+--     appears, but it cannot be transferred into the `(js-global ...)` because
+--     it is not of a type that can be expressed in JavaScript, it will be
+--     represented as `ProtoCompileVarCannotTransfer`.
 
 data ProtoCompileVar
 	= ProtoCompileVarPresent RMO
 	| ProtoCompileVarFuture
 	| ProtoCompileVarLocal RMT
+	| ProtoCompileVarCannotTransfer
 
 -- `ProtoCompileState` is used ot keep track of `(js-global ...)`s that were
 -- encountered while proto-compiling.
 
 data ProtoCompileState = ProtoCompileState {
 	nameSupplyOfProtoCompileState :: [String],
-	globalsOfProtoCompileState :: M.Map JSGlobalUniqueId ProtoCompileGlobal
+	seenGlobalsOfProtoCompileState :: M.Map JSGlobalUniqueId SeenGlobal,
+	unprocessedGlobalsOfProtoCompileState :: [UnprocessedGlobal]
 	}
 
-data ProtoCompileGlobal = ProtoCompileGlobal {
-	nameOfProtoCompileGlobal :: String,
-	syntaxOfProtoCompileGlobal :: MetaObject Range,
-	transferrableLocalVarsOfProtoCompileGlobal :: [(String, RMT)],
-	untransferrableLocalVarsOfProtoCompileGlobal :: M.Map String RMT,
-	globalVarsOfProtoCompileGlobal :: S.Set String
+data SeenGlobal = SeenGlobal {
+	nameOfSeenGlobal :: String,
+	transferrableLocalVarsOfSeenGlobal :: [(String, RMT)]
+	}
+
+data UnprocessedGlobal = UnprocessedGlobal {
+	nameOfUnprocessedGlobal :: String,
+	syntaxOfUnprocessedGlobal :: MetaObject Range,
+	untransferrableLocalVarsOfUnprocessedGlobal :: M.Map String RMT,
+	globalVarsOfUnprocessedGlobal :: S.Set String
 	}
 
 -- `protoCompileMetaType` proto-compiles the given meta-type. It takes a
@@ -132,10 +143,12 @@ protoCompileMetaObject varTypes (MOVar tag name) =
 	case M.lookup name varTypes of
 		Just (ProtoCompileVarPresent rmo) ->
 			return (const rmo)
-		Just (ProtoCompileVarFuture) ->
+		Just ProtoCompileVarFuture ->
 			error "top-sort should have prevented this"
 		Just (ProtoCompileVarLocal) ->
 			return (\varValues -> (M.!) varValues name)
+		Just ProtoCompileVarCannotTransfer ty ->
+			
 		Nothing ->
 			lift $ Left ("name `" ++ name ++ "` is not in scope at " ++
 				formatRange tag)
@@ -177,12 +190,12 @@ protoCompileMetaObject varTypes (MOJSGlobal tag uniqueId content type_ spec) =
 			errorContextStateT ("in (type ...) clause") $
 			protoCompileMetaObject type_
 
-		ProtoCompileState oldNameSupply oldMap <- get
-		pcg <- case M.lookup uniqueId oldMap of
-			Just existingPCG ->
-				return existingPCG
+		oldState <- get
+		seenGlobal <- case M.lookup uniqueId (seenGlobalsOfProtoCompileState oldState) of
+			Just existingSeenGlobal ->
+				return existingSeenGlobal
 			Nothing -> let
-				name:newNameSupply = oldNameSupply
+				name:newNameSupply = (nameSupplyOfProtoCompileState oldState)
 
 				isTransferrable :: RMT -> Bool
 				transferrableLocalVars = [(name, ty)
@@ -194,19 +207,28 @@ protoCompileMetaObject varTypes (MOJSGlobal tag uniqueId content type_ spec) =
 				globalVars = S.fromList [name | (name, ProtoCompileVarPresent _) <- M.toList varTypes]
 					`S.union` S.fromList [name | (name, ProtoCompileVarFuture) <- M.toList varTypes]
 
-				pcg = ProtoCompileGlobal {
-					nameOfProtoCompileGlobal = name,
-					syntaxOfProtoCompileGlobal = content,
-					transferrableLocalVarsOfProtoCompileGlobal = transferrableLocalVars,
-					untransferrableLocalVarsOfProtoCompileGlobal = untransferrableLocalVars,
-					globalVarsOfProtoCompileGlobal = globalVars
+				seenGlobal = SeenGlobal {
+					nameOfSeenGlobal = name,
+					transferrableLocalVarsOfSeenGlobal = transferrableLocalVars,
 					}
 
-				newMap = M.insert uniqueId pcg oldMap
+				unprocessedGlobal = UnprocessedGlobal {
+					nameOfUnprocessedGlobal = name,
+					syntaxOfUnprocessedGlobal = content,
+					untransferrableLocalVarsOfUnprocessedGlobal = untransferrableLocalVars,
+					globalVarsOfUnprocessedGlobal = globalVars
+					}
+
+				newState = oldState {
+					seenGlobalsOfProtoCompileState =
+						M.insert uniqueId seenGlobal (seenGlobalsOfProtoCompileState oldState),
+					unprocessedGlobalsOfProtoCompileState =
+						unprocessedGlobal:(unprocessedGlobalsOfProtoCompileState oldState)
+					}
 
 				in do
-					put (ProtoCompileState newNameSupply newMap)
-					return pcg
+					put newState
+					return seenGlobal
 
 		return (\varValues -> let
 			typeRMO = typeFun varValues
@@ -215,19 +237,197 @@ protoCompileMetaObject varTypes (MOJSGlobal tag uniqueId content type_ spec) =
 					RMOUnknown _ _ -> Nothing
 					RMOJSTerm _ _ varEquiv -> Just varEquiv
 					_ -> error "isTransferrable should have caught this"
-				| (name, _) <- transferrableLocalVarsOfProtoCompileGlobal pcg]
+				| (name, _) <- transferrableLocalVarsOfSeenGlobal seenGlobal]
 			in case sequence varMaybeEquivs of
 				Just varEquivs -> let
 					wholeEquiv = do
 						varJSs <- sequence varEquivs
 						return (JS.CallExpr ()
-							(JS.VarRef () (Id () (nameOfProtoCompileGlobal pcg)))
+							(JS.VarRef () (Id () (nameOfSeenGlobal seenGlobal)))
 							varJSs
 							)
 					in (RMOJSTerm typeRMO spec wholeEquiv)
 				Nothing ->
 					RMOUnknown typeRMO Nothing
 			)
+
+-- `CompileState` is threaded through all of the top-level compilations. It
+-- keeps track of variables that have been defined and JavaScript code that's
+-- been emitted.
+
+data CompileState = CompileState {
+	definitionsOfCompileState :: M.Map String RMO,
+	seenGlobalsOfCompileState :: M.Map JSGlobalUniqueId SeenGlobal,
+	nameSupplyOfCompileState :: [String],
+	symbolRenamingOfCompileState :: JSUtils.SymbolRenaming,
+	emitsOfCompileState :: [JS.Statement]
+	}
+
+-- `compileDirectives` compiles a group of (potentially mutually recursive)
+-- directives. Rather than returning anything, it operates in the `StateT`
+-- monad on a `CompileState`.
+
+compileDirectives :: [Directive Range] -> StateT CompileState (Either String) ()
+
+compileDirectives directives = do
+
+	let namedDirectives = filter (\d -> case d of
+		DLet _ _ _ _ _ -> True
+		DJSRepr _ _ _ _ -> True
+		_ -> False
+		) directives
+
+	-- Make sure that no two directives have the same name
+	foldM (\soFar d -> case M.lookup (nameOfDirective d) soFar of
+		Just r -> lift $ Left ("global name `" ++ name ++ "` is defined (at \
+			\least) twice: once at " ++ formatRange r ++ " and again at " ++
+			formatRange (tagOfDirective d))
+		Nothing -> return (M.insert (nameOfDirective d) (tagOfDirective d) soFar
+		) M.empty namedDirectives
+
+	let
+		depsOfMetaType :: MetaType Range -> S.Set String
+		depsOfMetaType MTJSType = S.empty
+		depsOfMetaType (MSJSTerm _ _ type_) = depsOfMetaObject type_
+		depsOfMetaType (MTFun _ params result) =
+			depsOfAbstraction params (depsOfMetaType result)
+
+		depsOfMetaObject :: MetaObject Range -> S.Set String
+		depsOfMetaObject (MOApp _ fun arg) =
+			depsOfMetaObject fun `S.union` depsOfMetaObject arg
+		depsOfMetaObject (MOAbs _ params result) =
+			depsOfAbstraction params (depsOfMetaObject result)
+		depsOfMetaObject (MOVar _ name) = S.singleton name
+		depsOfMetaObject (MOJSExpr _ _ type_ _ subs) =
+			depsOfMetaObject type_ `S.union` S.unions [depsOfMetaObject val | (_, val) <- subs]
+		depsOfMetaObject (MOJSGlobal _ _ _ type_ _) =
+			depsOfMetaObject type_
+
+		depsOfAbstraction :: [(String, MetaType Range)] -> S.Set String -> S.Set String
+		depsOfAbstraction [] final = final
+		depsOfAbstraction ((paramName, paramType):rest) final =
+			depsOfMetaType paramType `S.union`
+				S.delete paramName (depsOfAbstraction rest final)
+
+		depsOfDirective :: Directive Range -> S.Set String
+		depsOfDirective (DLet _ _ params type_ value) =
+			depsOfAbstraction params (maybe S.empty depsOfMetaType type_ `S.union` depsOfMetaObject value)
+		depsOfDirective (DJSRepr _ _ params _) =
+			depsOfAbstraction params S.empty
+		depsOfDirective _ = error "not a named directive"
+
+	let
+		sccs :: [Data.Graph.SCC (Directive Range)]
+		sccs = Data.Graph.stronglyConnComps
+			[(directive, name, S.toList (depsOfDirectives directive))
+			| directive <- namedDirectives]
+
+		protoCompilation :: M.Map String RMO -> StateT ProtoCompileState (Either String) (M.Map String RMO)
+		protoCompilation existingDefinitions = do
+
+			let initialVarTypes = foldr
+				(uncurry M.insert)
+				(M.map ProtoCompileVarPresent existingDefinitions)
+				[(nameOfDirective d, ProtoCompileVarFuture) | d <- namedDirectives] 
+
+			finalVarTypes <- foldM (\varTypes group -> do
+
+				directive <- case group of
+					AcyclicSCC d -> return d
+					CyclicSCC ds -> lift $ Left ("the following directives illegally \
+						\recursively depend on each other: " ++
+						Data.List.intercalate ", " ["`" ++ nameOfDirective d ++ "`" | d <- ds])
+
+				value <- case directive of
+
+					DLet tag name params maybeType value ->
+						errorContextStateT ("in `(let ...)` at " ++ formatRange tag) $
+							makeAbstraction params (\varTypes' -> do
+								valueFun <- protoCompileMetaObject value
+								case maybeType of
+									Just type_ -> do
+										typeFun <- protoCompileMetaType type_
+										let valueDummy = valueFun (makeDummies varTypes')
+										let typeDummy = typeFun (makeDummies varTypes')
+										lift $ checkCanCastRMT "the defined value" typeDummy (typeOfRMO valueDummy)
+									 Nothing -> return ()
+								return valueFun
+								)
+
+					DJSRepr tag name params spec ->
+						errorContextStateT ("in `(js-repr ...)` at " ++ formatRange tag) $
+							makeAbstraction params (\varTypes' -> do
+								sequence [case ty of
+									RMTJSType -> return ()
+									_ -> lift $ Left ("parameter `" ++ n ++ "` \
+										\has type `" ++ formatRMT ty ++ "`, but \
+										\`(js-repr ...)` clauses are only allowed \
+										\to be parameterized on `js-type`.")
+									| (n, ProtoCompileVarLocal ty) <- M.toList varTypes']
+								return (\varValues ->
+									RMOJSRepr name [(M.!) varValues n | (n, ProtoCompileVarLocal) <- M.toList varTypes']
+									)
+
+				return (M.insert (nameOfDirective directive) (ProtoCompileVarPresent value) varTypes)
+
+				) initialVarTypes sccs
+
+			return (M.map (\ProtoCompileVarPresent rmo -> rmo) finalVarTypes)
+
+	let
+		runProtoCompilation :: (M.Map String RMO -> StateT ProtoCompileState (Either String) a)
+							-> (a -> StateT CompileState (Either String) b)
+		                    -> StateT CompileState (Either String) b
+		runProtoCompilation protoCompilation postProcess = do
+			oldState <- get
+			(res1, ProtoCompileState newNameSupply newSeenGlobals unprocessedGlobals) <-
+				lift $ runStateT (protoCompilation (definitionsOfCompileState oldState))
+					(ProtoCompileState (nameSupplyOfCompileState oldState) (seenGlobalsOfCompileState oldState) [])
+			put (oldState {
+				nameSupplyOfCompileState = newNameSupply,
+				seenGlobalsOfCompileState = seenGlobals
+				})
+			res2 <- postProcess res1
+			processUnprocessedGlobals unprocessedGlobals
+
+		processUnprocessedGlobals :: [UnprocessedGlobal] -> StateT CompileState (Either String) ()
+		processUnprocessedGlobals ugs = sequence [do
+			runProtoCompilation
+				(\existingDefinitions -> let
+					varTypes = M.map 
+					in protoCompileMetaObject (syntaxOfUnprocessedGlobal ug)
+					)
+				(const (return ()))
+			| ug <- ugs]
+
+	(postProtoCompilationVarTypes, ProtoCompileState newNameSupply newSeenGlobals unprocessedGlobals) <-
+		lift $ runStateT protoCompilation
+			(ProtoCompileState
+				(nameSupplyOfCompileState oldState)
+				(seenGlobalsOfCompileState oldState)
+				M.empty)
+
+	put (oldState {
+		nameSupplyOfCompileState = newNameSupply,
+		seenGlobalsOfCompileState = newSeenGlobals,
+		definitionsOfCompileState = M.map (\ProtoCompileVarPresent rmo -> rmo) postProtoCompilationVarTypes
+		})
+
+	let
+		processGlobals :: [UnprocessedGlobal] -> StateT CompileState (Either String) ()
+		processGlobals [] = return ()
+		processGlobals (global:globals) = do
+			let protoCompileScope = 
+
+
+-- `errorContextStateT` puts the given message on top of any error messages as
+-- they bubble up.
+
+errorContextStateT :: String -> StateT s (Either String) a -> StateT s (Either String) a
+errorContextStateT msg action = StateT (\s1 -> case runStateT action s1 of
+	Left msgs -> Left (msg ++ "\n" ++ msgs)
+	Right (s2, a) -> Right (s2, a)
+	)
 
 -- `makeDummies` turns `ProtoCompileVar`s into `RMO`s by replacing local variables
 -- with `RMOUnknown`
@@ -241,15 +441,6 @@ makeDummies = M.mapWithKey (\name var -> case var of
 		error "top-sort should have prevented this"
 	ProtoCompileVarLocal ty ->
 		RMOUnknown ty (Just name)
-	)
-
--- `errorContextStateT` puts the given message on top of any error messages as
--- they bubble up.
-
-errorContextStateT :: String -> StateT s (Either String) a -> StateT s (Either String) a
-errorContextStateT msg action = StateT (\s1 -> case runStateT action s1 of
-	Left msgs -> Left (msg ++ "\n" ++ msgs)
-	Right (s2, a) -> Right (s2, a)
 	)
 
 -- `makeAbstraction` is used to implement `(\ ... -> ...)`, `(let ...)`, and

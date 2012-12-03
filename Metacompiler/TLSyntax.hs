@@ -125,7 +125,7 @@ data Directive a
 	--     )
 	| DEmit {
 		tagOfDirective :: a,
-		codeOfDirective :: JS.Expression JS.SourcePos,
+		codeOfDirective :: [JS.Statement JS.SourcePos],
 		subsOfDirective :: [(String, MetaObject a)]
 	}
 
