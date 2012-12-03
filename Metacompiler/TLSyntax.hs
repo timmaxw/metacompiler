@@ -64,10 +64,11 @@ data MetaObject a
 	}
 
 	-- Term with a manually-specified JS equivalent:
-	--     ('js-expr' "<JS-code>"
+	--     ('js-expr'
 	--         ('type' <type>)
-	--         ('spec' <SL-term>)
+	--         ('spec' <SL-term>)?
 	--         ('=' "<JS-var>" <value>)
+	--         "<JS-code>"
 	--     )
 	| MOJSExpr {
 		tagOfMetaObject :: a,
@@ -78,16 +79,18 @@ data MetaObject a
 	}
 
 	-- Recursion term:
-	--     ('js-global' <term>)
+	--     ('js-global' ('type' <type>) ('spec' <SL-term>)? <term>)
 	| MOJSGlobal {
 		tagOfMetaObject :: a,
 		uniqueIdOfMetaObject :: JSGlobalUniqueId,
 		contentOfMetaObject :: MetaObject a
+		typeOfMetaObject :: MetaObject a,
+		specOfMetaObject :: Maybe (SL.Term a)
 	}
 
 	deriving Show
 
-newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Ord, Eq)
+newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord)
 
 -- `Directive` represents a top-level translation language directive.
 

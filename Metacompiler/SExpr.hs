@@ -65,6 +65,12 @@ sExprsToList :: SExprs -> [SExpr]
 sExprsToList (Cons x xs) = x : sExprsToList xs
 sExprsToList (Nil _) = []
 
+sExprsInitAndLast :: SExprs -> Maybe (SExprs, SExpr)
+sExprsInitAndLast (Nil _) = Nothing
+sExprsInitAndLast (Cons last (Nil _)) = (Nil (startOfRange (rangeOfSExpr last)), last)
+sExprsInitAndLast (Cons x xs) = (Cons x init, last)
+	where Just (init, last) = sExprsInitAndLast xs
+
 -- `summarizeSExpr` and `summarizeSExprs` are for formatting error messages.
 -- They return a textual representation of the `SExpr` or `SExprs`, with parts
 -- replaced with `...` as necessary to keep it from getting too long.

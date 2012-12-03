@@ -205,14 +205,11 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "\\") rest) =
 			}
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) =
 	errorContext ("in \"js-expr\" at " ++ formatRange (rangeOfSExprs whole)) $ do
-		(codeRange, unparsedCode, rest') <- case rest of
-			Cons (Quoted codeRange unparsedCode) rest' ->
-				return (codeRange, unparsedCode, rest')
-			_ -> Left ("expected (js-expr \"<code>\" <clauses...>)")
-		code <-
-			errorContext ("in code at " ++ formatRange codeRange) $
-			parseJavascriptExprFromString unparsedCode
-		clauses <- parseClausesFromSExprs [("type", False, False), ("spec", True, False), ("=", True, True)] rest'
+		(unparsedClauses, codeRange, unparsedCode) <- case sExprsInitAndLast rest of
+			Just (unparsedClauses, Quoted codeRange unparsedCode) ->
+				return (unparsedClauses, codeRange, unparsedCode)
+			_ -> Left ("expected (js-expr <clauses...> \"<code>\")")
+		clauses <- parseClausesFromSExprs [("type", False, False), ("spec", True, False), ("=", True, True)] unparsedClauses
 		type_ <- let [(_, unparsedType)] = (M.!) clauses "type" in
 			errorContext ("in type at " ++ formatRange (rangeOfSExprs unparsedType)) $
 			parseTLMetaObjectFromSExprs unparsedType
@@ -230,6 +227,9 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) =
 			value' <- parseTLMetaObjectFromSExprs value
 			return (name, value')
 			| (range, rest) <- (M.!) clauses "="]
+		code <-
+			errorContext ("in code at " ++ formatRange codeRange) $
+			parseJavascriptExprFromString unparsedCode
 		return $ TL.MOJSExpr {
 			TL.tagOfMetaObject = rangeOfSExprs whole,
 			TL.codeOfMetaObject = code,
@@ -239,11 +239,27 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) =
 			}
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-global") rest) =
 	errorContext ("in \"js-global\" at " ++ formatRange (rangeOfSExprs whole)) $ do
-		content <- parseTLMetaObjectFromSExprs rest
+		(unparsedClauses, unparsedContent) <- case sExprsInitAndLast rest of
+			Just (unparsedClauses, unparsedContent) ->
+				return (unparsedClauses, unparsedContent)
+			_ -> Left ("expected (js-global <clauses...> \"<code>\")")
+		clauses <- parseClausesFromSExprs [("type", False, False), ("spec", True, False)] unparsedClauses
+		type_ <- let [(_, unparsedType)] = (M.!) clauses "type" in
+			errorContext ("in type at " ++ formatRange (rangeOfSExprs unparsedType)) $
+			parseTLMetaObjectFromSExprs unparsedType
+		spec <- case (M.!) clauses "spec" of
+			[(range, rest)] ->
+				errorContext ("in (spec ...) clause at " ++ formatRange range) $ do
+					spec <- parseSLTermFromSExprs rest
+					return (Just spec)
+			[] -> return Nothing
+		content <- parseTLMetaObjectFromSExpr unparsedContent
 		return (TL.MOJSGlobal {
 			TL.tagOfMetaObject = rangeOfSExprs whole,
 			TL.uniqueIdOfMetaObject = JSGlobalUniqueId (formatRange (rangeOfSExprs whole)),
-			TL.contentOfMetaObject = content
+			TL.contentOfMetaObject = content,
+			TL.typeOfMetaObject = type_,
+			TL.specOfMetaObject = spec
 			})
 parseTLMetaObjectFromSExprs whole@(Cons x (Nil _)) =
 	parseTLMetaObjectFromSExpr x

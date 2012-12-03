@@ -46,7 +46,7 @@ data RMO
 
 	-- `RMOJSRepr`, `RMOJSTerm`, and `RMOFun` are in weak head normal form.
 	| RMOJSRepr String [RMO]
-	| RMOJSTerm RMO (Maybe (SL.Term Range)) (State JSGlobals (JS.Expression ()))
+	| RMOJSTerm RMO (Maybe (SL.Term Range)) (State JSUtils.SymbolRenaming (JS.Expression ()))
 	| RMOFun (String, RMT) RMT (RMO -> RMO)
 
 formatRMO :: RMO -> String
@@ -195,20 +195,4 @@ compareRMOs _ (RMOJSRepr _ _) (RMOUnknown _ (Just _)) =
 	GT
 compareRMOs _ _ _ =
 	error "can't compare RMOs other than (RMOUnknown _ (Just _)) or (RMOJSRepr _ _)"
-
--- `JSGlobals` is the type of the state that is maintained when generating
--- JavaScript equivalents.
-
-data JSGlobals = JSGlobals {
-	topLevelOfJSGlobals :: String,
-	instantiationsOfJSGlobals :: M.Map (JSGlobalUniqueId, M.Map String IndexRMO) String,
-	symbolRenamingOfJSGlobals :: JSUtils.SymbolRenaming
-	}
-
-initialJSGlobals :: JSGlobals
-initialJSGlobals = JSGlobals {
-	topLevelOfJSGlobals = "",
-	instantiationsOfJSGlobals = M.empty,
-	symbolRenamingOfJSGlobals = JSUtils.initialSymbolRenaming
-	}
 
