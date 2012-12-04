@@ -7,6 +7,7 @@ import Metacompiler.ParseSExpr
 import Metacompiler.SExpr
 import Metacompiler.SExprToSL (errorContext)   -- TODO: Move `errorContext` into its own file
 import Metacompiler.SExprToTL
+import Metacompiler.TLEval
 import Metacompiler.TLRuntime
 import System.Environment
 import System.Exit

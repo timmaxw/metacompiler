@@ -3,7 +3,7 @@ module Metacompiler.TLRuntime where
 import Control.Monad (liftM, unless)
 import Control.Monad.State
 import Control.Monad.Trans (lift)
-import qualified Data.List (intercalate)
+import qualified Data.List (intercalate, elemIndex)
 import qualified Data.Map as M
 import qualified Data.Maybe (isJust)
 import qualified Language.ECMAScript3.PrettyPrint as JS

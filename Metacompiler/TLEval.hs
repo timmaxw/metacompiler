@@ -3,8 +3,9 @@ module Metacompiler.TLEval where
 import Control.Monad.State
 import Control.Monad.Trans (lift)
 import qualified Data.Graph   -- for `stronglyConnComp`
+import qualified Data.List
 import qualified Data.Map as M
-import qualified Data.Maybe (isJust)
+import qualified Data.Maybe
 import qualified Data.Set as S
 import qualified Language.ECMAScript3.PrettyPrint as JS
 import qualified Language.ECMAScript3.Syntax as JS
@@ -12,7 +13,7 @@ import qualified Language.ECMAScript3.Syntax.Annotations as JS
 import qualified Metacompiler.JSUtils as JSUtils
 import Metacompiler.SExpr (Range, formatRange)
 import qualified Metacompiler.SLSyntax as SL
-import MetaCompiler.TLRuntime
+import Metacompiler.TLRuntime
 import Metacompiler.TLSyntax
 
 {-
@@ -103,7 +104,7 @@ protoCompileMetaType varTypes (MTJSTerm tag hasSL type_) =
 		return (\varValues -> RMTJSTerm (typeFun varValues) hasSL)
 
 protoCompileMetaType varTypes (MTFun tag params result) = let
-	f :: M.Map String ProtoCompileVar -> [(String, MetaType Range)] -> Either String (M.Map String RMO -> RMT)
+	f :: M.Map String ProtoCompileVar -> [(String, MetaType Range)] -> StateT ProtoCompileState (Either String) (M.Map String RMO -> RMT)
 	f varTypes' [] =
 		errorContextStateT ("in return type of `(fun ...)` at " ++ formatRange tag) $
 		protoCompileMetaType varTypes' result
@@ -139,8 +140,8 @@ protoCompileMetaObject varTypes (MOApp tag fun arg) = do
 				protoCompileMetaObject varTypes arg
 			let argDummy = argFun (makeDummies varTypes)
 			lift $ checkCanCastRMT
-				("the argument at " ++ formatRange (TL.tagOfMetaObject arg) ++
-					"to the function at " ++ formatRange (TL.tagOfMetaObject fun))
+				("the argument at " ++ formatRange (tagOfMetaObject arg) ++
+					"to the function at " ++ formatRange (tagOfMetaObject fun))
 				paramType
 				(typeOfRMO argDummy)
 			return (\varValues -> case funFun varValues of
@@ -150,7 +151,7 @@ protoCompileMetaObject varTypes (MOApp tag fun arg) = do
 					return (RMOUnknown (substituteRMT (M.singleton paramName (argFun varValues)) resultType) Nothing)
 				_ -> error "checkCanCastRMT should have caught this"
 				)
-		_ -> lift $ Left ("Term at " ++ formatRange (TL.tagOfMetaObject fun) ++ " is \
+		_ -> lift $ Left ("Term at " ++ formatRange (tagOfMetaObject fun) ++ " is \
 			\being applied like a function, but has type " ++
 			formatRMT (typeOfRMO funDummy) ++ ".")
 
@@ -188,7 +189,7 @@ protoCompileMetaObject varTypes (MOJSExpr tag code type_ spec subs) =
 			return (name, valueFun)
 			| (name, value) <- subs]
 		return (\varValues -> let
-			typeRMT = typeFun varValues
+			typeRMO = typeFun varValues
 			subMaybeEquivs = [case subFun varValues of
 				RMOJSTerm _ _ subEquiv -> Just (name, subEquiv)
 				RMOUnknown _ _ -> Nothing
@@ -197,7 +198,7 @@ protoCompileMetaObject varTypes (MOJSExpr tag code type_ spec subs) =
 			in case sequence subMaybeEquivs of
 				Just subEquivs -> let
 					wholeEquiv = do
-						subJSs <- liftM fromList $ sequence [do
+						subJSs <- liftM M.fromList $ sequence [do
 							subJS <- subEquiv
 							return (name, subJS)
 							| (name, subEquiv) <- subEquivs]
@@ -224,12 +225,12 @@ protoCompileMetaObject varTypes (MOJSGlobal tag uniqueId content type_ spec) =
 				getTypeIfIsTerm (RMTJSTerm _ ty) = Just ty
 				getTypeIfIsTerm _ = Nothing
 
-				transferrableLocalVars = [(name, fromJust maybeType)
+				transferrableLocalVars = [(name, Data.Maybe.fromJust maybeType)
 					| (name, ProtoCompileVarLocal ty) <- M.toList varTypes
-					, maybeType = getTypeIfIsTerm ty, isJust maybeType]
+					, let maybeType = getTypeIfIsTerm ty, Data.Maybe.isJust maybeType]
 				untransferrableLocalVars = M.fromList [(name, ty)
 					| (name, ProtoCompileVarLocal ty) <- M.toList varTypes
-					, maybeType = getTypeIfIsTerm ty, not (isJust maybeType)]
+					, let maybeType = getTypeIfIsTerm ty, not (Data.Maybe.isJust maybeType)]
 					`M.union` M.fromList [(name, ty)
 					| (name, ProtoCompileVarCantUseAtRuntime _ ty) <- M.toList varTypes]
 				globalVars = S.fromList [name | (name, ProtoCompileVarPresent _) <- M.toList varTypes]
@@ -244,7 +245,7 @@ protoCompileMetaObject varTypes (MOJSGlobal tag uniqueId content type_ spec) =
 					nameOfUnprocessedGlobal = name,
 					rangeOfUnprocessedGlobal = tag,
 					syntaxOfUnprocessedGlobal = content,
-					expectedTypeOfUnprocessedGlobal = typeFun (makeDummies varValues),
+					expectedTypeOfUnprocessedGlobal = typeFun (makeDummies varTypes),
 					transferrableLocalVarsOfUnprocessedGlobal = transferrableLocalVars,
 					untransferrableLocalVarsOfUnprocessedGlobal = untransferrableLocalVars,
 					globalVarsOfUnprocessedGlobal = globalVars
@@ -274,7 +275,7 @@ protoCompileMetaObject varTypes (MOJSGlobal tag uniqueId content type_ spec) =
 					wholeEquiv = do
 						varJSs <- sequence varEquivs
 						return (JS.CallExpr ()
-							(JS.VarRef () (Id () (nameOfSeenGlobal seenGlobal)))
+							(JS.VarRef () (JS.Id () (nameOfSeenGlobal seenGlobal)))
 							varJSs
 							)
 					in (RMOJSTerm typeRMO spec wholeEquiv)
@@ -291,7 +292,7 @@ data CompileState = CompileState {
 	seenGlobalsOfCompileState :: M.Map JSGlobalUniqueId SeenGlobal,
 	nameSupplyOfCompileState :: [String],
 	symbolRenamingOfCompileState :: JSUtils.SymbolRenaming,
-	emitsOfCompileState :: [JS.Statement]
+	emitsOfCompileState :: [JS.Statement ()]
 	}
 
 initialCompileState :: CompileState
@@ -299,7 +300,7 @@ initialCompileState = CompileState {
 	definitionsOfCompileState = M.empty,
 	seenGlobalsOfCompileState = M.empty,
 	nameSupplyOfCompileState = ["_global_" ++ show i | i <- [1..]],
-	symbolRenamingOfCompileState = initialSymbolRenaming,
+	symbolRenamingOfCompileState = JSUtils.initialSymbolRenaming,
 	emitsOfCompileState = []
 	}
 
@@ -319,16 +320,16 @@ compileDirectives directives = do
 
 	-- Make sure that no two directives have the same name
 	foldM (\soFar d -> case M.lookup (nameOfDirective d) soFar of
-		Just r -> lift $ Left ("global name `" ++ name ++ "` is defined (at \
-			\least) twice: once at " ++ formatRange r ++ " and again at " ++
-			formatRange (tagOfDirective d))
-		Nothing -> return (M.insert (nameOfDirective d) (tagOfDirective d) soFar
+		Just r -> lift $ Left ("global name `" ++ nameOfDirective d ++ "` is \
+			\defined (at least) twice: once at " ++ formatRange r ++ " and \
+			\again at " ++ formatRange (tagOfDirective d))
+		Nothing -> return (M.insert (nameOfDirective d) (tagOfDirective d) soFar)
 		) M.empty namedDirectives
 
 	let
 		depsOfMetaType :: MetaType Range -> S.Set String
 		depsOfMetaType MTJSType = S.empty
-		depsOfMetaType (MSJSTerm _ _ type_) = depsOfMetaObject type_
+		depsOfMetaType (MTJSTerm _ _ type_) = depsOfMetaObject type_
 		depsOfMetaType (MTFun _ params result) =
 			depsOfAbstraction params (depsOfMetaType result)
 
@@ -358,8 +359,8 @@ compileDirectives directives = do
 
 	let
 		sccs :: [Data.Graph.SCC (Directive Range)]
-		sccs = Data.Graph.stronglyConnComps
-			[(directive, name, S.toList (depsOfDirectives directive))
+		sccs = Data.Graph.stronglyConnComp
+			[(directive, nameOfDirective directive, S.toList (depsOfDirective directive))
 			| directive <- namedDirectives]
 
 		protoCompilation :: M.Map String RMO -> StateT ProtoCompileState (Either String) (M.Map String RMO)
@@ -373,10 +374,10 @@ compileDirectives directives = do
 			finalVarTypes <- foldM (\varTypes group -> do
 
 				directive <- case group of
-					AcyclicSCC d -> return d
-					CyclicSCC ds -> lift $ Left ("the following directives illegally \
-						\recursively depend on each other: " ++
-						Data.List.intercalate ", " ["`" ++ nameOfDirective d ++ "`" | d <- ds])
+					Data.Graph.AcyclicSCC d -> return d
+					Data.Graph.CyclicSCC ds -> lift $ Left ("the following \
+						\directives illegally recursively depend on each \
+						\other: " ++ Data.List.intercalate ", " ["`" ++ nameOfDirective d ++ "`" | d <- ds])
 
 				value <- case directive of
 
@@ -390,7 +391,7 @@ compileDirectives directives = do
 										let valueDummy = valueFun (makeDummies varTypes')
 										let typeDummy = typeFun (makeDummies varTypes')
 										lift $ checkCanCastRMT "the defined value" typeDummy (typeOfRMO valueDummy)
-									 Nothing -> return ()
+									Nothing -> return ()
 								return valueFun
 								)
 
@@ -407,6 +408,7 @@ compileDirectives directives = do
 								return (\varValues ->
 									RMOJSRepr name [(M.!) varValues n | (n, ProtoCompileVarLocal) <- M.toList varTypes']
 									)
+								)
 
 				return (M.insert (nameOfDirective directive) (ProtoCompileVarPresent value) varTypes)
 
@@ -432,7 +434,7 @@ compileDirectives directives = do
 					(ProtoCompileState (nameSupplyOfCompileState oldState) (seenGlobalsOfCompileState oldState) [])
 			put (oldState {
 				nameSupplyOfCompileState = newNameSupply,
-				seenGlobalsOfCompileState = seenGlobals
+				seenGlobalsOfCompileState = newSeenGlobals
 				})
 			res2 <- postProcess (definitionsOfCompileState oldState) res1
 			processUnprocessedGlobals unprocessedGlobals
@@ -441,7 +443,7 @@ compileDirectives directives = do
 		processUnprocessedGlobals ugs = sequence [do
 			runProtoCompilation
 				(\existingDefinitions -> let
-					varTypes = M.fromList [(name, ProtoCompileVarPresent (existingDefinitions ! name))
+					varTypes = M.fromList [(name, ProtoCompileVarPresent ((M.!) existingDefinitions name))
 							| name <- S.toList (globalVarsOfUnprocessedGlobal ug)]
 						`M.union` M.fromList [(name, ProtoCompileVarLocal (RMTJSTerm ty True))   -- TODO: Be stricter about SL
 							| (name, ty) <- transferrableLocalVarsOfUnprocessedGlobal ug]
@@ -451,8 +453,8 @@ compileDirectives directives = do
 					)
 				(\existingDefinitions compiledFun -> do
 					renamedVars <- runSymbolRenaming $
-						mapM renameSymbol (map fst (transferrableLocalVarsOfUnprocessedGlobal ug))
-					let varValues = M.fromList [(name, existingDefinitions ! name)
+						mapM JSUtils.renameSymbol (map fst (transferrableLocalVarsOfUnprocessedGlobal ug))
+					let varValues = M.fromList [(name, (M.!) existingDefinitions name)
 							| name <- S.toList (globalVarsOfUnprocessedGlobal ug)]
 						`M.union` M.fromList [(name, RMOJSTerm
 								ty
@@ -493,13 +495,15 @@ compileDirectives directives = do
 			(\existingDefinitions -> sequence [do
 				subFun <- protoCompileMetaObject (M.map ProtoCompileVarPresent existingDefinitions) subTerm
 				let subRMO = subFun existingDefinitions
-				lift $ checkCanCastRMOToJSTerm "substitution" False (typeOfRMO subRMO)
-				case subRMO
+				lift $ checkCanCastRMTToJSTerm "substitution" False (typeOfRMO subRMO)
+				case subRMO of
 					RMOJSTerm _ _ subEquiv -> return (name, subEquiv)
 					_ -> error "checkCanCastRMOToJSTerm should have caught this"
 				| (name, subTerm) <- subs]
-		wholeJS <- runSymbolRenaming $ do
-			subJSs <- liftM fromList $ sequence [do
+			)
+			(const (return ()))
+		js <- runSymbolRenaming $ do
+			subJSs <- liftM M.fromList $ sequence [do
 				subJS <- subEquiv
 				return (name, subJS)
 				| (name, subEquiv) <- subEquivs]
@@ -583,17 +587,17 @@ makeAbstraction :: M.Map String ProtoCompileVar
 makeAbstraction varTypes [] final =
 	final varTypes
 
-makeAbstraction varTypes ((paramName, paramType):rest) = do
+makeAbstraction varTypes ((paramName, paramType):rest) final = do
 	paramTypeFun <-
 		errorContextStateT ("in type of parameter `" ++ paramName ++ "`") $
 		protoCompileMetaType (makeOKToUseAtRuntime varTypes) paramType
 	let paramTypeDummy = paramTypeFun (makeDummies varTypes)
 	let varTypes' = M.insert paramName (ProtoCompileVarLocal paramTypeDummy) 
-	resultFun <- f varTypes' rest
+	resultFun <- makeAbstraction varTypes' rest final
 	return (\varValues -> let
 		paramRMT = paramTypeFun varValues
 		paramDummy = RMOUnknown paramRMT (Just paramName)
 		returnTypeDummy = typeOfRMO (resultFun (M.insert paramName paramDummy varValues))
-		RMOFun (paramName, paramRMT) returnTypeDummy (\argRMO -> resultFun (M.insert paramName argRMO varValues))
+		in RMOFun (paramName, paramRMT) returnTypeDummy (\argRMO -> resultFun (M.insert paramName argRMO varValues))
 		)
 
