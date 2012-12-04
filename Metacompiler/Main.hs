@@ -27,17 +27,20 @@ main = do
 				exitFailure
 			Right d -> return d
 		| filename <- filenames]
-	case runStateT (mapM_ processDirective allDirectives) emptyResults of
+	case runStateT (compileDirectives allDirectives) initialCompileState of
 		Left err -> do
 			hPutStrLn stderr "error:"
 			hPutStrLn stderr err
 			exitFailure
-		Right ((), results) -> do
-			hPutStrLn stderr ("note: found " ++ show (M.size (definitionsInResults results)) ++ " definitions")
-			forM_ (M.toList (definitionsInResults results)) $ \ (name, rmo) -> do
+		Right ((), finalCompileState) -> do
+			hPutStrLn stderr ("note: found " ++ show (M.size (definitionsInCompileState finalCompileState)) ++ " definitions")
+			forM_ (M.toList (definitionsInCompileState finalCompileState)) $ \ (name, rmo) -> do
 				hPutStrLn stderr ("note:     " ++ name ++ " :: " ++ formatRMT (typeOfRMO rmo))
-			when (null (emittedCodeOfResults results)) $ do
-				hPutStrLn stderr "warning: there are no emit-directives, or all emit-directives are empty"
-			putStrLn (emittedCodeOfResults results)
+			hPutStrLn stderr ("note: found " ++ show (M.size (seenGlobalsInCompileState finalCompileState)) ++ " globals")
+			when (null (emitsOfCompileState finalCompileState)) $ do
+				hPutStrLn stderr "warning: nothing is being emitted because \
+					\there are no `(emit ...)` or `(js-global ...)` \
+					\constructs, so nothing is being emitted"
+			putStrLn (renderStatements (emitsOfCompileState finalCompileState))
 			exitSuccess
 

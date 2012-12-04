@@ -37,15 +37,16 @@ The general procedure for compiling is as follows:
 --  *  When a local variable is in scope at the point where a `(js-global ...)`
 --     appears, but it cannot be transferred into the `(js-global ...)` because
 --     it is not of a type that can be expressed in JavaScript, it will be
---     represented as `ProtoCompileVarCannotTransfer`.
+--     represented as `ProtoCompileVarCantUseAtRuntime`. The `Range` is the
+--     location of the `(js-global ...)` that the var was defined outside of.
 
 data ProtoCompileVar
 	= ProtoCompileVarPresent RMO
 	| ProtoCompileVarFuture
 	| ProtoCompileVarLocal RMT
-	| ProtoCompileVarCannotTransfer
+	| ProtoCompileVarCantUseAtRuntime Range RMT
 
--- `ProtoCompileState` is used ot keep track of `(js-global ...)`s that were
+-- `ProtoCompileState` is used to keep track of `(js-global ...)`s that were
 -- encountered while proto-compiling.
 
 data ProtoCompileState = ProtoCompileState {
@@ -56,12 +57,15 @@ data ProtoCompileState = ProtoCompileState {
 
 data SeenGlobal = SeenGlobal {
 	nameOfSeenGlobal :: String,
-	transferrableLocalVarsOfSeenGlobal :: [(String, RMT)]
+	transferrableLocalVarsOfSeenGlobal :: [(String, RMO)]
 	}
 
 data UnprocessedGlobal = UnprocessedGlobal {
 	nameOfUnprocessedGlobal :: String,
+	rangeOfUnprocessedGlobal :: Range,
 	syntaxOfUnprocessedGlobal :: MetaObject Range,
+	expectedTypeOfUnprocessedGlobal :: RMO,
+	transferrableLocalVarsOfUnprocessedGlobal :: [(String, RMO)],
 	untransferrableLocalVarsOfUnprocessedGlobal :: M.Map String RMT,
 	globalVarsOfUnprocessedGlobal :: S.Set String
 	}
@@ -103,8 +107,8 @@ protoCompileMetaType varTypes (MTFun tag params result) = let
 -- instead of meta-types.
 
 protoCompileMetaObject :: M.Map String ProtoCompileVar
-                  -> MetaObject Range
-                  -> StateT ProtoCompileState (Either String) (M.Map String RMO -> RMO)
+                       -> MetaObject Range
+                       -> StateT ProtoCompileState (Either String) (M.Map String RMO -> RMO)
 
 protoCompileMetaObject varTypes (MOApp tag fun arg) = do
 	funFun <-
@@ -147,17 +151,21 @@ protoCompileMetaObject varTypes (MOVar tag name) =
 			error "top-sort should have prevented this"
 		Just (ProtoCompileVarLocal) ->
 			return (\varValues -> (M.!) varValues name)
-		Just ProtoCompileVarCannotTransfer ty ->
-			
+		Just ProtoCompileVarCantUseAtRuntime jsGlobalRange ty ->
+			lift $ Left ("variable `" ++ name ++ "` entered scope outside of \
+				\the `(js-global ...)` at " ++ formatRange jsGlobalRange ++
+				", so it cannot be accessed at " ++ formatRange tag ++
+				"because variables of type " ++ formatRMT ty + " cannot be \
+				\expressed as JavaScript runtime values.")
 		Nothing ->
-			lift $ Left ("name `" ++ name ++ "` is not in scope at " ++
+			lift $ Left ("variable `" ++ name ++ "` is not in scope at " ++
 				formatRange tag)
 
 protoCompileMetaObject varTypes (MOJSExpr tag code type_ spec subs) =
 	errorContextStateT ("in (js-expr ...) at " ++ formatRange tag) $ do
 		typeFun <-
 			errorContextStateT ("in (type ...) clause") $
-			protoCompileMetaObject varTypes type_
+			protoCompileMetaObject (makeOKToUseAtRuntime varTypes) type_
 		subFuns <- sequence [errorContextStateT ("in substitution for variable " ++ show name) $ do
 			valueFun <- protoCompileMetaObject varTypes value
 			let valueDummy = valueFun (makeDummies varTypes)
@@ -188,7 +196,7 @@ protoCompileMetaObject varTypes (MOJSGlobal tag uniqueId content type_ spec) =
 	errorContextStateT ("in `(js-global ...)` at " ++ formatRange tag) $ do
 		typeFun <-
 			errorContextStateT ("in (type ...) clause") $
-			protoCompileMetaObject type_
+			protoCompileMetaObject (makeOKToUseAtRuntime varTypes) type_
 
 		oldState <- get
 		seenGlobal <- case M.lookup uniqueId (seenGlobalsOfProtoCompileState oldState) of
@@ -197,24 +205,32 @@ protoCompileMetaObject varTypes (MOJSGlobal tag uniqueId content type_ spec) =
 			Nothing -> let
 				name:newNameSupply = (nameSupplyOfProtoCompileState oldState)
 
-				isTransferrable :: RMT -> Bool
-				transferrableLocalVars = [(name, ty)
+				getTypeIfIsTerm :: RMT -> Maybe RMO
+				getTypeIfIsTerm (RMTJSTerm _ ty) = Just ty
+				getTypeIfIsTerm _ = Nothing
+
+				transferrableLocalVars = [(name, fromJust maybeType)
 					| (name, ProtoCompileVarLocal ty) <- M.toList varTypes
-					, isTransferrable ty]
+					, maybeType = getTypeIfIsTerm ty, isJust maybeType]
 				untransferrableLocalVars = M.fromList [(name, ty)
 					| (name, ProtoCompileVarLocal ty) <- M.toList varTypes
-					, not (isTransferrable ty)]
+					, maybeType = getTypeIfIsTerm ty, not (isJust maybeType)]
+					`M.union` M.fromList [(name, ty)
+					| (name, ProtoCompileVarCantUseAtRuntime _ ty) <- M.toList varTypes]
 				globalVars = S.fromList [name | (name, ProtoCompileVarPresent _) <- M.toList varTypes]
 					`S.union` S.fromList [name | (name, ProtoCompileVarFuture) <- M.toList varTypes]
 
 				seenGlobal = SeenGlobal {
 					nameOfSeenGlobal = name,
-					transferrableLocalVarsOfSeenGlobal = transferrableLocalVars,
+					transferrableLocalVarsOfSeenGlobal = transferrableLocalVars
 					}
 
 				unprocessedGlobal = UnprocessedGlobal {
 					nameOfUnprocessedGlobal = name,
+					rangeOfUnprocessedGlobal = tag,
 					syntaxOfUnprocessedGlobal = content,
+					expectedTypeOfUnprocessedGlobal = typeFun (makeDummies varValues),
+					transferrableLocalVarsOfUnprocessedGlobal = transferrableLocalVars,
 					untransferrableLocalVarsOfUnprocessedGlobal = untransferrableLocalVars,
 					globalVarsOfUnprocessedGlobal = globalVars
 					}
@@ -261,6 +277,15 @@ data CompileState = CompileState {
 	nameSupplyOfCompileState :: [String],
 	symbolRenamingOfCompileState :: JSUtils.SymbolRenaming,
 	emitsOfCompileState :: [JS.Statement]
+	}
+
+initialCompileState :: CompileState
+initialCompileState = CompileState {
+	definitionsOfCompileState = M.empty,
+	seenGlobalsOfCompileState = M.empty,
+	nameSupplyOfCompileState = ["_global_" ++ show i | i <- [1..]],
+	symbolRenamingOfCompileState = initialSymbolRenaming,
+	emitsOfCompileState = []
 	}
 
 -- `compileDirectives` compiles a group of (potentially mutually recursive)
@@ -346,7 +371,7 @@ compileDirectives directives = do
 								valueFun <- protoCompileMetaObject value
 								case maybeType of
 									Just type_ -> do
-										typeFun <- protoCompileMetaType type_
+										typeFun <- protoCompileMetaType (makeOKToUseAtRuntime varTypes') type_
 										let valueDummy = valueFun (makeDummies varTypes')
 										let typeDummy = typeFun (makeDummies varTypes')
 										lift $ checkCanCastRMT "the defined value" typeDummy (typeOfRMO valueDummy)
@@ -375,8 +400,15 @@ compileDirectives directives = do
 			return (M.map (\ProtoCompileVarPresent rmo -> rmo) finalVarTypes)
 
 	let
+		runSymbolRenaming :: State JSUtils.SymbolRenaming a -> StateT CompileState (Either String) a
+		runSymbolRenaming equiv = do
+			oldState <- get
+			let (x, newSymbolRenaming) = runState equiv (symbolRenamingOfCompileState oldState)
+			put (oldState { symbolRenamingOfCompileState = newSymbolRenaming })
+			return x
+
 		runProtoCompilation :: (M.Map String RMO -> StateT ProtoCompileState (Either String) a)
-							-> (a -> StateT CompileState (Either String) b)
+							-> (M.Map String RMO -> a -> StateT CompileState (Either String) b)
 		                    -> StateT CompileState (Either String) b
 		runProtoCompilation protoCompilation postProcess = do
 			oldState <- get
@@ -387,38 +419,79 @@ compileDirectives directives = do
 				nameSupplyOfCompileState = newNameSupply,
 				seenGlobalsOfCompileState = seenGlobals
 				})
-			res2 <- postProcess res1
+			res2 <- postProcess (definitionsOfCompileState oldState) res1
 			processUnprocessedGlobals unprocessedGlobals
 
 		processUnprocessedGlobals :: [UnprocessedGlobal] -> StateT CompileState (Either String) ()
 		processUnprocessedGlobals ugs = sequence [do
 			runProtoCompilation
 				(\existingDefinitions -> let
-					varTypes = M.map 
-					in protoCompileMetaObject (syntaxOfUnprocessedGlobal ug)
+					varTypes = M.fromList [(name, ProtoCompileVarPresent (existingDefinitions ! name))
+							| name <- S.toList (globalVarsOfUnprocessedGlobal ug)]
+						`M.union` M.fromList [(name, ProtoCompileVarLocal (RMTJSTerm ty True))   -- TODO: Be stricter about SL
+							| (name, ty) <- transferrableLocalVarsOfUnprocessedGlobal ug]
+						`M.union` M.fromList [(name, ProtoCompileVarCantUseAtRuntime (rangeOfUnprocessedGlobal ug) ty)
+							| (name, ty) <- M.toList (untransferrableLocalVarsOfUnprocessedGlobal ug)]
+					in protoCompileMetaObject varTypes (syntaxOfUnprocessedGlobal ug)
 					)
-				(const (return ()))
+				(\existingDefinitions compiledFun -> do
+					renamedVars <- runSymbolRenaming $
+						mapM renameSymbol (map fst (transferrableLocalVarsOfUnprocessedGlobal ug))
+					let varValues = M.fromList [(name, existingDefinitions ! name)
+							| name <- S.toList (globalVarsOfUnprocessedGlobal ug)]
+						`M.union` M.fromList [(name, RMOJSTerm
+								ty
+								(Just (error "no SL support yet"))   -- TODO: Be stricter about SL
+								(return (JS.VarRef () (JS.Id () renamed)))
+								)
+							| ((name, ty), renamed) <- zip (transferrableLocalVarsOfUnprocessedGlobal ug) renamedVars]
+						`M.union` M.fromList [(name, ProtoCompileVarCantUseAtRuntime (rangeOfUnprocessedGlobal ug) ty)
+							| (name, ty) <- M.toList (untransferrableLocalVarsOfUnprocessedGlobal ug)]
+					let compiledRMO = compiledFun varValues
+					lift $ checkCanCastRMT
+						("value of global at " ++ formatRange (rangeOfUnprocessedGlobal ug))
+						(RMTJSTerm (expectedTypeOfUnprocessedGlobal ug) False)   -- TODO: Be stricter about SL
+						(typeOfRMO compiledRMO)
+					let equiv = case compiledRMO of
+						RMOJSTerm _ _ equiv -> equiv
+						RMOUnknown _ _ -> error "js-global turned out to be RMOUnknown"
+						_ -> error "checkCanCastRMT should have caught this"
+					bodyJS <- runSymbolRenaming equiv
+					let js = JS.FunctionStmt ()
+						(JS.Id () (nameOfUnprocessedGlobal ug))
+						[JS.Id () n | n <- renamedVars]
+						(JS.ReturnStmt () (Just bodyJS))
+					oldState <- get
+					put (oldState { emitsOfCompileState = emitsOfCompileState oldState ++ [js] })
+				)
 			| ug <- ugs]
 
-	(postProtoCompilationVarTypes, ProtoCompileState newNameSupply newSeenGlobals unprocessedGlobals) <-
-		lift $ runStateT protoCompilation
-			(ProtoCompileState
-				(nameSupplyOfCompileState oldState)
-				(seenGlobalsOfCompileState oldState)
-				M.empty)
+	runProtoCompilation
+		protoCompilation
+		(\existingDefinitions newDefinitions -> do
+			oldState <- get
+			put (oldState { definitionsOfCompileState =	M.union existingDefinitions newDefinitions })
+		)
 
-	put (oldState {
-		nameSupplyOfCompileState = newNameSupply,
-		seenGlobalsOfCompileState = newSeenGlobals,
-		definitionsOfCompileState = M.map (\ProtoCompileVarPresent rmo -> rmo) postProtoCompilationVarTypes
-		})
-
-	let
-		processGlobals :: [UnprocessedGlobal] -> StateT CompileState (Either String) ()
-		processGlobals [] = return ()
-		processGlobals (global:globals) = do
-			let protoCompileScope = 
-
+	sequence [do
+		subEquivs <- runProtoCompilation
+			(\existingDefinitions -> sequence [do
+				subFun <- protoCompileMetaObject (M.map ProtoCompileVarPresent existingDefinitions) subTerm
+				let subRMO = subFun existingDefinitions
+				lift $ checkCanCastRMOToJSTerm "substitution" False (typeOfRMO subRMO)
+				case subRMO
+					RMOJSTerm _ _ subEquiv -> return (name, subEquiv)
+					_ -> error "checkCanCastRMOToJSTerm should have caught this"
+				| (name, subTerm) <- subs]
+		wholeJS <- runSymbolRenaming $ do
+			subJSs <- liftM fromList $ sequence [do
+				subJS <- subEquiv
+				return (name, subJS)
+				| (name, subEquiv) <- subEquivs]
+			JSUtils.revariableStatement subJSs (JS.removeAnnotations code)
+		oldState <- get
+		put (oldState { emitsOfCompileState = emitsOfCompileState oldState ++ [js] })
+		| DEmit tag code subs <- directives]
 
 -- `errorContextStateT` puts the given message on top of any error messages as
 -- they bubble up.
@@ -441,7 +514,47 @@ makeDummies = M.mapWithKey (\name var -> case var of
 		error "top-sort should have prevented this"
 	ProtoCompileVarLocal ty ->
 		RMOUnknown ty (Just name)
+	ProtoCompileVarCantUseAtRuntime ty ->
+		RMOUnknown ty (Just name)
 	)
+
+-- `makeOKToUseAtRuntime` replaces `ProtoCompileVarCantUseAtRuntime` with
+-- `ProtoCompileVarLocal`. It's called whenever we transition from compiling
+-- something that happens at runtime to something that happens at compile time.
+
+makeOKToUseAtRuntime :: M.Map String ProtoCompileVar -> M.Map String ProtoCompileVar
+makeOKToUseAtRuntime = M.map (\var -> case var of
+	ProtoCompileVarCantUseAtRuntime _ ty -> ProtoCompileVarLocal ty
+	_ -> var
+	)
+
+-- `checkCanCastRMT` and `checkCanCastRMTToJSTerm` are convenience functions
+-- for type-checking, to make sure that the error message for a wrong type is
+-- the same everywhere.
+
+checkCanCastRMT :: String -> RMT -> RMT -> Either String ()
+checkCanCastRMT what expectedRMT actualRMT = case canCastRMT M.empty actualRMT expectedRMT of
+	Provably True ->
+		return ()
+	Provably False ->
+		Left (firstPart ++ " It is impossible to cast the latter to the former.")
+	NotProvable ->
+		Left (firstPart ++ " metacompiler cannot prove that it is possible to \
+			\cast the latter to the former.")
+	where
+		firstPart = "The expected type of " ++ what ++ " is " ++
+			formatRMT expectedRMT ++ ", but the actual type was " ++
+			formatRMT actualRMT ++ "."
+
+checkCanCastRMTToJSTerm :: String -> Bool -> RMT -> Either String ()
+checkCanCastRMTToJSTerm what requireSL actualRMT = case actualRMT of
+	RMTJSTerm _ hasSL | hasSL || not requireSL ->
+		return ()
+	otherType ->
+		Left ("The expected type of " ++ what ++ " is " ++
+			(if requireSL then "(js-sl-term ...)" else "(js-term ...)") ++
+			", but the actual type was " ++ formatRMT actualRMT ++ ". It is \
+			\impossible to cast the latter to the former.")
 
 -- `makeAbstraction` is used to implement `(\ ... -> ...)`, `(let ...)`, and
 -- `(js-repr ...)`; in other words, any situation where an RMO is parameterized
@@ -458,7 +571,7 @@ makeAbstraction varTypes [] final =
 makeAbstraction varTypes ((paramName, paramType):rest) = do
 	paramTypeFun <-
 		errorContextStateT ("in type of parameter `" ++ paramName ++ "`") $
-		protoCompileMetaType varTypes paramType
+		protoCompileMetaType (makeOKToUseAtRuntime varTypes) paramType
 	let paramTypeDummy = paramTypeFun (makeDummies varTypes)
 	let varTypes' = M.insert paramName (ProtoCompileVarLocal paramTypeDummy) 
 	resultFun <- f varTypes' rest
