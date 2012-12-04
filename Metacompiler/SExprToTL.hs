@@ -257,7 +257,7 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-global") rest) =
 		content <- parseTLMetaObjectFromSExpr unparsedContent
 		return (TL.MOJSGlobal {
 			TL.tagOfMetaObject = rangeOfSExprs whole,
-			TL.uniqueIdOfMetaObject = JSGlobalUniqueId (formatRange (rangeOfSExprs whole)),
+			TL.uniqueIdOfMetaObject = TL.JSGlobalUniqueId (formatRange (rangeOfSExprs whole)),
 			TL.contentOfMetaObject = content,
 			TL.typeOfMetaObject = type_,
 			TL.specOfMetaObject = spec
@@ -298,7 +298,7 @@ parseJavaScriptExprFromString string =
 
 parseJavaScriptStatementsFromString :: String -> Either String [JS.Statement JS.SourcePos]
 parseJavaScriptStatementsFromString string =
-	case JS.parse (JS.parseStatement `Text.Parsec.sepBy` Text.Parsec.whiteSpace) of
+	case JS.parse (JS.parseStatement `Text.Parsec.sepBy` Text.Parsec.space) of
 		Left err -> Left (show err)
 		Right x -> return x
 	where

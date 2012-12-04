@@ -83,14 +83,14 @@ data MetaObject a
 	| MOJSGlobal {
 		tagOfMetaObject :: a,
 		uniqueIdOfMetaObject :: JSGlobalUniqueId,
-		contentOfMetaObject :: MetaObject a
+		contentOfMetaObject :: MetaObject a,
 		typeOfMetaObject :: MetaObject a,
 		specOfMetaObject :: Maybe (SL.Term a)
 	}
 
 	deriving Show
 
-newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord)
+newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord, Show)
 
 -- `Directive` represents a top-level translation language directive.
 
