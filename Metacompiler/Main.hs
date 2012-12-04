@@ -35,10 +35,10 @@ main = do
 			hPutStrLn stderr err
 			exitFailure
 		Right ((), finalCompileState) -> do
-			hPutStrLn stderr ("note: found " ++ show (M.size (definitionsOfCompileState finalCompileState)) ++ " definitions")
+			hPutStrLn stderr ("note: found " ++ show (M.size (definitionsOfCompileState finalCompileState)) ++ " definition(s)")
 			forM_ (M.toList (definitionsOfCompileState finalCompileState)) $ \ (name, rmo) -> do
 				hPutStrLn stderr ("note:     " ++ name ++ " :: " ++ formatRMT (typeOfRMO rmo))
-			hPutStrLn stderr ("note: found " ++ show (M.size (seenGlobalsOfCompileState finalCompileState)) ++ " globals")
+			hPutStrLn stderr ("note: found " ++ show (M.size (seenGlobalsOfCompileState finalCompileState)) ++ " global(s)")
 			when (null (emitsOfCompileState finalCompileState)) $ do
 				hPutStrLn stderr "warning: nothing is being emitted because \
 					\there are no `(emit ...)` or `(js-global ...)` \
