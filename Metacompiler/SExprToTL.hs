@@ -298,7 +298,7 @@ parseJavaScriptExprFromString string =
 
 parseJavaScriptStatementsFromString :: String -> Either String [JS.Statement JS.SourcePos]
 parseJavaScriptStatementsFromString string =
-	case JS.parse (JS.parseStatement `Text.Parsec.sepBy` Text.Parsec.space) of
+	case JS.parse (JS.parseStatement `Text.Parsec.sepBy` Text.Parsec.space) "<string>" string of
 		Left err -> Left (show err)
 		Right x -> return x
 	where
