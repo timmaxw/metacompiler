@@ -6,7 +6,6 @@ import Control.Monad.Trans (lift)
 import qualified Data.List (intercalate, elemIndex)
 import qualified Data.Map as M
 import qualified Data.Maybe (isJust)
-import qualified Language.ECMAScript3.PrettyPrint as JS
 import qualified Language.ECMAScript3.Syntax as JS
 import qualified Language.ECMAScript3.Syntax.Annotations as JS
 import qualified Metacompiler.JSUtils as JSUtils

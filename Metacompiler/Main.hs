@@ -3,6 +3,7 @@ module Metacompiler.Main where
 import Control.Monad (liftM)
 import Control.Monad.State
 import qualified Data.Map as M
+import qualified Language.ECMAScript3.PrettyPrint as JS
 import Metacompiler.ParseSExpr
 import Metacompiler.SExpr
 import Metacompiler.SExprToSL (errorContext)   -- TODO: Move `errorContext` into its own file
@@ -34,14 +35,14 @@ main = do
 			hPutStrLn stderr err
 			exitFailure
 		Right ((), finalCompileState) -> do
-			hPutStrLn stderr ("note: found " ++ show (M.size (definitionsInCompileState finalCompileState)) ++ " definitions")
-			forM_ (M.toList (definitionsInCompileState finalCompileState)) $ \ (name, rmo) -> do
+			hPutStrLn stderr ("note: found " ++ show (M.size (definitionsOfCompileState finalCompileState)) ++ " definitions")
+			forM_ (M.toList (definitionsOfCompileState finalCompileState)) $ \ (name, rmo) -> do
 				hPutStrLn stderr ("note:     " ++ name ++ " :: " ++ formatRMT (typeOfRMO rmo))
-			hPutStrLn stderr ("note: found " ++ show (M.size (seenGlobalsInCompileState finalCompileState)) ++ " globals")
+			hPutStrLn stderr ("note: found " ++ show (M.size (seenGlobalsOfCompileState finalCompileState)) ++ " globals")
 			when (null (emitsOfCompileState finalCompileState)) $ do
 				hPutStrLn stderr "warning: nothing is being emitted because \
 					\there are no `(emit ...)` or `(js-global ...)` \
 					\constructs, so nothing is being emitted"
-			putStrLn (renderStatements (emitsOfCompileState finalCompileState))
+			putStrLn (JS.renderStatements (emitsOfCompileState finalCompileState))
 			exitSuccess
 
