@@ -1,6 +1,6 @@
 # Making SL equivalents part of the type rather than part of the value
 
-I am considering changing TL so that instead of the SL equivalent of a JS term being part of its value, the SL equivalent would be part of its type. This is still very much a work in progress; there are some things that I'm unsure how to express under the proposed system.
+I am considering changing TL so that instead of the SL equivalent of a JS term being part of its value, the SL equivalent would be part of its type. This is still very much a work in progress; there are some things that I'm unsure how to express under the proposed system. Specifically, it's not clear how to introduce new variables into scope in a `(js-expr ...)`, such as when implementing `case` or functions.
 
 ## Summary of proposed changes
 
