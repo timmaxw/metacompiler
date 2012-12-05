@@ -1,5 +1,7 @@
 # Examples
 
+**Note: Because the translation language has been changing rapidly recently, this document is somewhat out-of-date.**
+
 This is a collection of examples of SL and translation-language code.
 
 ## A simple example: translating Peano numbers into Javascript numbers
