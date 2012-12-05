@@ -1,16 +1,14 @@
-1. Translation-language parser
+1. ~~Translation-language parser~~
 
-2. SL parser, type-checker, and interpreter
+2. ~~Translation-language type-checker (deps: 1)~~
 
-3. Given translation-language term, compute SL equivalent (deps: 1, 2)
+3. ~~Given translation-language term, compute JavaScript equivalent (deps: 2)~~
 
-4. Type-check translation language (deps: 3)
+4. SL ~~parser~~, type-checker, and interpreter
 
-5. Given translation-language term, compute Javascript equivalent (deps: 1)
+5. ~~Front-end and `(emit ...)` (deps: 3)~~
 
-6. Implement `use` and `infer` (deps: 3)
+6. Implement `use` and `infer` (deps: 2, 4)
 
-7. Put a front-end on it and implement `emit` (deps: 5)
-
-8. Automatic verification (deps: 6, 7)
+7. Automatic verification (deps: 4)
 

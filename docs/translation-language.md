@@ -1,5 +1,7 @@
 # Translation language
 
+**Note: Because the translation language has been changing rapidly recently, this document is somewhat out-of-date.**
+
 This document is a detailed specification for the translation files that `metacompiler` takes as input. It assumes you are already familiar with SL. Also, you are advised to "get the hang of" translation files by reading some examples before trying to read this dry document.
 
 `metacompiler` is scripted and controlled by means of a language called the "translation language" or "TL". Technically, TL is a non-Turing-complete dependently-typed functional programming language, but its sole purpose is to script `metacompiler` so it isn't a very powerful or interesting language on its own.
