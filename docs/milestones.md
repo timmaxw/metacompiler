@@ -8,7 +8,9 @@
 
 5. ~~Front-end and `(emit ...)` (deps: 3)~~
 
-6. Implement `use` and `infer` (deps: 2, 4)
+6. Evaluate moving SL into `metacompiler`'s type system, and implement if appropriate (deps: 3)
 
-7. Automatic verification (deps: 4)
+7. Implement `use` and `infer` (deps: 2, 4)
+
+8. Automatic verification (deps: 4)
 
