@@ -11,83 +11,71 @@ import qualified Metacompiler.SLSyntax as SL
 -- typically be `Range`.
 
 data MetaType a
-	-- The meta-type of unparameterized Javascript types:
-	--     'js-type'
-	= MTJSType {
+	= MTSLType {
 		tagOfMetaType :: a
 	}
-
-	-- The meta-type of unparameterized terms:
-	--     'js-sl-term' (<type>)
-	-- or
-	--     'js-term' (<type>)
-	| MTJSTerm {
+	| MTSLTerm {
 		tagOfMetaType :: a,
-		hasSLOfMetaType :: Bool,
 		typeOfMetaType :: MetaObject a
 	}
-
-	-- The meta-type of parameterized meta-objects:
-	--     'fun' (<meta-type>)+ '->' <meta-type>
+	| MTJSExprType {
+		tagOfMetaType :: a
+		slEquivOfMetaType :: MetaObject a
+	}
+	| MTJSExpr {
+		tagOfMetaType :: a,
+		slEquivOfMetaType :: MetaObject a,
+		typeOfMetaType :: MetaObject a
+	}
 	| MTFun {
 		tagOfMetaType :: a,
 		paramsOfMetaType :: [(String, MetaType a)],
 		resultOfMetaType :: MetaType a
 	}
-
 	deriving Show
 
 -- `MetaObject` represents a translation-language meta-object.
 
 data MetaObject a
-	-- Meta-object application:
-	--     <meta-object> (<meta-object>)
 	= MOApp {
 		tagOfMetaObject :: a,
 		funOfMetaObject :: MetaObject a,
 		argOfMetaObject :: MetaObject a
 	}
-
-	-- Meta-object abstraction:
-	--     '\' (<name> '::' (<meta-type>))+ '->' <meta-object>
 	| MOAbs {
 		tagOfMetaObject :: a,
 		paramsOfMetaObject :: [(String, MetaType a)],
 		resultOfMetaObject :: MetaObject a
 	}
-
-	-- Referring to a meta-object in scope:
-	--     <name>
 	| MOVar {
 		tagOfMetaObject :: a,
 		varOfMetaObject :: String
 	}
-
-	-- Term with a manually-specified JS equivalent:
-	--     ('js-expr'
-	--         ('type' <type>)
-	--         ('spec' <SL-term>)?
-	--         ('=' "<JS-var>" <value>)
-	--         "<JS-code>"
-	--     )
-	| MOJSExpr {
+	| MOSLTypeLiteral {
 		tagOfMetaObject :: a,
-		codeOfMetaObject :: JS.Expression JS.SourcePos,
-		typeOfMetaObject :: MetaObject a,
-		specOfMetaObject :: Maybe (SL.Term a),
-		subsOfMetaObject :: [(String, MetaObject a)]
+		slTypeLiteralOfMetaObject :: SL.Type a,
+		slTypeBindsOfMetaObject :: [(String, MetaObject a)]
 	}
-
-	-- Recursion term:
-	--     ('js-global' ('type' <type>) ('spec' <SL-term>)? <term>)
-	| MOJSGlobal {
+	| MOSLTermLiteral {
+		tagOfMetaObject :: a,
+		slTermLiteralOfMetaObject :: SL.Term a,
+		slTypeBindsOfMetaObject :: [(String, MetaObject a)],
+		slTermBindsOfMetaObject :: [(String, MetaObject a)]
+	}
+	| MOJSExprLiteral {
+		tagOfMetaObject :: a,
+		jsExprLiteralOfMetaObject :: JS.Expression JS.SourcePos,
+		slEquivOfMetaObject :: MetaObject a,
+		jsTypeOfMetaObject :: MetaObject a,
+		jsExprBindsOfMetaObject :: [(String, MetaObject a)]
+	}
+	| MOJSExprGlobal {
 		tagOfMetaObject :: a,
 		uniqueIdOfMetaObject :: JSGlobalUniqueId,
 		contentOfMetaObject :: MetaObject a,
-		typeOfMetaObject :: MetaObject a,
-		specOfMetaObject :: Maybe (SL.Term a)
+		slEquivOfMetaObject :: MetaObject a,
+		jsTypeOfMetaObject :: MetaObject a
 	}
-
 	deriving Show
 
 newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord, Show)
@@ -95,10 +83,6 @@ newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord, Show)
 -- `Directive` represents a top-level translation language directive.
 
 data Directive a
-	-- `let` directive:
-	--     ('let' <name> (<name> '::' <meta-type>)* {'::' (<meta-type>)}? '='
-	--         <meta-object>
-	--     )
 	= DLet {
 		tagOfDirective :: a,
 		nameOfDirective :: String,
@@ -106,29 +90,16 @@ data Directive a
 		typeOfDirective :: Maybe (MetaType a),
 		valueOfDirective :: MetaObject a
 	}
-
-	-- `js-repr` directive:
-	--     ('js-repr' <name> (<name> '::' <meta-type>)* '='
-	--         ('spec' <SL-type>)
-	--     )
-	| DJSRepr {
+	| DJSExprType {
 		tagOfDirective :: a,
 		nameOfDirective :: String,
 		paramsOfDirective :: [(String, MetaType a)],
-		specOfDirective :: SL.Type a
+		slEquivOfDirective :: MetaObject a
 	}
-
-	-- `emit` directive:
-	--     ('emit'
-	--         "<JS-code>"
-	--         ('=' "<JS-var>" <term>)*
-	--     )
 	| DEmit {
 		tagOfDirective :: a,
 		codeOfDirective :: [JS.Statement JS.SourcePos],
-		subsOfDirective :: [(String, MetaObject a)]
+		jsExprBindsOfDirective :: [(String, MetaObject a)]
 	}
-
 	deriving Show
-
 
