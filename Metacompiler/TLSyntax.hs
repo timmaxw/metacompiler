@@ -2,7 +2,9 @@ module Metacompiler.TLSyntax where
 
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.Syntax as JS
-import qualified Metacompiler.SLSyntax as SL
+import qualified Metacompiler.SLSyntax as SLS
+
+newtype Var = Var { unVar :: String } deriving (Eq, Ord)
 
 -- `MetaType` represents a translation-language meta-type. It is more of a
 -- syntactic representation than a semantic one; for example, it doesn't
@@ -11,26 +13,32 @@ import qualified Metacompiler.SLSyntax as SL
 -- typically be `Range`.
 
 data MetaType a
-	= MTSLType {
+	= MTFun {
+		tagOfMetaType :: a,
+		paramsOfMTFun :: [(Var, MetaType a)],
+		resultOfMTFun :: MetaType a
+	}
+	| MTSLType {
 		tagOfMetaType :: a
 	}
 	| MTSLTerm {
 		tagOfMetaType :: a,
-		typeOfMetaType :: MetaObject a
-	}
-	| MTJSExprType {
-		tagOfMetaType :: a
-		slEquivOfMetaType :: MetaObject a
+		slTypeOfMTSLTerm :: MetaObject a
 	}
 	| MTJSExpr {
-		tagOfMetaType :: a,
-		slEquivOfMetaType :: MetaObject a,
-		typeOfMetaType :: MetaObject a
+		tagOfMetaType :: a
 	}
-	| MTFun {
+	| MTJSStatement {
+		tagOfMetaType :: a
+	}
+	| MTJSEquivExprType {
+		tagOfMetaType :: a
+		slTypeOfMTJSEquivExprType :: MetaObject a
+	}
+	| MTJSEquivExpr {
 		tagOfMetaType :: a,
-		paramsOfMetaType :: [(String, MetaType a)],
-		resultOfMetaType :: MetaType a
+		slTermOfMTJSEquivExpr :: MetaObject a,
+		jsEquivExprTypeOfMTJSEquivExpr :: MetaObject a
 	}
 	deriving Show
 
@@ -39,43 +47,59 @@ data MetaType a
 data MetaObject a
 	= MOApp {
 		tagOfMetaObject :: a,
-		funOfMetaObject :: MetaObject a,
-		argOfMetaObject :: MetaObject a
+		funOfMOApp :: MetaObject a,
+		argOfMOApp :: MetaObject a
 	}
 	| MOAbs {
 		tagOfMetaObject :: a,
-		paramsOfMetaObject :: [(String, MetaType a)],
-		resultOfMetaObject :: MetaObject a
+		paramsOfMOAbs :: [(Var, MetaType a)],
+		resultOfMOAbs :: MetaObject a
 	}
 	| MOVar {
 		tagOfMetaObject :: a,
-		varOfMetaObject :: String
+		varOfMOVar :: String
 	}
 	| MOSLTypeLiteral {
 		tagOfMetaObject :: a,
-		slTypeLiteralOfMetaObject :: SL.Type a,
-		slTypeBindsOfMetaObject :: [(String, MetaObject a)]
+		codeOfMOSLTypeLiteral :: SLS.Type a,
+		slTypeBindsOfMOSLTypeLiteral :: [(SLS.Var, MetaObject a)]
 	}
 	| MOSLTermLiteral {
 		tagOfMetaObject :: a,
-		slTermLiteralOfMetaObject :: SL.Term a,
-		slTypeBindsOfMetaObject :: [(String, MetaObject a)],
-		slTermBindsOfMetaObject :: [(String, MetaObject a)]
+		codeOfMOSLTermLiteral :: SLS.Term a,
+		slTypeBindsOfMOSLTermLiteral :: [(SLS.Var, MetaObject a)],
+		slTermVarsOfMOSLTermLiteral :: [(SLS.Var, Var)],
+		slTermBindsOfMOSLTermLiteral :: [(SLS.Var, MetaObject a)]
 	}
 	| MOJSExprLiteral {
 		tagOfMetaObject :: a,
-		jsExprLiteralOfMetaObject :: JS.Expression JS.SourcePos,
-		slEquivOfMetaObject :: MetaObject a,
-		jsTypeOfMetaObject :: MetaObject a,
-		jsExprBindsOfMetaObject :: [(String, MetaObject a)]
+		codeOfMOJSExprLiteral :: JS.Expression JS.SourcePos,
+		jsExprVarsOfMOJSExprLiteral :: [(JS.Id (), Var)],
+		jsExprBindsOfMOJSExprLiteral :: [(JS.Id(), MetaObject a)]
 	}
-	| MOJSExprGlobal {
+	| MOJSStatementLiteral {
 		tagOfMetaObject :: a,
-		uniqueIdOfMetaObject :: JSGlobalUniqueId,
-		contentOfMetaObject :: MetaObject a,
-		slEquivOfMetaObject :: MetaObject a,
-		jsTypeOfMetaObject :: MetaObject a
+		codeOfMOJSStatementLiteral :: [JS.Statement JS.SourcePos],
+		jsExprVarsOfMOJSStatementLiteral :: [(JS.Id (), Var)],
+		jsExprBindsOfMOJSStatementLiteral :: [(JS.Id(), MetaObject a)]
 	}
+	| MOJSEquivExprWrap {
+		tagOfMetaObject :: a,
+		slTermOfMOJSEquivExprLiteral :: MetaObject a,
+		jsTypeOfMOJSEquivExprLiteral :: MetaObject a,
+		jsExprOfMOJSEquivExprLiteral :: MetaObject a
+	}
+	| MOJSEquivExprGlobal {
+		tagOfMetaObject :: a,
+		slTermOfMOJSEquivExprGlobal :: MetaObject a,
+		jsTypeOfMOJSEquivExprGlobal :: MetaObject a,
+		uniqueIdOfMOJSEquivExprGlobal :: JSGlobalUniqueId,
+		contentOfMOJSEquivExprGlobal :: MetaObject a
+	}
+	| MOJSEquivExprUnwrap {
+		tagOfMetaObject :: a,
+		contentOfMOJSEquivExprUnwrap :: MetaObject a
+	}	
 	deriving Show
 
 newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord, Show)
@@ -85,21 +109,20 @@ newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord, Show)
 data Directive a
 	= DLet {
 		tagOfDirective :: a,
-		nameOfDirective :: String,
-		paramsOfDirective :: [(String, MetaType a)],
-		typeOfDirective :: Maybe (MetaType a),
-		valueOfDirective :: MetaObject a
+		nameOfDLet :: String,
+		paramsOfDLet :: [(String, MetaType a)],
+		typeOfDLet :: Maybe (MetaType a),
+		valueOfDLet :: MetaObject a
 	}
 	| DJSExprType {
 		tagOfDirective :: a,
-		nameOfDirective :: String,
-		paramsOfDirective :: [(String, MetaType a)],
-		slEquivOfDirective :: MetaObject a
+		nameOfDJSExprType :: String,
+		paramsOfDJSExprType :: [(String, MetaType a)],
+		slEquivOfDJSExprType :: MetaObject a
 	}
 	| DEmit {
 		tagOfDirective :: a,
-		codeOfDirective :: [JS.Statement JS.SourcePos],
-		jsExprBindsOfDirective :: [(String, MetaObject a)]
+		contentOfDEmit :: MetaObject a
 	}
 	deriving Show
 
