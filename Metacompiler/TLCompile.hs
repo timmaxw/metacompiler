@@ -3,15 +3,15 @@ module Metacompiler.TLCompile where
 data LocalState = LocalState {
 	nameSupplyOfLocalState :: [String],
 	seenGlobalsOfLocalState :: M.Map JSGlobalUniqueId SeenGlobal,
-	globalsToProcessOfLocalState :: [M.Map TLR.Var TLR.MetaObject -> StateT GlobalState (Either String) ()]
+	globalsToProcessOfLocalState :: [M.Map TLR.Name TLR.MetaObject -> StateT GlobalState (Either String) ()]
 	}
 
-data ScopeVar
-	= ScopeVarGlobalPresent TLR.MetaObject
-	| ScopeVarGlobalFuture
-	| ScopeVarLocal TLR.MetaType
+data ScopeName
+	= ScopeNameGlobalPresent TLR.MetaObject
+	| ScopeNameGlobalFuture
+	| ScopeNameLocal TLR.MetaType
 
-compileMetaType :: M.Map TLR.Var ScopeVar -> TLS.MetaType Range -> StateT LocalState (Either String) TLR.MetaType
+compileMetaType :: M.Map TLR.Name ScopeName -> TLS.MetaType Range -> StateT LocalState (Either String) TLR.MetaType
 compileMetaType scope (TLS.MTFun range params result) =
 	compileAbstraction scope params (\scope' -> compileMetaType scope' result) TLR.MTFun
 compileMetaType scope (TLS.MTSLType range) = do
@@ -39,7 +39,7 @@ compileMetaType scope (TLS.MTJSEquivExpr range slTerm jsEquivExprType) = do
 			\the JavaScript type. This is false and/or difficult to prove.")
 	return (TLR.MTJSEquivExpr slTerm' jsEquivExprType')
 
-compileMetaObject :: M.Map TLR.Var ScopeVar -> TLS.MetaObject Range -> StateT LocalState (Either String) TLR.MetaObject
+compileMetaObject :: M.Map TLR.Name ScopeName -> TLS.MetaObject Range -> StateT LocalState (Either String) TLR.MetaObject
 compileMetaObject scope (TLS.MOApp range fun arg) = do
 	fun' <- compileMetaObject scope fun
 	arg' <- compileMetaObject scope arg
@@ -48,11 +48,11 @@ compileMetaObject scope (TLS.MOApp range fun arg) = do
 	return (TLR.MOApp fun' arg')
 compileMetaObject scope (TLS.MOAbs range params result) =
 	compileAbstraction scope params (\scope' -> compileMetaObject scope' result) TLR.MOAbs
-compileMetaObject scope (TLS.MOVar range name) = case M.lookup scope name' of
-	Just (ScopeVarGlobalPresent x) -> return x
-	Just ScopeVarGlobalFuture -> error "top-sort should have prevented this"
-	Just (ScopeVarLocal type_) -> return (TLR.MOVar name' type_)
-	where name' = TLR.Var (TLS.fromVar name)
+compileMetaObject scope (TLS.MOName range name) = case M.lookup scope name' of
+	Just (ScopeNameGlobalPresent x) -> return x
+	Just ScopeNameGlobalFuture -> error "top-sort should have prevented this"
+	Just (ScopeNameLocal type_) -> return (TLR.MOName name' type_)
+	where name' = TLR.Name (TLS.fromName name)
 compileMetaObject scope (TLS.
 compileMetaObject scope (TLS.MOJSEquivExprLiteral range slTerm jsType jsExpr) = do
 	return (TLR.MOJSExprLiteral 
@@ -60,16 +60,16 @@ compileMetaObject scope (TLS.MOJSEquivExprLiteral range slTerm jsType jsExpr) = 
 compileDirectives :: [TLS.Directive Range] -> StateT GlobalState (Either String) ()
 ...
 
-compileAbstraction :: M.Map TLR.Var ScopeVar
-                   -> [(TLS.Var, TLS.MetaType Range)]
-                   -> (M.Map TLR.Var ScopeVar -> StateT LocalState (Either String) a)
-                   -> ((TLR.Var, TLR.Metatype) -> a -> a)
+compileAbstraction :: M.Map TLR.Name ScopeName
+                   -> [(TLS.Name, TLS.MetaType Range)]
+                   -> (M.Map TLR.Name ScopeName -> StateT LocalState (Either String) a)
+                   -> ((TLR.Name, TLR.Metatype) -> a -> a)
                    -> StateT LocalState (Either String) a
 compileAbstraction scope [] base fun = base scope
 compileAbstraction scope ((paramName, paramType):params) base fun = do
-	let paramName' = TLR.Var (TLS.unVar paramName)
+	let paramName' = TLR.Name (TLS.unName paramName)
 	paramType' <- compileMetaType scope paramType
-	let scope' = M.insert paramName' (ScopeVarLocal paramType') scope
+	let scope' = M.insert paramName' (ScopeNameLocal paramType') scope
 	rest <- compileAbstraction scope' params base fun
 	return (fun (paramName', paramType') rest)
 

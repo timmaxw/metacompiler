@@ -2,10 +2,10 @@ module Metacompiler.TLRuntime where
 
 import qualified Metacompiler.SLRuntime as SLR
 
-newtype Var = Var { unVar :: String } deriving (Ord, Eq)
+newtype Name = Name { unName :: String } deriving (Ord, Eq)
 
 data MetaType
-	= MTFun (Var, MetaType) MetaType
+	= MTFun (Name, MetaType) MetaType
 	| MTSLType
 	| MTSLTerm MetaObject
 	| MTJSExpr
@@ -15,12 +15,12 @@ data MetaType
 
 data MetaObject
 	= MOApp MetaObject MetaObject
-	| MOAbs (Var, MetaType) MetaObject
-	| MOVar Var MetaType
-	| MOSLTypeLiteral SLR.Type (M.Map SLR.Var MetaObject)
-	| MOSLTermLiteral SLR.Term (M.Map SLR.Var MetaObject) (M.Map SLR.Var Var) (M.Map SLR.Var MetaObject)
-	| MOJSExprLiteral (JS.Expression ()) (M.Map (JS.Id ()) Var) (M.Map (JS.Id ()) MetaObject)
-	| MOJSStatementLiteral [JS.Statement ()] (M.Map (JS.Id ()) Var) (M.Map (JS.Id ()) MetaObject)
+	| MOAbs (Name, MetaType) MetaObject
+	| MOName Name MetaType
+	| MOSLTypeLiteral SLR.Type (M.Map SLR.Name ([Name], MetaObject))
+	| MOSLTermLiteral SLR.Term (M.Map SLR.Name ([Name], MetaObject)) (M.Map SLR.Name ([Name], MetaObject))
+	| MOJSExprLiteral (JS.Expression ()) (M.Map (JS.Id ()) ([(Name, Name, MetaObject)], MetaObject))
+	| MOJSStatementLiteral [JS.Statement ()] (M.Map (JS.Id ()) ([(Name, Name, MetaObject)], MetaObject))
 	| MOJSEquivExprWrap MetaObject MetaObject MetaObject
 	| MOJSEquivExprUnwrap MetaObject
 
@@ -29,18 +29,18 @@ typeOfMetaObject (MOApp fun arg) = case typeOfMetaObject fun of
 	MTFun (paramName, _) bodyType -> reduceMetaType (substituteMetaType (M.singleton paramName arg) bodyType)
 	_ -> error "badly typed meta-object"
 typeOfMetaObject (MOAbs (paramName, paramType) body) = MTFun (paramName, paramType) (typeOfMetaObject body)
-typeOfMetaObject (MOVar _ type_) = type_
+typeOfMetaObject (MOName _ type_) = type_
 typeOfMetaObject (MOSLTypeLiteral _ _) = MTSLType
-typeOfMetaObject (MOSLTermLiteral term typeBinds _ _) = MTSLTerm (MOSLTypeLiteral (SLR.typeOfTerm term) typeBinds)
-typeOfMetaObject (MOJSExprLiteral _ _ _) = MTJSExpr
-typeOfMetaObject (MOJSStatementLiteral _ _ _) = MTJSStatement
+typeOfMetaObject (MOSLTermLiteral term typeBinds _) = MTSLTerm (MOSLTypeLiteral (SLR.typeOfTerm term) typeBinds)
+typeOfMetaObject (MOJSExprLiteral _ _) = MTJSExpr
+typeOfMetaObject (MOJSStatementLiteral _ _) = MTJSStatement
 typeOfMetaObject (MOJSEquivExprLiteral slEquiv type_ _) = MTJSEquivExpr slEquiv type_
 typeOfMetaObject (MOJSEquivExprUnwrap _) = MTJSExpr
 
-substituteMetaType :: M.Map Var MetaObject -> MetaType -> MetaType
+substituteMetaType :: M.Map Name MetaObject -> MetaType -> MetaType
 ...
 
-substituteMetaObject :: M.Map Var MetaObject -> MetaObject -> MetaObject
+substituteMetaObject :: M.Map Name MetaObject -> MetaObject -> MetaObject
 ...
 
 reduceMetaType :: MetaType -> MetaType

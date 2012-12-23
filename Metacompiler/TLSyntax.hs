@@ -4,7 +4,7 @@ import qualified Data.Map as M
 import qualified Language.ECMAScript3.Syntax as JS
 import qualified Metacompiler.SLSyntax as SLS
 
-newtype Var = Var { unVar :: String } deriving (Eq, Ord)
+newtype Name = Name { unName :: String } deriving (Eq, Ord)
 
 -- `MetaType` represents a translation-language meta-type. It is more of a
 -- syntactic representation than a semantic one; for example, it doesn't
@@ -15,7 +15,7 @@ newtype Var = Var { unVar :: String } deriving (Eq, Ord)
 data MetaType a
 	= MTFun {
 		tagOfMetaType :: a,
-		paramsOfMTFun :: [(Var, MetaType a)],
+		paramsOfMTFun :: [(Name, MetaType a)],
 		resultOfMTFun :: MetaType a
 	}
 	| MTSLType {
@@ -52,35 +52,33 @@ data MetaObject a
 	}
 	| MOAbs {
 		tagOfMetaObject :: a,
-		paramsOfMOAbs :: [(Var, MetaType a)],
+		paramsOfMOAbs :: [(Name, MetaType a)],
 		resultOfMOAbs :: MetaObject a
 	}
-	| MOVar {
+	| MOName {
 		tagOfMetaObject :: a,
-		varOfMOVar :: String
+		varOfMOName :: Name
 	}
 	| MOSLTypeLiteral {
 		tagOfMetaObject :: a,
 		codeOfMOSLTypeLiteral :: SLS.Type a,
-		slTypeBindsOfMOSLTypeLiteral :: [(SLS.Var, MetaObject a)]
+		slTypeBindsOfMOSLTypeLiteral :: [(SLS.Name, [Name], MetaObject a)]
 	}
 	| MOSLTermLiteral {
 		tagOfMetaObject :: a,
 		codeOfMOSLTermLiteral :: SLS.Term a,
-		slTypeBindsOfMOSLTermLiteral :: [(SLS.Var, MetaObject a)],
-		slTermVarsOfMOSLTermLiteral :: [(SLS.Var, Var)],
-		slTermBindsOfMOSLTermLiteral :: [(SLS.Var, MetaObject a)]
+		slTypeBindsOfMOSLTermLiteral :: [(SLS.Name, [Name], MetaObject a)],
+		slTermBindsOfMOSLTermLiteral :: [(SLS.Name, [Name], MetaObject a)]
 	}
 	| MOJSExprLiteral {
 		tagOfMetaObject :: a,
 		codeOfMOJSExprLiteral :: JS.Expression JS.SourcePos,
-		jsExprVarsOfMOJSExprLiteral :: [(JS.Id (), Var)],
-		jsExprBindsOfMOJSExprLiteral :: [(JS.Id(), MetaObject a)]
+		jsExprBindsOfMOJSExprLiteral :: [(JS.Id(), [(Name, MetaObject a, Name)], MetaObject a)]
 	}
 	| MOJSStatementLiteral {
 		tagOfMetaObject :: a,
 		codeOfMOJSStatementLiteral :: [JS.Statement JS.SourcePos],
-		jsExprVarsOfMOJSStatementLiteral :: [(JS.Id (), Var)],
+		jsExprNamesOfMOJSStatementLiteral :: [(JS.Id (), Name)],
 		jsExprBindsOfMOJSStatementLiteral :: [(JS.Id(), MetaObject a)]
 	}
 	| MOJSEquivExprWrap {
@@ -110,14 +108,14 @@ data Directive a
 	= DLet {
 		tagOfDirective :: a,
 		nameOfDLet :: String,
-		paramsOfDLet :: [(String, MetaType a)],
+		paramsOfDLet :: [(Name, MetaType a)],
 		typeOfDLet :: Maybe (MetaType a),
 		valueOfDLet :: MetaObject a
 	}
 	| DJSExprType {
 		tagOfDirective :: a,
-		nameOfDJSExprType :: String,
-		paramsOfDJSExprType :: [(String, MetaType a)],
+		nameOfDJSExprType :: Name,
+		paramsOfDJSExprType :: [(Name, MetaType a)],
 		slEquivOfDJSExprType :: MetaObject a
 	}
 	| DEmit {
