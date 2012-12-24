@@ -25,12 +25,6 @@ data MetaType a
 		tagOfMetaType :: a,
 		slTypeOfMTSLTerm :: MetaObject a
 	}
-	| MTJSExpr {
-		tagOfMetaType :: a
-	}
-	| MTJSStatement {
-		tagOfMetaType :: a
-	}
 	| MTJSEquivExprType {
 		tagOfMetaType :: a
 		slTypeOfMTJSEquivExprType :: MetaObject a
@@ -62,30 +56,20 @@ data MetaObject a
 	| MOSLTypeLiteral {
 		tagOfMetaObject :: a,
 		codeOfMOSLTypeLiteral :: SLS.Type a,
-		slTypeBindsOfMOSLTypeLiteral :: [(SLS.Name, [Name], MetaObject a)]
+		bindSLTypesOfMOSLTypeLiteral :: [BindSLType]
 	}
 	| MOSLTermLiteral {
 		tagOfMetaObject :: a,
 		codeOfMOSLTermLiteral :: SLS.Term a,
-		slTypeBindsOfMOSLTermLiteral :: [(SLS.Name, [Name], MetaObject a)],
-		slTermBindsOfMOSLTermLiteral :: [(SLS.Name, [Name], MetaObject a)]
+		bindSLTypesOfMOSLTermLiteral :: [BindSLType],
+		bindSLTermsOfMOSLTermLiteral :: [BindSLTerm]
 	}
-	| MOJSExprLiteral {
-		tagOfMetaObject :: a,
-		codeOfMOJSExprLiteral :: JS.Expression JS.SourcePos,
-		jsExprBindsOfMOJSExprLiteral :: [(JS.Id(), [(Name, MetaObject a, Name)], MetaObject a)]
-	}
-	| MOJSStatementLiteral {
-		tagOfMetaObject :: a,
-		codeOfMOJSStatementLiteral :: [JS.Statement JS.SourcePos],
-		jsExprNamesOfMOJSStatementLiteral :: [(JS.Id (), Name)],
-		jsExprBindsOfMOJSStatementLiteral :: [(JS.Id(), MetaObject a)]
-	}
-	| MOJSEquivExprWrap {
+	| MOJSEquivExprLiteral {
 		tagOfMetaObject :: a,
 		slTermOfMOJSEquivExprLiteral :: MetaObject a,
 		jsTypeOfMOJSEquivExprLiteral :: MetaObject a,
-		jsExprOfMOJSEquivExprLiteral :: MetaObject a
+		codeOfMOJSEquivExprLiteral :: JS.Expression (),
+		bindJSEquivExprsOfMOJSExprLiteral :: [BindJSEquivExpr]
 	}
 	| MOJSEquivExprGlobal {
 		tagOfMetaObject :: a,
@@ -94,13 +78,31 @@ data MetaObject a
 		uniqueIdOfMOJSEquivExprGlobal :: JSGlobalUniqueId,
 		contentOfMOJSEquivExprGlobal :: MetaObject a
 	}
-	| MOJSEquivExprUnwrap {
-		tagOfMetaObject :: a,
-		contentOfMOJSEquivExprUnwrap :: MetaObject a
-	}	
 	deriving Show
 
 newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord, Show)
+
+data BindSLType = BindSLType {
+	nameOfBindSLType :: SLS.NameOfType,
+	typeParamsOfBindSLType :: [Name],
+	valueOfBindSLType :: MetaObject a
+	}
+
+data BindSLTerm = BindSLTerm {
+	nameOfBindSLTerm :: SLS.NameOfTerm,
+	typeParamsOfBindSLTerm :: [Name],
+	-- A parameter in the source file that looks like `(a :: sl-term b)` will be represented here as `(a, b)`
+	termParamsOfBindSLTerm :: [(Name, MetaObject a)],
+	valueOfBindSLTerm :: MetaObject a
+	}
+
+data BindJSEquivExpr = BindJSEquivExpr {
+	nameOfBindJSEquivExpr :: JS.Id (),
+	-- A parameter in the source file that looks like `(a :: sl-term b | c :: js-equiv-expr a d)` will be represented
+	-- here as `(a, b, c, d)`.
+	paramsOfBindJSEquivExpr :: [(Name, MetaObject a, Name, MetaObject a)],
+	valueOfBindJSEquivExpr :: MetaObject a
+	}
 
 -- `Directive` represents a top-level translation language directive.
 
@@ -120,7 +122,8 @@ data Directive a
 	}
 	| DEmit {
 		tagOfDirective :: a,
-		contentOfDEmit :: MetaObject a
+		codeOfDEmit :: [JS.Statement ()],
+		bindJSEquivExprsOfDEmit :: [BindJSEquivExpr]
 	}
 	deriving Show
 

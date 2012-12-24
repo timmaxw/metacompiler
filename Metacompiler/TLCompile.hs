@@ -20,10 +20,6 @@ compileMetaType scope (TLS.MTSLTerm range slType) = do
 	slType' <- compileMetaObject scope slType
 	checkType slType' TLR.MTSLType
 	return (TLR.MTSLTerm slType')
-compileMetaType scope (TLS.MTJSExpr range) = do
-	return TLR.MTJSExpr
-compileMetaType scope (TLS.MTJSStatement range) = do
-	return TLR.MTJSStatement
 compileMetaType scope (TLS.MTJSEquivExprType range slType) = do
 	slType' <- compileMetaObject scope slType
 	checkType slType' TLR.MTSLType
