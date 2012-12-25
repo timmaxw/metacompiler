@@ -8,8 +8,6 @@ data MetaType
 	= MTFun (Name, MetaType) MetaType
 	| MTSLType
 	| MTSLTerm MetaObject
-	| MTJSExpr
-	| MTJSStatement
 	| MTJSEquivExprType MetaObject
 	| MTJSEquivExpr MetaObject MetaObject
 
@@ -17,12 +15,17 @@ data MetaObject
 	= MOApp MetaObject MetaObject
 	| MOAbs (Name, MetaType) MetaObject
 	| MOName Name MetaType
-	| MOSLTypeLiteral SLR.Type (M.Map SLR.Name ([Name], MetaObject))
-	| MOSLTermLiteral SLR.Term (M.Map SLR.Name ([Name], MetaObject)) (M.Map SLR.Name ([Name], MetaObject))
-	| MOJSExprLiteral (JS.Expression ()) (M.Map (JS.Id ()) ([(Name, Name, MetaObject)], MetaObject))
-	| MOJSStatementLiteral [JS.Statement ()] (M.Map (JS.Id ()) ([(Name, Name, MetaObject)], MetaObject))
-	| MOJSEquivExprWrap MetaObject MetaObject MetaObject
-	| MOJSEquivExprUnwrap MetaObject
+	| MOSLTypeLiteral SLR.Type (M.Map SLR.Name BindSLType)
+	| MOSLTermLiteral SLR.Term (M.Map SLR.Name BindSLType) (M.Map SLR.Name ([Name], MetaObject))
+	| MOJSEquivExprLiteral MetaObject MetaObject (JS.Expression ())
+
+data BindSLType = BindSLType {
+	typeParamsOfBindSLType :: [Name],
+	valueOfBindSLType :: MetaObject
+	}
+
+data BindSLTerm = BindSLTerm {
+	typeParamsOfBindSLTerm 
 
 typeOfMetaObject :: MetaObject -> MetaType
 typeOfMetaObject (MOApp fun arg) = case typeOfMetaObject fun of

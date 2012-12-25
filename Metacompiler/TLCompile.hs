@@ -49,7 +49,7 @@ compileMetaObject scope (TLS.MOName range name) = case M.lookup scope name' of
 	Just ScopeNameGlobalFuture -> error "top-sort should have prevented this"
 	Just (ScopeNameLocal type_) -> return (TLR.MOName name' type_)
 	where name' = TLR.Name (TLS.fromName name)
-compileMetaObject scope (TLS.
+compileMetaObject scope (TLS.MOSLTypeLiteral range code bindSLTypes
 compileMetaObject scope (TLS.MOJSEquivExprLiteral range slTerm jsType jsExpr) = do
 	return (TLR.MOJSExprLiteral 
 
