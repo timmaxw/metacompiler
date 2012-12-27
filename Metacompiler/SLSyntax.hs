@@ -1,9 +1,7 @@
 module Metacompiler.SLSyntax where
 
 newtype NameOfType = NameOfType { unNameOfType :: String } deriving (Eq, Show, Ord)
-
 newtype NameOfTerm = NameOfTerm { unNameOfTerm :: String } deriving (Eq, Show, Ord)
-
 newtype NameOfCtor = NameOfCtor { unNameOfCtor :: String } deriving (Eq, Show, Ord)
 
 data Kind a

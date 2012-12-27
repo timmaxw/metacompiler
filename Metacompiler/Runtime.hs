@@ -1,39 +1,50 @@
-module Metacompiler.TLRuntime where
-
-import qualified Metacompiler.SLRuntime as SLR
+module Metacompiler.Runtime where
 
 newtype Name = Name { unName :: String } deriving (Ord, Eq)
+newtype NameOfSLType = NameOfSLType { unNameOfSLType :: String } deriving (Eq, Ord)
+newtype NameOfSLTerm = NameOfSLTerm { unNameOfSLTerm :: String } deriving (Eq, Ord)
+newtype NameOfSLCtor = NameOfSLCtor { unNameOfSLCtor :: String } deriving (Eq, Show, Ord)
+
+data SLKind
+	= SLKindType
+	| SLKindFun SLKind SLKind
 
 data MetaType
 	= MTFun (Name, MetaType) MetaType
-	| MTSLType SLR.Kind
+	| MTSLType SLKind
 	| MTSLTerm MetaObject
+{-
 	| MTJSEquivExprType MetaObject
 	| MTJSEquivExpr MetaObject MetaObject
+-}
 
 data MetaObject
 	= MOApp MetaObject MetaObject
 	| MOAbs (Name, MetaType) MetaObject
 	| MOName Name MetaType
-	| MOSLTypeLiteral SLR.Type (M.Map SLR.NameOfType BindingSLType)
-	| MOSLTermLiteral SLR.Term (M.Map SLR.NameOfType BindingSLType) (M.Map SLR.NameOfTerm BindingSLTerm)
+
+	| MOSLTypeName NameOfSLType SLKind
+	| MOSLTypeApp MetaObject MetaObject
+	| MOSLTypeFun MetaObject MetaObject
+	| MOSLTypeLazy MetaObject MetaObject
+
+	| MOSLTermName NameOfSLTerm [MetaObject] MetaObject
+	| MOSLTermApp MetaObject MetaObject
+	| MOSLTermAbs (NameOfSLTerm, MetaObject) MetaObject
+	| MOSLTermCase MetaObject [(NameOfSLCtor, [NameOfSLTerm], MetaObject)]
+	| MOSLTermWrap MetaObject
+	| MOSLTermUnwrap MetaObject
+
+{-
 	| MOJSEquivExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) BindingJSEquivExpr)
+-}
 
-data BindingSLType = BindingSLType {
-	typeParamsOfBindingSLType :: [(Name, Kind)],
-	valueOfBindingSLType :: MetaObject
-	}
-
-data BindingSLTerm = BindingSLTerm {
-	typeParamsOfBindingSLTerm :: [(Name, Kind)],
-	termParamsOfBindingSLTerm :: [(Name, MetaObject)],
-	valueOfBindingSLTerm :: MetaObject
-	}
-
+{-
 data BindingJSEquivExpr = BindingJSEquivExpr {
 	paramsOfBindingJSEquivExpr :: [(Name, MetaObject, Name, MetaObject)],
 	valueOfBindingJSEquivExpr :: MetaObject
 	}
+-}
 
 typeOfMetaObject :: MetaObject -> MetaType
 typeOfMetaObject (MOApp fun arg) = case typeOfMetaObject fun of
@@ -41,12 +52,8 @@ typeOfMetaObject (MOApp fun arg) = case typeOfMetaObject fun of
 	_ -> error "badly typed meta-object"
 typeOfMetaObject (MOAbs (paramName, paramType) body) = MTFun (paramName, paramType) (typeOfMetaObject body)
 typeOfMetaObject (MOName _ type_) = type_
-typeOfMetaObject (MOSLTypeLiteral _ _) = MTSLType
-typeOfMetaObject (MOSLTermLiteral term typeBinds _) = MTSLTerm (MOSLTypeLiteral (SLR.typeOfTerm term) typeBinds)
-typeOfMetaObject (MOJSExprLiteral _ _) = MTJSExpr
-typeOfMetaObject (MOJSStatementLiteral _ _) = MTJSStatement
+...
 typeOfMetaObject (MOJSEquivExprLiteral slEquiv type_ _) = MTJSEquivExpr slEquiv type_
-typeOfMetaObject (MOJSEquivExprUnwrap _) = MTJSExpr
 
 substituteMetaType :: M.Map Name MetaObject -> MetaType -> MetaType
 ...

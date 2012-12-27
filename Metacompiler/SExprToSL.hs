@@ -88,7 +88,7 @@ parseSLTypeFromSExprs other =
 
 parseSLTermFromSExpr :: SExpr -> Either String (SL.Term Range)
 parseSLTermFromSExpr (Atom r a) =
-	return (SL.TermName r a [])
+	return (SL.TermName r a [])   -- TODO: type parameters
 parseSLTermFromSExpr (List _ xs) =
 	parseSLTermFromSExprs xs
 parseSLTermFromSExpr other =

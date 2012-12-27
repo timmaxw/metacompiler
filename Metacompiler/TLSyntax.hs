@@ -26,6 +26,7 @@ data MetaType a
 		tagOfMetaType :: a,
 		slTypeOfMTSLTerm :: MetaObject a
 	}
+{-
 	| MTJSEquivExprType {
 		tagOfMetaType :: a
 		slTypeOfMTJSEquivExprType :: MetaObject a
@@ -35,6 +36,7 @@ data MetaType a
 		slTermOfMTJSEquivExpr :: MetaObject a,
 		jsEquivExprTypeOfMTJSEquivExpr :: MetaObject a
 	}
+-}
 	deriving Show
 
 -- `MetaObject` represents a translation-language meta-object.
@@ -65,6 +67,7 @@ data MetaObject a
 		typeBindingsOfMOSLTermLiteral :: [Binding a SLS.NameOfType],
 		termBindingsOfMOSLTermLiteral :: [Binding a SLS.NameOfTerm]
 	}
+{-
 	| MOJSEquivExprLiteral {
 		tagOfMetaObject :: a,
 		slTermOfMOJSEquivExprLiteral :: MetaObject a,
@@ -79,9 +82,12 @@ data MetaObject a
 		uniqueIdOfMOJSEquivExprGlobal :: JSGlobalUniqueId,
 		contentOfMOJSEquivExprGlobal :: MetaObject a
 	}
+-}
 	deriving Show
 
+{-
 newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord, Show)
+-}
 
 data Binding a name = Binding {
 	tagOfBinding :: a,
@@ -94,6 +100,7 @@ data BindingParam a = BindingParam [(Name, MetaType a)]
 
 -- `Directive` represents a top-level translation language directive.
 
+{-
 data Directive a
 	= DLet {
 		tagOfDirective :: a,
@@ -114,4 +121,5 @@ data Directive a
 		bindJSEquivExprsOfDEmit :: [Binding a (JS.Id ())]
 	}
 	deriving Show
+-}
 
