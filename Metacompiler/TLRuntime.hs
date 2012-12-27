@@ -6,7 +6,7 @@ newtype Name = Name { unName :: String } deriving (Ord, Eq)
 
 data MetaType
 	= MTFun (Name, MetaType) MetaType
-	| MTSLType
+	| MTSLType SLR.Kind
 	| MTSLTerm MetaObject
 	| MTJSEquivExprType MetaObject
 	| MTJSEquivExpr MetaObject MetaObject
@@ -15,17 +15,25 @@ data MetaObject
 	= MOApp MetaObject MetaObject
 	| MOAbs (Name, MetaType) MetaObject
 	| MOName Name MetaType
-	| MOSLTypeLiteral SLR.Type (M.Map SLR.Name BindSLType)
-	| MOSLTermLiteral SLR.Term (M.Map SLR.Name BindSLType) (M.Map SLR.Name ([Name], MetaObject))
-	| MOJSEquivExprLiteral MetaObject MetaObject (JS.Expression ())
+	| MOSLTypeLiteral SLR.Type (M.Map SLR.NameOfType BindingSLType)
+	| MOSLTermLiteral SLR.Term (M.Map SLR.NameOfType BindingSLType) (M.Map SLR.NameOfTerm BindingSLTerm)
+	| MOJSEquivExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) BindingJSEquivExpr)
 
-data BindSLType = BindSLType {
-	typeParamsOfBindSLType :: [Name],
-	valueOfBindSLType :: MetaObject
+data BindingSLType = BindingSLType {
+	typeParamsOfBindingSLType :: [(Name, Kind)],
+	valueOfBindingSLType :: MetaObject
 	}
 
-data BindSLTerm = BindSLTerm {
-	typeParamsOfBindSLTerm 
+data BindingSLTerm = BindingSLTerm {
+	typeParamsOfBindingSLTerm :: [(Name, Kind)],
+	termParamsOfBindingSLTerm :: [(Name, MetaObject)],
+	valueOfBindingSLTerm :: MetaObject
+	}
+
+data BindingJSEquivExpr = BindingJSEquivExpr {
+	paramsOfBindingJSEquivExpr :: [(Name, MetaObject, Name, MetaObject)],
+	valueOfBindingJSEquivExpr :: MetaObject
+	}
 
 typeOfMetaObject :: MetaObject -> MetaType
 typeOfMetaObject (MOApp fun arg) = case typeOfMetaObject fun of

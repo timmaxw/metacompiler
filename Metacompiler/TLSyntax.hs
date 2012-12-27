@@ -20,6 +20,7 @@ data MetaType a
 	}
 	| MTSLType {
 		tagOfMetaType :: a
+		slKindOfMTSLType :: SLS.Kind a
 	}
 	| MTSLTerm {
 		tagOfMetaType :: a,
@@ -56,20 +57,20 @@ data MetaObject a
 	| MOSLTypeLiteral {
 		tagOfMetaObject :: a,
 		codeOfMOSLTypeLiteral :: SLS.Type a,
-		bindSLTypesOfMOSLTypeLiteral :: [BindSLType]
+		typeBindingsOfMOSLTypeLiteral :: [Binding a SLS.NameOfType]
 	}
 	| MOSLTermLiteral {
 		tagOfMetaObject :: a,
 		codeOfMOSLTermLiteral :: SLS.Term a,
-		bindSLTypesOfMOSLTermLiteral :: [BindSLType],
-		bindSLTermsOfMOSLTermLiteral :: [BindSLTerm]
+		typeBindingsOfMOSLTermLiteral :: [Binding a SLS.NameOfType],
+		termBindingsOfMOSLTermLiteral :: [Binding a SLS.NameOfTerm]
 	}
 	| MOJSEquivExprLiteral {
 		tagOfMetaObject :: a,
 		slTermOfMOJSEquivExprLiteral :: MetaObject a,
 		jsTypeOfMOJSEquivExprLiteral :: MetaObject a,
-		codeOfMOJSEquivExprLiteral :: JS.Expression (),
-		bindJSEquivExprsOfMOJSExprLiteral :: [BindJSEquivExpr]
+		codeOfMOJSEquivExprLiteral :: JS.Expression JS.SourcePos,
+		bindingsOfMOJSExprLiteral :: [Binding a (JS.Id ())]
 	}
 	| MOJSEquivExprGlobal {
 		tagOfMetaObject :: a,
@@ -82,27 +83,14 @@ data MetaObject a
 
 newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord, Show)
 
-data BindSLType = BindSLType {
-	nameOfBindSLType :: SLS.NameOfType,
-	typeParamsOfBindSLType :: [Name],
-	valueOfBindSLType :: MetaObject a
+data Binding a name = Binding {
+	tagOfBinding :: a,
+	nameOfBinding :: name,
+	paramsOfBinding :: [BindingParam],
+	valueOfBinding :: MetaObject a
 	}
-
-data BindSLTerm = BindSLTerm {
-	nameOfBindSLTerm :: SLS.NameOfTerm,
-	typeParamsOfBindSLTerm :: [Name],
-	-- A parameter in the source file that looks like `(a :: sl-term b)` will be represented here as `(a, b)`
-	termParamsOfBindSLTerm :: [(Name, MetaObject a)],
-	valueOfBindSLTerm :: MetaObject a
-	}
-
-data BindJSEquivExpr = BindJSEquivExpr {
-	nameOfBindJSEquivExpr :: JS.Id (),
-	-- A parameter in the source file that looks like `(a :: sl-term b | c :: js-equiv-expr a d)` will be represented
-	-- here as `(a, b, c, d)`.
-	paramsOfBindJSEquivExpr :: [(Name, MetaObject a, Name, MetaObject a)],
-	valueOfBindJSEquivExpr :: MetaObject a
-	}
+ 
+data BindingParam a = BindingParam [(Name, MetaType a)]
 
 -- `Directive` represents a top-level translation language directive.
 
@@ -122,8 +110,8 @@ data Directive a
 	}
 	| DEmit {
 		tagOfDirective :: a,
-		codeOfDEmit :: [JS.Statement ()],
-		bindJSEquivExprsOfDEmit :: [BindJSEquivExpr]
+		codeOfDEmit :: [JS.Statement JS.SourcePos],
+		bindJSEquivExprsOfDEmit :: [Binding a (JS.Id ())]
 	}
 	deriving Show
 
