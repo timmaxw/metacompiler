@@ -80,6 +80,10 @@ typeOfMetaObject (MOSLTermUnwrap x) = case typeOfMetaObject x of
 typeOfMetaObject (MOJSEquivExprLiteral slEquiv type_ _) = MTJSEquivExpr slEquiv type_
 -}
 
+-- `traverseMetaType` and `traverseMetaObject` invoke `visitMetaType` or `visitMetaObject` of the given visitor on each
+-- sub-node of the given meta-type or meta-object, then combine the results using an applicative functor. They are a
+-- generic way to implement many different things with a minimum of boilerplate.
+
 data Visitor f = Visitor {
 	visitMetaType :: MetaType -> f MetaType,
 	visitMetaObject :: MetaObject -> f MetaObject
@@ -121,51 +125,100 @@ traverseMetaObject v t = case t of
 		visitT = visitMetaType v
 		visitO = visitMetaObject v
 
--- `substituteNamesInMetaType` and `substituteNamesInMetaObject` traverse the given meta-type or meta-object; whenever
--- they encounter a reference to a free variable that appears in the given map, they replace it with its value from the
--- map. They correctly implement name shadowing and avoid capturing variables. For example, replacing `a` with `b` in
--- `fun (a :: ...) -> a` will leave it unchanged, and replacing `a` with `b` in `fun (b :: ...) -> a` will produce
--- `fun (b' :: ...) -> b`.
+-- `substituteMetaType` and `substituteMetaObject` traverse the given meta-type or meta-object; whenever they encounter
+-- a reference to a free variable that appears in the given map, they replace it with its value from the map. They
+-- operate on both TL names and SL names simultaneously. They correctly implement name shadowing and avoid capturing
+-- variables. For example, replacing `a` with `b` in `fun (a :: ...) -> a` will leave it unchanged, and replacing `a`
+-- with `b` in `fun (b :: ...) -> a` will produce `fun (b' :: ...) -> b`.
 
-substituteNamesInMetaType :: M.Map Name MetaObject -> MetaType -> MetaType
-substituteNamesInMetaType subs (MTFun (paramName, paramType) returnType) = let
-	paramType' = substituteNamesInMetaType subs paramType
-	(subs', paramName') = prepareForBinding (unboundNamesInMetaType returnType) paramType' (subs, paramName)
-	returnType' = substituteNamesInMetaType subs' returnType
-	in MTFun (paramName', paramType') returnType'
-substituteNamesInMetaType subs other = runIdentity (traverseMetaType (makeSubstituteNamesVisitor subs) other)
-
-substituteNamesInMetaObject :: M.Map Name MetaObject -> MetaObject -> MetaObject
-substituteNamesInMetaObject subs (MOAbs (paramName, paramType) body) = let
-	paramType' = substituteMetaType subs paramType
-	(subs', paramName') = prepareForBinding (unboundNamesInMetaObject body) paramType' (subs, paramName)
-	body' = substituteMetaObject subs' body
-	in MOAbs (paramName', paramType') body'
-substituteNamesInMetaObject subs (MOName name type_) = case M.lookup name subs of
-	Just value -> value
-	Nothing -> MOName name (substituteNamesInMetaType subs type_)
-substituteNamesInMetaObject subs other = runIdentity (traverseMetaObject (makeSubstituteNamesVisitor subs) other)
-
-makeSubstituteNamesVisitor :: M.Map Name MetaObject -> Visitor Identity
-makeSubstituteNamesVisitor subs = Visitor {
-	visitMetaType = Identity . substituteNamesInMetaType subs
-	visitMetaObject = Identity . substituteNamesInMetaObject subs
+data Substitutions = Substitutions {
+	nameSubstitutions :: M.Map Name MetaObject,
+	nameOfSLTypeSubstitutions :: M.Map NameOfSLType MetaObject,
+	nameOfSLTermSubstitutions :: M.Map NameOfSLTerm MetaObject
 	}
 
--- `unboundNamesInMetaType` and `unboundNamesInMetaObject` return sets of all unbound variables that appear in the
+substituteMetaType :: Substitutions -> MetaType -> MetaType
+substituteMetaType subs (MTFun (paramName, paramType) returnType) = let
+	paramType' = substituteMetaType subs paramType
+	(subs', paramName') = prepareForBindingName (freeNamesInMetaType returnType) paramType' (subs, paramName)
+	returnType' = substituteMetaType subs' returnType
+	in MTFun (paramName', paramType') returnType'
+substituteMetaType subs other = runIdentity (traverseMetaType (makeSubstitutionVisitor subs) other)
+
+substituteMetaObject :: Substitutions -> MetaObject -> MetaObject
+substituteMetaObject subs (MOAbs (paramName, paramType) body) = let
+	paramType' = substituteMetaType subs paramType
+	(subs', paramName') = prepareForBindingName (freeNamesInMetaObject body) paramType' (subs, paramName)
+	body' = substituteMetaObject subs' body
+	in MOAbs (paramName', paramType') body'
+substituteMetaObject subs (MOName name type_) = case M.lookup name (nameSubstitutions subs) of
+	Just value -> value
+	Nothing -> MOName name (substituteMetaType subs type_)
+substituteMetaObject subs (MOSLTypeName name kind) = case M.lookup name (nameOfSLTypeSubstitutions subs) of
+	Just value -> value
+	Nothing -> MOSLTypeName name kind
+substituteMetaObject subs (MOSLTermName name type_) = case M.lookup name (nameOfSLTermSubstitutions subs) of
+	Just value -> value
+	Nothing -> MOSLTermName name (substituteMetaObject subs type_)
+substituteMetaObject subs (MOSLTermAbs (paramName, paramType) body) = let
+	paramType' = substituteMetaObject subs paramType
+	(subs', paramName') = prepareForBindingNameOfSLTerm (freeNamesOfSLTermsInMetaObject body) paramType' (subs, paramName)
+	body' = substituteMetaObject subs' body
+	in MOSLTermAbs (paramName', paramType') body'
+substituteMetaObject subs other = runIdentity (traverseMetaObject (makeSubstitutionVisitor subs) other)
+
+makeSubstitutionVisitor :: Substitutions -> Visitor Identity
+makeSubstitutionVisitor subs = Visitor {
+	visitMetaType = Identity . substituteMetaType subs
+	visitMetaObject = Identity . substituteMetaObject subs
+	}
+
+-- `freeNamesInMetaType` and `freeNamesInMetaObject` return sets of all unbound TL and SL variables that appear in the
 -- given meta-type or meta-object.
 
-unboundNamesInMetaType :: MetaType -> S.Set Name
-unboundNamesInMetaType = execWriter . traverseMetaType unboundNamesVisitor
+data FreeNames = {
+	namesInFreeNames :: S.Set Name,
+	namesOfSLTypesInFreeNames :: S.Set NameOfSLType,
+	namesOfSLTermsInFreeNames :: S.Set NameOfSLTerm
+	}
 
-unboundNamesInMetaObject :: MetaObject -> S.Set Name
-unboundNamesInMetaObject (MOName n type_) = S.insert n (unboundNamesInMetaType type_)
-unboundNamesInMetaObject other = execWriter (traverseMetaType unboundNamesVisitor other)
+instance Monoid FreeNames where
+	mzero = FreeNames S.empty S.empty S.empty
+	mappend (FreeNames a1 b1 c1) (FreeNames a2 b2 c2) = FreeNames (S.union a1 a2) (S.union b1 b2) (S.union c1 c2)
 
-unboundNamesVisitor :: Visitor (Writer (S.Set Name))
-unboundNamesVisitor = Visitor {
-	visitMetaType = \mt -> writer (mt, unboundNamesInMetaType mt),
-	visitMetaObject = \mt -> writer (mt, unboundNamesInMetaObject mt)
+freeNamesInMetaType :: MetaType -> FreeNames
+freeNamesInMetaType (MTFun (paramName, paramType) resultType) = let
+	paramNames = freeNamesInMetaType paramType
+	resultNames = freeNamesInMetaType resultType
+	resultNames' = resultNames { namesInFreeNames = S.delete paramName (namesInFreeNames resultNames) }
+	in paramNames `mappend` resultNames
+freeNamesInMetaType other =
+	execWriter (traverseMetaType freeNamesVisitor other)
+
+freeNamesInMetaObject :: MetaObject -> FreeNames
+freeNamesInMetaObject (MOAbs (paramName, paramType) body) = let
+	paramNames = freeNamesInMetaType paramType
+	bodyNames = freeNamesInMetaObject body
+	bodyNames' = bodyNames { namesInFreeNames = S.delete paramName (namesInFreeNames bodyName) }
+	in paramNames `mappend` bodyNames'
+freeNamesInMetaObject (MOName n type_) =
+	FreeNames (S.singleton n) S.empty S.empty `mappend` freeNamesInMetaType type_
+freeNamesInMetaObject (MOSLTypeName n _) =
+	FreeNames S.empty (S.singleton n) S.empty
+freeNamesInMetaObject (MOSLTermName n type_) =
+	FreeNames S.empty S.empty (S.singleton n) `mappend` freeNamesInMetaObject type_
+freeNamesInMetaObject (MOSLTermAbs (paramName, paramType) body) = let
+	paramNames = freeNamesInMetaObject paramType
+	bodyNames = freeNamesInMetaObject body
+	bodyNames' = bodyNames { namesOfSLTermsInFreeNames = S.delete paramName (namesOfSLTermsInFreeNames bodyNames) }
+	in paramNames `mappend` bodyNames'
+freeNamesInMetaObject other =
+	execWriter (traverseMetaType freeNamesVisitor other)
+
+freeNamesVisitor :: Visitor (Writer FreeNames)
+freeNamesVisitor = Visitor {
+	visitMetaType = \mt -> writer (mt, freeNamesInMetaType mt),
+	visitMetaObject = \mt -> writer (mt, freeNamesInMetaObject mt)
 	}
 
 -- `prepareForBindingName` is a helper function used when performing substitutions on a meta-type or meta-object which
@@ -177,18 +230,51 @@ unboundNamesVisitor = Visitor {
 --  2. It implements capture-avoiding substitution by checking whether any of the values of the `subs` map contain
 --     `name`, and changing `name` to an unused variable if so. If it is necessary to change `name`, it will also make
 --     a new entry in `subs` to perform the change.
-prepareForBindingName :: S.Set Name -> MetaType -> (M.Map Name MetaObject, Name) -> (M.Map Name MetaObject, Name)
-prepareForBindingName freeNamesWithin nameType (subs, name) = if name `S.member` incomingNames then let
-			candidates = [name ++ replicate n '\'' | n <- [1..]]
-			forbidden = incomingNames `S.union` ((S.\\) returnTypeNames (S.fromList (M.keys subs)))
-			Just name' = find (`S.notMember` forbidden) candidates
-			in (name', M.insert name (MOName name' nameType) subs')
+
+prepareForBindingName :: FreeNames -> MetaType -> (M.Map Name MetaObject, Name) -> (M.Map Name MetaObject, Name)
+prepareForBindingName freeNamesWithin nameType (subs, name) = let
+	subs' = subs { nameSubstitutions = M.delete name (nameSubstitutions subs) }
+	incomingNames =
+			S.unions [
+				maybe S.empty (\mo -> namesInFreeNames (freeNamesInMetaObject mo))
+					(M.lookup name (nameSubstitutions subs'))
+				| name <- S.toList (namesInFreeNames freeNamesWithin)]
+		`S.union`
+			S.unions [
+				maybe S.empty (\mo -> namesInFreeNames (freeNamesInMetaObject mo))
+					(M.lookup name (nameOfSLTermSubstitutions subs'))
+				| name <- S.toList (namesOfSLTermsInFreeNames freeNamesWithin)]
+	candidates = [Name (unName name ++ replicate n '\'') | n <- [1..]]
+	forbidden = namesInFreeNames incomingNames
+		`S.union` ((S.\\) (namesInFreeNames freeNamesWithin) (S.fromList (M.keys (nameSubstitutions subs'))))
+	Just name' = find (`S.notMember` forbidden) candidates
+	in if name `S.member` incomingNames
+		then (name', subs' { nameSubstitutions = M.insert name (MOName name' nameType) (nameSubstitutions subs') })
 		else (name, subs')
-	where
-		subs' = M.delete name subs
-		incomingNames = S.unions [
-			maybe S.empty (\mo -> unboundNamesInMetaObject mo) (M.lookup name subs')
-			| name <- S.toList freeNamesWithin]
+
+-- `prepareForBindingNameOfSLTerm` is like `prepareForBindingName` except that it's for terms which introduce a new
+-- name into SL's term scope.
+
+prepareForBindingNameOfSLTerm :: FreeNames -> MetaType -> (M.Map Name MetaObject, Name) -> (M.Map Name MetaObject, Name)
+prepareForBindingNameOfSLTerm freeNamesWithin nameType (subs, name) = let
+	subs' = subs { nameOfSLTermSubstitutions = M.delete name (nameOfSLTermSubstitutions subs) }
+	incomingNames =
+			S.unions [
+				maybe S.empty (\mo -> namesOfSLTermsInFreeNames (freeNamesInMetaObject mo))
+					(M.lookup name (nameSubstitutions subs'))
+				| name <- S.toList (namesInFreeNames freeNamesWithin)]
+		`S.union`
+			S.unions [
+				maybe S.empty (\mo -> namesOfSLTermsInFreeNames (freeNamesInMetaObject mo))
+					(M.lookup name (nameOfSLTermSubstitutions subs'))
+				| name <- S.toList (namesOfSLTermsInFreeNames freeNamesWithin)]
+	candidates = [NameOfSLTerm (unNameOfSLTerm name ++ replicate n '\'') | n <- [1..]]
+	forbidden = namesOfSLTermsInFreeNames incomingNames
+		`S.union` ((S.\\) (namesOfSLTermsInFreeNames freeNamesWithin) (S.fromList (M.keys (nameOfSLTermSubstitutions subs'))))
+	Just name' = find (`S.notMember` forbidden) candidates
+	in if name `S.member` incomingNames
+		then (name', subs' { nameOfSLTermSubstitutions = M.insert name (MOSLTermName name' nameType) (nameOfSLTermSubstitutions subs') })
+		else (name, subs')
 
 reduceMetaType :: MetaType -> MetaType
 ...
