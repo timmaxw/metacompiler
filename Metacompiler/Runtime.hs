@@ -276,6 +276,9 @@ prepareForBindingNameOfSLTerm freeNamesWithin nameType (subs, name) = let
 		then (name', subs' { nameOfSLTermSubstitutions = M.insert name (MOSLTermName name' nameType) (nameOfSLTermSubstitutions subs') })
 		else (name, subs')
 
+-- `reduceMetaType` and `reduceMetaObject` return the simplest meta-type or meta-object equivalent to the given
+-- meta-type or meta-object. They are idempotent.
+
 reduceMetaType :: MetaType -> MetaType
 ...
 
