@@ -31,7 +31,8 @@ data MetaObject
 	| MOSLTermName NameOfSLTerm [MetaObject] MetaObject
 	| MOSLTermApp MetaObject MetaObject
 	| MOSLTermAbs (NameOfSLTerm, MetaObject) MetaObject
-	| MOSLTermCase MetaObject [(NameOfSLCtor, [NameOfSLTerm], MetaObject)]
+	| MOSLTermCase MetaObject (M.Map NameOfSLCtor ([(NameOfSLTerm, MetaObject)], MetaObject))
+	| MOSLTermData NameOfSLCtor MetaObject [MetaObject]
 	| MOSLTermWrap MetaObject
 	| MOSLTermUnwrap MetaObject
 
@@ -67,9 +68,10 @@ typeOfMetaObject (MOSLTermApp fun _) = case typeOfMetaObject fun of
 typeOfMetaObject (MOSLTermAbs (_, paramType) body) = case typeOfMetaObject body of
 	MTSLTerm bodyType -> MTSLTerm (MTSLTypeFun paramType bodyType)
 	_ -> error "bad meta-object: MOSLTermAbs of non-SL"
-typeOfMetaObject (MOSLTermCase subject clauses) = case clauses of
-	((_, _, first):_) -> typeOfMetaObject first
+typeOfMetaObject (MOSLTermCase subject clauses) = case M.toList clauses of
+	(_, (_, first)):_ -> typeOfMetaObject first
 	_ -> error "bad meta-object: MOSLTermCase needs at least one clause"
+typeOfMetaObject (MOSLTermData _ type_ _) = type_
 typeOfMetaObject (MOSLTermWrap x) = case typeOfMetaObject x of
 	MTSLTerm xType -> MTSLTerm (MOSLTypeLazy xType)
 typeOfMetaObject (MOSLTermUnwrap x) = case typeOfMetaObject x of
@@ -107,7 +109,7 @@ traverseMetaType v t = case t of
 traverseMetaObject :: Applicative f => Visitor f -> MetaObject -> f MetaObject
 traverseMetaObject v t = case t of
 	MOApp fun arg -> liftA2 MOApp (visitO fun) (visitO arg)
-	MOAbs (paramName, paramType) body -> liftA2 MOAbs (liftA (paramName,) (visitT paramType)) (visitO body)
+	MOAbs (paramName, paramType) body -> liftA2 MOAbs (liftA ((,) paramName) (visitT paramType)) (visitO body)
 	MOName name type_ -> liftA (MOName name) (visitT type_)
 	MOSLTypeName name kind -> pure (MOSLTypeName name kind)
 	MOSLTypeApp fun arg -> liftA2 MOSLTypeApp (visitO fun) (visitO arg)
@@ -115,10 +117,16 @@ traverseMetaObject v t = case t of
 	MOSLTypeLazy x -> liftA MOSLTypeLazy (visitO x)
 	MOSLTermName name params type_ -> liftA2 (MOSLTermName name) (traverse visitO params) (visitO type_)
 	MOSLTermApp fun arg -> liftA2 MOSLTermApp (visitO fun) (visitO arg)
-	MOSLTermAbs (paramName, paramType) body -> liftA2 MOSLTermAbs (liftA (paramName,) (visitO paramType)) (visitO body)
+	MOSLTermAbs (paramName, paramType) body -> liftA2 MOSLTermAbs (liftA ((,) paramName) (visitO paramType)) (visitO body)
 	MOSLTermCase subject clauses -> liftA2 MOSLTermCase
 		(visitO subject)
-		(traverse (\(ctor, fields, body) -> liftA (ctor, fields,) (visitO body)) clauses)
+		(traverse (\(fields, body) -> liftA2 (,)
+				(traverse (\(name, type_) -> liftA ((,) name) (visitO type_)) fields)
+				(visitO body)
+				)
+			clauses
+			)
+	MOSLTermData ctor type_ fields -> liftA2 (MOSLTermData ctor) (visitO type_) (traverse visitO fields)
 	MOSLTermWrap x -> liftA MOSLTermWrap (visitO x)
 	MOSLTermUnwrap x -> liftA MOSLTermUnwrap (visitO x)
 	where
@@ -165,6 +173,20 @@ substituteMetaObject subs (MOSLTermAbs (paramName, paramType) body) = let
 	(subs', paramName') = prepareForBindingNameOfSLTerm (freeNamesOfSLTermsInMetaObject body) paramType' (subs, paramName)
 	body' = substituteMetaObject subs' body
 	in MOSLTermAbs (paramName', paramType') body'
+substituteMetaObject subs (MOSLTermCase subject clauses) = let
+	subject' = substituteMetaObject subs subject
+	clauses' = M.map (\(fields, body) -> let
+		freeNamesInBody = freeNamesOfSLTermsInMetaObject body
+		(fields', subs') = foldr
+			(\(fieldName, fieldType) (fields', subs') -> let
+				fieldType' = substituteMetaObject subs fieldType
+				(fieldName', subs'') = prepareForBindingNameOfSLTerm freeNamesInBody fieldType (fieldName, subs')
+				in ((fieldName', fieldType'):fields', subs'')
+				)
+		body' = substituteMetaObject subs' body
+		in (fields', body')
+		) clauses
+	in MOSLTermCase subject' clauses'
 substituteMetaObject subs other = runIdentity (traverseMetaObject (makeSubstitutionVisitor subs) other)
 
 makeSubstitutionVisitor :: Substitutions -> Visitor Identity
@@ -280,8 +302,63 @@ prepareForBindingNameOfSLTerm freeNamesWithin nameType (subs, name) = let
 -- meta-type or meta-object. They are idempotent.
 
 reduceMetaType :: MetaType -> MetaType
-...
+reduceMetaType (MTFun (paramName, paramType) returnType) =
+	MTFun (paramName, reduceMetaType paramType) (reduceMetaType returnType)
+reduceMetaType (MTSLType kind) = MTSLType kind
+reduceMetaType (MTSLTerm type_) = MTSLTerm (reduceMetaObject type_)
 
 reduceMetaObject :: MetaObject -> MetaObject
-...
+reduceMetaObject (MOApp fun arg) = let
+	fun' = reduceMetaObject fun
+	arg' = reduceMetaObject arg
+	in case fun' of
+		MOAbs (paramName, _) body -> reduceMetaObject $
+			substituteMetaObject (Substitutions (M.singleton paramName arg') M.empty M.empty) body
+		_ -> MOApp fun' arg'
+reduceMetaObject (MOAbs (paramName, paramType) body) = let
+	paramType' = reduceMetaType paramType
+	body' = reduceMetaObject body
+	in MOAbs (paramName, paramType') body'
+reduceMetaObject (MOName name type_) = let
+	type_' = reduceMetaType type_
+	in MOName name type_
+reduceMetaObject (MOSLTypeName name kind) =
+	MOSLTypeName name kind
+reduceMetaObject (MOSLTypeApp fun arg) = let
+	fun' = reduceMetaObject fun
+	arg' = reduceMetaObject arg
+	in MOSLTypeApp fun' arg'
+reduceMetaObject (MOSLTypeFun paramType returnType) = let
+	paramType' = reduceMetaObject paramType
+	returnType' = reduceMetaObject returnType
+	in MOSLTypeFun paramType' returnType'
+reduceMetaObject (MOSLTypeLazy xType) = let
+	xType' = reduceMetaObject xType
+	in MOSLTypeLazy xType'
+reduceMetaObject (MOSLTermName name params type_) = let
+	params' = map reduceMetaObject params
+	type_' = reduceMetaObject type_
+	in MOSLTermName name params' type_'
+reduceMetaObject (MOSLTermApp fun arg) = let
+	fun' = reduceMetaObject fun
+	arg' = reduceMetaObject arg
+	in MOSLTermApp fun' arg'
+reduceMetaObject (MOSLTermAbs (paramName, paramType) body) = let
+	paramType' = reduceMetaObject paramType
+	body' = reduceMetaObject body
+	in MOSLTermAbs (paramName, paramType') body'
+reduceMetaObject (MOSLTermCase subject clauses) = let
+	subject' = reduceMetaObject subject
+	clauses' = [(ctor, fields, reduceMetaObject body) | (ctor, fields, body) <- clauses]
+	in MOSLTermCase subject' clauses'
+reduceMetaObject (MOSLTermData name type_ fields) = let
+	type_' = reduceMetaObject type_
+	fields' = map reduceMetaObject fields
+	in MOSLTermData name type_' fields'
+reduceMetaObject (MOSLTermWrap x) = let
+	x' = reduceMetaObject x
+	in MOSLTermWrap x'
+reduceMetaObject (MOSLTermUnwrap x) = let
+	x' = reduceMetaObject x
+	in MOSLTermUnwrap x'
 

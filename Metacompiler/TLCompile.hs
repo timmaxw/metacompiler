@@ -1,5 +1,8 @@
 module Metacompiler.TLCompile where
 
+import Metacompiler.Runtime
+import Metacompiler.TLSyntax
+
 data LocalState = LocalState {
 {-
 	nameSupplyOfLocalState :: [String],
@@ -169,4 +172,17 @@ compileSLTermBindings scope bindings = compileBindings scope bindings
 					value'
 			})
 		)
+
+checkType :: MetaObject -> MetaType -> StateT LocalState (Either String) ()
+checkType obj expectedType = return ()   -- TODO: Fix me
+
+checkTypeSLType :: MetaObject -> StateT LocalState (Either String) SLKind
+checkTypeSLType obj = case reduceMetaType (typeOfMetaObject obj) of
+	MTSLType slKind -> return slKind
+	_ -> lift (Left "expected type `(sl-type ...)`, got something else")
+
+checkTypeSLTerm :: MetaObject -> StateT LocalState (Either String) MetaObject
+checkTypeSLTerm obj = case reduceMetaType (typeOfMetaObject obj) of
+	MTSLTerm slType -> return slType
+	_ -> lift (Left "expected type `(sl-term ...)`, got something else")
 
