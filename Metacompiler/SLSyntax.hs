@@ -20,7 +20,7 @@ data Term a
 	= TermName a NameOfTerm [Type a]
 	| TermApp a (Term a) (Term a)
 	| TermAbs a [(NameOfTerm, Type a)] (Term a)
-	| TermCase a (Term a) [(NameOfCtor, [NameOfTerm], Term a)]
+	| TermCase a (Term a) [(NameOfCtor, [Type a], [NameOfTerm], Term a)]
 	| TermWrap a (Term a)
 	| TermUnwrap a (Term a)
 	deriving (Eq, Show, Ord)
