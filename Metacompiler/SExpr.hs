@@ -133,7 +133,8 @@ breakOnAtom atom block = break' block
 multiBreakOnAtom :: String -> SExprs -> Either String [SExprs]
 multiBreakOnAtom atom block = break' block
 	where
-		break' (Nil p) = [Nil p]
+		break' :: SExprs -> Either String [SExprs]
+		break' (Nil p) = return [Nil p]
 		break' (Cons (Atom r a) rest) | a == atom = do
 			groups <- break' rest
 			return (Nil (startOfRange r):groups)
@@ -153,6 +154,6 @@ takeOne _ (Cons a b) = return (a, b)
 expectOne :: String -> SExprs -> Either String SExpr
 expectOne what (Nil p) = Left ("expected " ++ what ++ " at " ++ formatPoint p)
 expectOne _ (Cons a (Nil _)) = return a
-expectOne what (Cons a b) = Left ("expected nothing after the " ++ what ++ " at " ++ formatRange (rangeOfSExprs a) ++
+expectOne what (Cons a b) = Left ("expected nothing after the " ++ what ++ " at " ++ formatRange (rangeOfSExpr a) ++
 	", but found more at " ++ formatRange (rangeOfSExprs b) ++ ".")
 

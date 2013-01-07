@@ -1,13 +1,14 @@
 module Metacompiler.Runtime where
 
-newtype Name = Name { unName :: String } deriving (Ord, Eq)
-newtype NameOfSLType = NameOfSLType { unNameOfSLType :: String } deriving (Eq, Ord)
-newtype NameOfSLTerm = NameOfSLTerm { unNameOfSLTerm :: String } deriving (Eq, Ord)
+newtype Name = Name { unName :: String } deriving (Ord, Show, Eq)
+newtype NameOfSLType = NameOfSLType { unNameOfSLType :: String } deriving (Eq, Show, Ord)
+newtype NameOfSLTerm = NameOfSLTerm { unNameOfSLTerm :: String } deriving (Eq, Show, Ord)
 newtype NameOfSLCtor = NameOfSLCtor { unNameOfSLCtor :: String } deriving (Eq, Show, Ord)
 
 data SLKind
 	= SLKindType
 	| SLKindFun SLKind SLKind
+	deriving (Show, Eq)
 
 data SLCtor = SLCtor {
 	nameOfSLCtor :: NameOfSLCtor,
@@ -15,6 +16,9 @@ data SLCtor = SLCtor {
 	fieldsOfSLCtor :: [[MetaObject] -> MetaObject]
 	typeOfSLCtor :: [MetaObject] -> MetaObject
 	}
+
+instance Show SLCtor where
+	show (SLCtor name _ _ _) = "(SLCtor " ++ show name ++ " ...)"
 
 data MetaType
 	= MTFun (Name, MetaType) MetaType
@@ -24,6 +28,7 @@ data MetaType
 	| MTJSEquivExprType MetaObject
 	| MTJSEquivExpr MetaObject MetaObject
 -}
+	deriving Show
 
 data MetaObject
 	= MOApp MetaObject MetaObject
@@ -42,6 +47,8 @@ data MetaObject
 	| MOSLTermData SLCtor [MetaObject] [MetaObject]
 	| MOSLTermWrap MetaObject
 	| MOSLTermUnwrap MetaObject
+
+	deriving Show
 
 {-
 	| MOJSEquivExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) BindingJSEquivExpr)

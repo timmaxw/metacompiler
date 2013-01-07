@@ -43,7 +43,7 @@ parseSLKindFromSExprs other =
 
 parseSLTypeFromSExpr :: SExpr -> Either String (SL.Type Range)
 parseSLTypeFromSExpr (Atom r a) =
-	return (SL.TypeName r a)
+	return (SL.TypeName r (SL.NameOfType a))
 parseSLTypeFromSExpr (List _ xs) =
 	parseSLTypeFromSExprs xs
 parseSLTypeFromSExpr other =
@@ -88,7 +88,7 @@ parseSLTypeFromSExprs other =
 
 parseSLTermFromSExpr :: SExpr -> Either String (SL.Term Range)
 parseSLTermFromSExpr (Atom r a) =
-	return (SL.TermName r a [])   -- TODO: type parameters
+	return (SL.TermName r (SL.NameOfTerm a) [])   -- TODO: type parameters
 parseSLTermFromSExpr (List _ xs) =
 	parseSLTermFromSExprs xs
 parseSLTermFromSExpr other =
@@ -107,7 +107,7 @@ parseSLTermFromSExprs whole@(Cons (Atom _ "\\") rest) = do
 				argType' <-
 					errorContext ("in argument's type") $
 					parseSLTypeFromSExprs argType
-				return (argName, argType')
+				return (SL.NameOfTerm argName, argType')
 			_ -> Left ("malformed formal arg: " ++ summarizeSExpr arg ++ "expected \"(name :: type)\"")
 		| (arg, i) <- zip (sExprsToList args) [1..]]
 	body <-
@@ -136,21 +136,21 @@ parseSLTermFromSExprs whole@(Cons (Atom _ "case") rest) = case rest of
 						" at " ++ formatRange (rangeOfSExprs clause)) $ do
 					(ctor, vars) <- case pattern of
 						Atom _ name ->
-							return (name, [])
+							return (SL.NameOfCtor name, [])
 						List _ (Cons (Atom _ name) vars) -> do
 							vars' <- sequence [
 								case var of
-									Atom _ v -> return v
+									Atom _ v -> return (SL.NameOfTerm v)
 									_ -> Left ("expected pattern variable, got " ++
 										summarizeSExpr var ++ " at " ++
 										formatRange (rangeOfSExpr var))
 								| var <- sExprsToList vars]
-							return (name, vars')
+							return (SL.NameOfCtor name, vars')
 						_ -> Left ("expected pattern, of the form \"ctor\" or \"(ctor var1 var2 \
 							\...)\", instead got " ++ summarizeSExpr pattern ++ " at " ++
 							formatRange (rangeOfSExpr pattern))
 					branch' <- parseSLTermFromSExpr branch
-					return (ctor, vars, branch')
+					return (ctor, [], vars, branch')
 				otherClauses <- parseClauses rest
 				return (clause:otherClauses)
 			(Nil _) ->
