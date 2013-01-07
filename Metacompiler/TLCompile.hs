@@ -174,7 +174,9 @@ compileSLTermBindings scope bindings = compileBindings scope bindings
 		)
 
 checkType :: MetaObject -> MetaType -> StateT LocalState (Either String) ()
-checkType obj expectedType = return ()   -- TODO: Fix me
+checkType obj expectedType = if reduceMetaType (typeOfMetaObject obj) `equivalentMetaType` reduceMetaType expectedType
+	then return ()
+	else lift (Left "expected type `<not implemented>`, got something else")
 
 checkTypeSLType :: MetaObject -> StateT LocalState (Either String) SLKind
 checkTypeSLType obj = case reduceMetaType (typeOfMetaObject obj) of

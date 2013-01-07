@@ -89,6 +89,16 @@ typeOfMetaObject (MOSLTermUnwrap x) = case typeOfMetaObject x of
 typeOfMetaObject (MOJSEquivExprLiteral slEquiv type_ _) = MTJSEquivExpr slEquiv type_
 -}
 
+slKindOfMetaObject :: MetaObject -> SLKind
+slKindOfMetaObject mo = case typeOfMetaObject mo of
+	MTSLType k -> k
+	_ -> error "slKindOfMetaObject: type is not MTSLType"
+
+slTypeOfMetaObject :: MetaObject -> MetaObject
+slTypeOfMetaObject mo = case typeOfMetaObject mo of
+	MTSLTerm t -> t
+	_ -> error "slTypeOfMetaObject: type is not MTSLTerm"
+
 -- `traverseMetaType` and `traverseMetaObject` invoke `visitMetaType` or `visitMetaObject` of the given visitor on each
 -- sub-node of the given meta-type or meta-object, then combine the results using an applicative functor. They are a
 -- generic way to implement many different things with a minimum of boilerplate.
@@ -358,4 +368,73 @@ reductionVisitor = Visitor {
 	visitMetaType = Identity . reduceMetaType,
 	visitMetaObject = Identity . reduceMetaObject
 	}
+
+-- `equivalentMetaTypes` and `equivalentMetaObjects` return `True` if the given meta-types or meta-objects are provably
+-- equivalent under all values of all variables, and `False` otherwise.
+
+equivalentMetaTypes :: MetaType -> MetaType -> Bool
+equivalentMetaTypes t1 t2 = equivalentMetaTypes' (S.empty, S.empty) (reduceMetaType t1) (reduceMetaType t2)
+
+equivalentMetaObjects :: MetaObject -> MetaObject -> Bool
+equivalentMetaObjects o1 o2 = equivalentMetaObjects' (S.empty, S.empty) (reduceMetaObject o1) (reduceMetaObject o2)
+
+equivalentMetaTypes' :: (S.Set (Name, Name), S.Set (NameOfSLTerm, NameOfSLTerm)) -> MetaType -> MetaType -> Bool
+equivalentMetaTypes' (nameEquivs, nameOfSLTermEquivs) (MTFun (name1, paramType1) retType1) (MTFun (name2, paramType2) retType2) =
+	equivalentMetaTypes' (nameEquivs, nameOfSLTermEquivs) paramType1 paramType2
+	&& equivalentMetaTypes' (nameEquivs', nameOfSLTermEquivs) retType1 retType2
+	where nameEquivs' = S.insert (name1, name2) (S.filter (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameEquivs)
+equivalentMetaTypes' _ (MTSLType k1) (MTSLType k2) =
+	k1 == k2
+equivalentMetaTypes' equivs (MTSLTerm t1) (MTSLTerm t2) =
+	equivalentMetaObjects equivs t1 t2
+equivalentMetaTypes' equivs _ _ =
+	False
+
+equivalentMetaObjects' :: (S.Set (Name, Name), S.Set (NameOfSLTerm, NameOfSLTerm)) -> MetaObject -> MetaObject -> Bool
+equivalentMetaObjects' equivs (MOApp fun1 arg2) (MOApp fun2 arg2) =
+	equivalentMetaObjects' equivs fun1 fun2 && equivalentMetaObjects' equivs arg1 arg2
+equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOAbs (name1, paramType1) body1) (MOAbs (name2, paramType2) body2) =
+	equivalentMetaTypes' (nameEquivs, nameOfSLTermEquivs) paramType1 paramType2
+	&& equivalentMetaObjects' (nameEquivs', nameOfSLTermEquivs) body1 body2
+	where nameEquivs' = S.insert (name1, name2) (S.filter (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameEquivs)
+equivalentMetaObjects' (nameEquivs, _) (MOName name1 _) (MOName name2 _) =
+	(name1, name2) `S.member` nameEquivs || name1 == name2 && all (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameEquivs
+equivalentMetaObjects' _ (MOSLTypeName name1 _) (MOSLTypeName name2 _) =
+	name1 == name2
+equivalentMetaObjects' equivs (MOSLTypeApp fun1 arg2) (MOSLTypeApp fun2 arg2) =
+	equivalentMetaObjects' equivs fun1 fun2 && equivalentMetaObjects' equivs arg1 arg2
+equivalentMetaObjects' equivs (MOSLTypeFun argType1 retType1) (MOSLTypeFun argType2 retType2) =
+	equivalentMetaObjects' equivs argType1 argType2 && equivalentMetaObjects' equivs retType1 retType2
+equivalentMetaObjects' equivs (MOSLTypeLazy x1) (MOSLTypeLazy x2) =
+	equivalentMetaObjects' equivs x1 x2
+equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermName name1 types1 _) (MOSLTermName name2 types2 _) =
+	((name1, name2) `S.member` nameOfSLTermEquivs || name1 == name2 && all (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameOfSLTermEquivs)
+	&& all (\(t1, t2) -> equivalentMetaObjects (nameEquivs, nameOfSLTermEquivs) t1 t2) (zip types1 types2)
+equivalentMetaObjects' equivs (MOSLTermApp fun1 arg1) (MOSLTermApp fun2 arg2) =
+	equivalentMetaObjects' equivs fun1 fun2 && equivalentMetaObjects' equivs arg1 arg2
+equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermAbs (name1, paramType1) body1) (MOSLTermAbs (name2, paramType2) body2) =
+	equivalentMetaTypes' (nameEquivs, nameOfSLTermEquivs) paramType1 paramType2
+	&& equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs') body1 body2
+	where nameOfSLTermEquivs' = S.insert (name1, name2) (S.filter (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameOfSLTermEquivs)
+equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermCase subject1 clauses1) (MOSLTermCase subject2 clauses2) =
+	equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) subject1 subject2
+	&& length clauses1 == length clauses2
+	&& all (\((ctor1, ctorTypeParams1, fieldNames1, body1), (ctor2, ctorTypeParams2, fieldNames2, body2)) ->
+		nameOfCtor ctor1 == nameOfCtor ctor2
+		&& and (zipWith (equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs)) ctorTypeParams1 ctorTypeParams2)
+		&& let
+			nameOfSLTermEquivs' = S.filter (\(n1, n2) -> n1 `notElem` fieldNames1 && n2 `notElem` fieldNames2) nameOfSLTermEquivs
+			nameOfSLTermEquivs'' = foldr S.insert nameOfSLTermEquivs' (zip fieldNames1 fieldNames2)
+			in equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs'') body1 body2
+		) (zip clauses1 clauses2)
+equivalentMetaObjects' equivs (MOSLTermData ctor1 typeParams1 fields1) (MOSLTermData ctor2 typeParams2 fields2) =
+	nameOfCtor ctor1 == nameOfCtor ctor2
+	&& and (zipWith (equivalentMetaObjects' equivs) typeParams1 typeParams2)
+	&& and (zipWith (equivalentMetaObjects' equivs) fields1 fields2)
+equivalentMetaObjects' equivs (MOSLTermWrap x1) (MOSLTermWrap x2) =
+	equivalentMetaObjects' equivs x1 x2
+equivalentMetaObjects' equivs (MOSLTermUnwrap x1) (MOSLTermUnwrap x2) =
+	equivalentMetaObjects' equivs x1 x2
+equivalentMetaObjects' _ _ _ =
+	False
 
