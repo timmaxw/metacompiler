@@ -2,12 +2,14 @@ module Metacompiler.Runtime where
 
 import Control.Applicative
 import Control.Monad.Writer
+import Data.Foldable (all)
 import Data.Functor.Identity
 import Data.List (find)
 import qualified Data.Map as M
 import Data.Monoid
 import qualified Data.Set as S
 import Data.Traversable (traverse)
+import Prelude hiding (all)
 
 newtype Name = Name { unName :: String } deriving (Ord, Show, Eq)
 newtype NameOfSLType = NameOfSLType { unNameOfSLType :: String } deriving (Eq, Show, Ord)
@@ -72,7 +74,8 @@ data BindingJSEquivExpr = BindingJSEquivExpr {
 
 typeOfMetaObject :: MetaObject -> MetaType
 typeOfMetaObject (MOApp fun arg) = case typeOfMetaObject fun of
-	MTFun (paramName, _) bodyType -> reduceMetaType (substituteMetaType (M.singleton paramName arg) bodyType)
+	MTFun (paramName, _) bodyType -> reduceMetaType $
+		substituteMetaType (Substitutions (M.singleton paramName arg) M.empty M.empty) bodyType
 	_ -> error "bad meta-object: MOApp of non-function"
 typeOfMetaObject (MOAbs (paramName, paramType) body) = MTFun (paramName, paramType) (typeOfMetaObject body)
 typeOfMetaObject (MOName _ type_) = type_
@@ -82,7 +85,7 @@ typeOfMetaObject (MOSLTypeApp fun _) = case typeOfMetaObject fun of
 	_ -> error "bad meta-object: MOSLTypeApp of non-function kind"
 typeOfMetaObject (MOSLTypeFun _ _) = MTSLType SLKindType
 typeOfMetaObject (MOSLTypeLazy _) = MTSLType SLKindType
-typeOfMetaObject (MOSLTermName _ subs type_) = type_
+typeOfMetaObject (MOSLTermName _ subs type_) = MTSLTerm type_
 typeOfMetaObject (MOSLTermApp fun _) = case typeOfMetaObject fun of
 	MTSLTerm funSLType -> case reduceMetaObject funSLType of
 		MOSLTypeFun _ retSLType -> MTSLTerm retSLType
@@ -94,7 +97,7 @@ typeOfMetaObject (MOSLTermAbs (_, paramType) body) = case typeOfMetaObject body 
 typeOfMetaObject (MOSLTermCase subject clauses) = case clauses of
 	(_, _, _, first):_ -> typeOfMetaObject first
 	_ -> error "bad meta-object: MOSLTermCase needs at least one clause"
-typeOfMetaObject (MOSLTermData ctor typeParams _) = (typeOfSLCtor ctor) typeParams
+typeOfMetaObject (MOSLTermData ctor typeParams _) = MTSLTerm (typeOfSLCtor ctor typeParams)
 typeOfMetaObject (MOSLTermWrap x) = case typeOfMetaObject x of
 	MTSLTerm xType -> MTSLTerm (MOSLTypeLazy xType)
 typeOfMetaObject (MOSLTermUnwrap x) = case typeOfMetaObject x of
@@ -200,9 +203,9 @@ substituteMetaObject subs (MOName name type_) = case M.lookup name (nameSubstitu
 substituteMetaObject subs (MOSLTypeName name kind) = case M.lookup name (nameOfSLTypeSubstitutions subs) of
 	Just value -> value
 	Nothing -> MOSLTypeName name kind
-substituteMetaObject subs (MOSLTermName name type_) = case M.lookup name (nameOfSLTermSubstitutions subs) of
+substituteMetaObject subs (MOSLTermName name typeParams type_) = case M.lookup name (nameOfSLTermSubstitutions subs) of
 	Just value -> value
-	Nothing -> MOSLTermName name (substituteMetaObject subs type_)
+	Nothing -> MOSLTermName name (map (substituteMetaObject subs) typeParams) (substituteMetaObject subs type_)
 substituteMetaObject subs (MOSLTermAbs (paramName, paramType) body) = let
 	paramType' = substituteMetaObject subs paramType
 	(subs', [paramName']) = prepareForBindingNamesOfSLTerms (freeNamesInMetaObject body) [paramType'] (subs, [paramName])
@@ -259,8 +262,10 @@ freeNamesInMetaObject (MOName n type_) =
 	FreeNames (S.singleton n) S.empty S.empty `mappend` freeNamesInMetaType type_
 freeNamesInMetaObject (MOSLTypeName n _) =
 	FreeNames S.empty (S.singleton n) S.empty
-freeNamesInMetaObject (MOSLTermName n type_) =
-	FreeNames S.empty S.empty (S.singleton n) `mappend` freeNamesInMetaObject type_
+freeNamesInMetaObject (MOSLTermName n typeParams type_) =
+	FreeNames S.empty S.empty (S.singleton n)
+	`mappend` mconcat (map freeNamesInMetaObject typeParams)
+	`mappend` freeNamesInMetaObject type_
 freeNamesInMetaObject (MOSLTermAbs (paramName, paramType) body) = let
 	paramNames = freeNamesInMetaObject paramType
 	bodyNames = freeNamesInMetaObject body
@@ -275,7 +280,7 @@ freeNamesInMetaObject (MOSLTermCase subject clauses) =
 		in typeParamNames `mappend` bodyNames'
 		| (_, typeParams, fieldNames, body) <- clauses]
 freeNamesInMetaObject other =
-	execWriter (traverseMetaType freeNamesVisitor other)
+	execWriter (traverseMetaObject freeNamesVisitor other)
 
 freeNamesVisitor :: Visitor (Writer FreeNames)
 freeNamesVisitor = Visitor {
@@ -323,7 +328,7 @@ prepareForBindingNames freeNamesWithin nameTypes (subs, names) = let
 		innerSubs' = if name' == name
 			then innerSubs
 			else innerSubs { nameSubstitutions = M.insert name (MOName name' nameType) (nameSubstitutions innerSubs) }
-		in processNames toProcess innerSubs'
+		in processNames (processed ++ [name']) toProcess innerSubs'
 	in processNames [] (zip names nameTypes) subs'
 
 -- `prepareForBindingNamesOfSLTerms` is like `prepareForBindingNames` except that it's for terms which introduce new
@@ -345,7 +350,7 @@ prepareForBindingNamesOfSLTerms freeNamesWithin nameTypes (subs, names) = let
 				maybe S.empty (\mo -> namesOfSLTermsInFreeNames (freeNamesInMetaObject mo))
 					(M.lookup name (nameOfSLTermSubstitutions subs'))
 				| name <- S.toList (namesOfSLTermsInFreeNames freeNamesWithin)]
-	processNames :: [NameOfSLTerm] -> [(NameOfSLTerm, MetaType)] -> Substitutions -> (Substitutions, [NameOfSLTerm])
+	processNames :: [NameOfSLTerm] -> [(NameOfSLTerm, MetaObject)] -> Substitutions -> (Substitutions, [NameOfSLTerm])
 	processNames processed [] innerSubs = (innerSubs, processed)
 	processNames processed ((name, nameType):toProcess) innerSubs = let
 		forbidden = incomingNames
@@ -359,7 +364,7 @@ prepareForBindingNamesOfSLTerms freeNamesWithin nameTypes (subs, names) = let
 		innerSubs' = if name' == name
 			then innerSubs
 			else innerSubs { nameOfSLTermSubstitutions = M.insert name (MOSLTermName name' [] nameType) (nameOfSLTermSubstitutions innerSubs) }
-		in processNames toProcess innerSubs'
+		in processNames (processed ++ [name']) toProcess innerSubs'
 	in processNames [] (zip names nameTypes) subs'
 
 -- `reduceMetaType` and `reduceMetaObject` return the simplest meta-type or meta-object equivalent to the given
@@ -402,7 +407,7 @@ equivalentMetaTypes' (nameEquivs, nameOfSLTermEquivs) (MTFun (name1, paramType1)
 equivalentMetaTypes' _ (MTSLType k1) (MTSLType k2) =
 	k1 == k2
 equivalentMetaTypes' equivs (MTSLTerm t1) (MTSLTerm t2) =
-	equivalentMetaObjects equivs t1 t2
+	equivalentMetaObjects' equivs t1 t2
 equivalentMetaTypes' equivs _ _ =
 	False
 
@@ -425,11 +430,11 @@ equivalentMetaObjects' equivs (MOSLTypeLazy x1) (MOSLTypeLazy x2) =
 	equivalentMetaObjects' equivs x1 x2
 equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermName name1 types1 _) (MOSLTermName name2 types2 _) =
 	((name1, name2) `S.member` nameOfSLTermEquivs || name1 == name2 && all (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameOfSLTermEquivs)
-	&& all (\(t1, t2) -> equivalentMetaObjects (nameEquivs, nameOfSLTermEquivs) t1 t2) (zip types1 types2)
+	&& all (\(t1, t2) -> equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) t1 t2) (zip types1 types2)
 equivalentMetaObjects' equivs (MOSLTermApp fun1 arg1) (MOSLTermApp fun2 arg2) =
 	equivalentMetaObjects' equivs fun1 fun2 && equivalentMetaObjects' equivs arg1 arg2
 equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermAbs (name1, paramType1) body1) (MOSLTermAbs (name2, paramType2) body2) =
-	equivalentMetaTypes' (nameEquivs, nameOfSLTermEquivs) paramType1 paramType2
+	equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) paramType1 paramType2
 	&& equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs') body1 body2
 	where nameOfSLTermEquivs' = S.insert (name1, name2) (S.filter (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameOfSLTermEquivs)
 equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermCase subject1 clauses1) (MOSLTermCase subject2 clauses2) =

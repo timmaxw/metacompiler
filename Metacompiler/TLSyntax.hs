@@ -4,7 +4,7 @@ import qualified Data.Map as M
 import qualified Language.ECMAScript3.Syntax as JS
 import qualified Metacompiler.SLSyntax as SLS
 
-newtype Name = Name { unName :: String } deriving (Eq, Ord)
+newtype Name = Name { unName :: String } deriving (Eq, Ord, Show)
 
 -- `MetaType` represents a translation-language meta-type. It is more of a
 -- syntactic representation than a semantic one; for example, it doesn't
@@ -19,7 +19,7 @@ data MetaType a
 		resultOfMTFun :: MetaType a
 	}
 	| MTSLType {
-		tagOfMetaType :: a
+		tagOfMetaType :: a,
 		slKindOfMTSLType :: SLS.Kind a
 	}
 	| MTSLTerm {
@@ -92,11 +92,11 @@ newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord, Show)
 data Binding a name = Binding {
 	tagOfBinding :: a,
 	nameOfBinding :: name,
-	paramsOfBinding :: [BindingParam],
+	paramsOfBinding :: [BindingParam a],
 	valueOfBinding :: MetaObject a
-	}
+	} deriving Show
  
-data BindingParam a = BindingParam [(Name, MetaType a)]
+data BindingParam a = BindingParam [(Name, MetaType a)] deriving Show
 
 -- `Directive` represents a top-level translation language directive.
 

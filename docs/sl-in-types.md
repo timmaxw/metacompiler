@@ -1,92 +1,94 @@
 # Making SL equivalents part of the type rather than part of the value
 
-I am considering changing TL so that instead of the SL equivalent of a JS term being part of its value, the SL equivalent would be part of its type. This is still very much a work in progress; there are some things that I'm unsure how to express under the proposed system. Specifically, it's not clear how to introduce new variables into scope in a `(js-expr ...)`, such as when implementing `case` or functions.
-
-## Summary of proposed changes
-
-Two new meta-types are introduced. `sl-type` is the meta-type of SL types. `sl-term <type>` is the meta-type of SL terms having type `<type>`.
-
-The `js-term` meta-type is removed and the `js-sl-term` meta-type is renamed to `js-term`. The `js-type` meta-type gets a parameter of meta-type `sl-type`, which is its SL equivalent. The `js-term` meta-type gets an additional parameter of meta-type `sl-term x`, where `x` is the SL equivalent of the first parameter to `js-term`.
+I am considering changing TL so that instead of the SL equivalent of a JS term being part of its value, the SL equivalent would be part of its type.
 
 ## Examples
 
-Note that I have put `?` where I'm not sure what could plausibly go there.
+The changes are easiest to show by example:
 
 ```
-(let use NatAsNumberSucc (numSL :: sl-term Nat) (numJS :: js-term NatAsNumber numSL) = (js-expr
+(js-expr-type NatAsNumber =
+	(spec (sl-type "Nat"))
+)
+
+(let use NatAsNumberSucc (numSL :: sl-term Nat) (numJS :: js-expr NatAsNumber numSL) = (js-expr
 	(type NatAsNumber)
-	(spec (Succ numSL)
-	(= "num" numJS)
-	"num + 1"
+	(spec (sl-term "Succ numSL"))
+	(impl "num() + 1" (expr "num" = numJS))
 ))
 
-(let use NatAsNumberPlus (aSL :: sl-term Nat) (bSL :: sl-term Nat) (aJS :: js-term NatAsNumber aSL) (bJS :: js-term NatAsNumber bSL) = (js-expr
+(let use NatAsNumberPlus (aSL :: sl-term Nat) (bSL :: sl-term Nat) (aJS :: js-expr NatAsNumber aSL) (bJS :: js-expr NatAsNumber bSL) = (js-expr
 	(type NatAsNumber)
-	(spec (plus aSL bSL))
-	(= "a" aJS) (= "b" bJS)
-	"a + b"
+	(spec (sl-term "plus aSL bSL"))
+	(impl "a() + b()" (expr "a" = aJS) (expr "b" = bJS))
 ))
 
 (let use NatAsNumberCase
 		(resTypeSL :: sl-type)
-		(resTypeJS :: js-type resTypeSL)
+		(resTypeJS :: js-expr-type resTypeSL)
 		(subjectSL :: sl-term Nat)
-		(subjectJS :: js-term NatAsNumber subjectSL)
+		(subjectJS :: js-expr NatAsNumber subjectSL)
 		(zeroClauseSL :: sl-term resTypeSL)
-		(zeroClauseJS :: js-term resTypeJS zeroClauseSL)
+		(zeroClauseJS :: js-expr resTypeJS zeroClauseSL)
 		(succClauseSL :: fun (x :: sl-term Nat) -> sl-term resTypeSL)
-		(succClauseJS :: fun (x :: sl-term Nat) (y :: js-term NatAsNumber x) -> js-term resTypeJS (succClauseSL x))
+		(succClauseJS :: fun (x :: sl-term Nat) (y :: js-expr NatAsNumber x) -> js-expr resTypeJS (succClauseSL x))
 		= (js-expr
 	(type resTypeJS)
-	(spec (case subjectSL of (Zero) -> (zeroClauseSL) (Succ a) -> (succClauseSL a)))
-	(= "subj" subjectJS)
-	(= "zc" zeroClauseJS)
-	(= "sc" (succClauseJS ? ?))
-	[[
-		(function(s) {
-			if (s == 0) { return zc; }
-			else { return sc; }
-		})(subj)
-	]]
+	(spec (sl-term
+		"(case subjectSL of (Zero) -> (zc) (Succ a) -> (sc a))"
+		(term "zc" = zeroClauseSL)
+		(term "sc" (a :: sl-term Nat) = succClauseSL a)
+		))
+	(impl
+		[[
+			(function(s) {
+				if (s == 0) { return zc(); }
+				else { return sc(s); }
+			})(subj())
+		]]
+		(expr "subj" = subjectJS)
+		(expr "zc" = zeroClauseJS)
+		(expr "sc" (innerSL :: sl-term Nat | innerJS :: js-term NatAsNumber innerSL) = succClauseJS innerSL innerJS)
+		)
 ))
 
-(js-repr FunctionType
+(js-expr-type FunctionType
 		(argTypeSL :: sl-type)
-		(argTypeJS :: js-type argTypeSL)
+		(argTypeJS :: js-expr-type argTypeSL)
 		(retTypeSL :: sl-type)
-		(retTypeJS :: js-type retSL) =
-	(spec (fun argTypeSL -> retTypeSL))
+		(retTypeJS :: js-expr-type retTypeSL) =
+	(spec (sl-type "fun a -> r" (type "a" = argTypeSL) (type "r" = retTypeSL)))
 )
 
 (let FunctionLambda
 		(argTypeSL :: sl-type)
-		(argTypeJS :: js-type argTypeSL)
+		(argTypeJS :: js-expr-type argTypeSL)
 		(retTypeSL :: sl-type)
-		(retTypeJS :: js-type retTypeSL)
+		(retTypeJS :: js-expr-type retTypeSL)
 		(bodySL :: fun (argSL :: sl-term argTypeSL) -> sl-term argTypeJS)
-		(bodyJS :: fun (argSL :: sl-term argTypeSL) (argJS :: js-term argTypeJS argSL) -> sl-term retTypeJS (bodySL argSL))
+		(bodyJS :: fun (argSL :: sl-term argTypeSL) (argJS :: js-expr argTypeJS argSL) -> js-expr retTypeJS (bodySL argSL))
 		= (js-expr
 	(type (FunctionType argTypeSL argTypeJS retTypeSL retTypeJS))
-	(spec (\ x -> bodySL x))
-	(= "body" (bodyJS ? ?))
-	"function(x) { return body; }"
+	(spec (sl-term "\ x -> b x" (term "b" (x :: sl-term argTypeSL) = bodySL x)))
+	(impl
+		"function(x) { return body(x); }"
+		(expr "body" (argSL :: sl-term argTypeSL | argJS :: js-term argTypeJS xSL) = bodyJS xSL xJS)
+		)
 ))
 
 (let FunctionApply
 		(argTypeSL :: sl-type)
-		(argTypeJS :: js-type argTypeSL)
+		(argTypeJS :: js-expr-type argTypeSL)
 		(retTypeSL :: sl-type)
-		(retTypeJS :: js-type retTypeSL)
+		(retTypeJS :: js-expr-type retTypeSL)
 		(funSL :: sl-term (fun argTypeSL -> retTypeSL))
-		(funJS :: js-term (FunctionType argTypeSL argTypeJS retTypeSL retTypeJS) funSL)
+		(funJS :: js-expr (FunctionType argTypeSL argTypeJS retTypeSL retTypeJS) funSL)
 		(argSL :: sl-term argTypeSL)
-		(argJS :: js-term argTypeJS argSL)
+		(argJS :: js-expr argTypeJS argSL)
 		= (js-expr
 	(type retTypeJS)
-	(spec (funSL argSL))
-	(= "fun" fun)
-	(= "arg" arg)
-	"fun(arg)"
+	(spec (sl-term "f a" (term "f" = funSL) (term "a" = argSL)))
+	(impl ("f(a)" (expr "f" = funJS) (expr "a" = argJS)))
 ))
 ```
 
@@ -101,29 +103,31 @@ There are a couple of benefits of this system over the existing one:
 * It allows for some neat constructs. For example, suppose I want to choose between two equivalent algorithms at runtime based on the input. I could write something like this:
 
     ```
-	let (ChooseAtRuntime
+	(let ChooseAtRuntime
 			(typeSL :: sl-type)
-			(typeJS :: js-type typeSL)
+			(typeJS :: js-expr-type typeSL)
 			(criterionSL :: sl-term Bool)
-			(criterionJS :: js-term BoolAsJSBool criterionSL)
+			(criterionJS :: js-expr BoolAsJSBool criterionSL)
 			(valueSL :: sl-term typeSL)
-			(valueJSIfCriterionTrue :: js-term typeJS valueSL)
-			(valueJSIfCriterionFalse :: js-term typeJS valueSL)
-			= (js-repr
+			(valueJSIfCriterionTrue :: js-expr typeJS valueSL)
+			(valueJSIfCriterionFalse :: js-expr typeJS valueSL)
+			= (js-expr
 		(type typeJS)
 		(spec valueSL)
-		(= "criterion" criterionJS)
-		(= "valueIfCriterionTrue" valueJSIfCriterionTrue)
-		(= "valueIfCriterionFalse" valueJSIfCriterionFalse)
-		[[
-			(function() {
-				if (criterion) {
-					return valueIfCriterionTrue;
-				} else {
-					return valueIfCriterionFalse;
-				}
-			})()
-		]]
+		(impl 
+			[[
+				(function() {
+					if (c()) {
+						return t();
+					} else {
+						return f();
+					}
+				})()
+			]]
+			(expr "c" = criterionJS)
+			(expr "t" = valueJSIfCriterionTrue)
+			(expr "f" = valueJSIfCriterionFalse)
+			)
 	))
 	```
 
@@ -131,5 +135,4 @@ There are a couple of benefits of this system over the existing one:
 
 One disadvantage of the proposed changes is that they make things much more verbose. Perhaps the amount of verbiage could be reduced by introducing polymorphism and type inference.
 
-The other disadvantage is, obviously, that it's not clear how to express the idea of bringing a variable into scope with the new system.
 
