@@ -1,8 +1,18 @@
 module Metacompiler.SLSyntax where
 
+import Data.Char
+
 newtype NameOfType = NameOfType { unNameOfType :: String } deriving (Eq, Show, Ord)
-newtype NameOfTerm = NameOfTerm { unNameOfTerm :: String } deriving (Eq, Show, Ord)
 newtype NameOfCtor = NameOfCtor { unNameOfCtor :: String } deriving (Eq, Show, Ord)
+newtype NameOfTerm = NameOfTerm { unNameOfTerm :: String } deriving (Eq, Show, Ord)
+
+isValidTypeName :: String -> Bool
+isValidTypeName "" = False
+isValidTypeName (x:xs) = isAlpha x && all (\c -> isAlphaNum c || c == '\'') xs
+
+isValidTermName :: String -> Bool
+isValidTermName "" = False
+isValidTermName (x:xs) = isAlpha x && all (\c -> isAlphaNum c || c == '\'') xs
 
 data Kind a
 	= KindType a

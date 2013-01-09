@@ -1,12 +1,12 @@
 module Metacompiler.SExprToTL where
 
-import Control.Monad (when, unless)
+import Control.Monad
 import Data.Char (isSpace)
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.Parser as JS
 import qualified Language.ECMAScript3.Syntax as JS
 import Metacompiler.SExpr
-import Metacompiler.SExprToSL
+import Metacompiler.SExprToSL as SL
 import qualified Metacompiler.SLSyntax as SL
 import qualified Metacompiler.TLSyntax as TL
 import qualified Text.Parsec
@@ -97,12 +97,12 @@ parseTLDirectiveFromSExpr other =
 -- It is used in `fun ... -> ...` types, `\ ... -> ...` terms, and at the top
 -- of `let` and `js-expr` directives.
 
-parseTLParameterFromSExpr :: SExpr -> Either String (String, TL.MetaType Range)
+parseTLParameterFromSExpr :: SExpr -> Either String (TL.Name, TL.MetaType Range)
 parseTLParameterFromSExpr (List r (Cons (Atom _ name) (Cons (Atom _ "::") ty))) = do
 	ty' <-
 		errorContext ("in type of parameter `" ++ name ++ "` at " ++ formatRange r) $
 		parseTLMetaTypeFromSExprs ty
-	return (name, ty')
+	return (TL.Name name, ty')
 parseTLParameterFromSExpr other =
 	Left ("invalid parameter: expected `(name :: type)`, got " ++ summarizeSExpr other ++
 		" at " ++ formatRange (rangeOfSExpr other))
@@ -111,15 +111,15 @@ parseTLParameterFromSExpr other =
 -- `(name1 :: type1 | name2 :: type2 | name3 :: type3 | ...)`. It's used in
 -- bindings.
 
-parseTLMultiParameterFromSExpr :: SExpr -> Either String [(String, TL.MetaType Range)]
+parseTLMultiParameterFromSExpr :: SExpr -> Either String [(TL.Name, TL.MetaType Range)]
 parseTLMultiParameterFromSExpr (List r l) = do
-	let parts = multiBreakOnAtom "|" l
+	parts <- multiBreakOnAtom "|" l
 	forM parts $ \ part -> case part of
 		Cons (Atom _ name) (Cons (Atom _ "::") ty) -> do
 			ty' <- errorContext ("in type of parameter `" ++ name ++ "` at " ++ formatRange (rangeOfSExprs part)) $
 				parseTLMetaTypeFromSExprs ty
-			return (name, ty')
-		_ -> Left ("invalid parameter: expected `name :: type`, got " ++ summarizeSExprs other ++
+			return (TL.Name name, ty')
+		_ -> Left ("invalid parameter: expected `name :: type`, got " ++ summarizeSExprs part ++
 			" at " ++ formatRange (rangeOfSExprs part))
 
 -- `parseClausesFromSExprs` expects a series of clauses of the form
@@ -155,10 +155,12 @@ parseClausesFromSExprs spec seq = do
 -- `TL.MetaType`.
 
 parseTLMetaTypeFromSExpr :: SExpr -> Either String (TL.MetaType Range)
+{-
 parseTLMetaTypeFromSExpr (Atom range "js-type") =
 	return $ TL.MTJSType {
 		TL.tagOfMetaType = range
 		}
+-}
 parseTLMetaTypeFromSExpr (List _ stuff) =
 	parseTLMetaTypeFromSExprs stuff
 parseTLMetaTypeFromSExpr other =
@@ -191,8 +193,8 @@ parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "fun") rest) =
 		body <- parseTLMetaTypeFromSExprs unparsedBody
 		return $ TL.MTFun {
 			TL.tagOfMetaType = rangeOfSExprs whole,
-			TL.paramsOfMetaType = params,
-			TL.resultOfMetaType = body
+			TL.paramsOfMTFun = params,
+			TL.resultOfMTFun = body
 			}
 {-
 parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-equiv-expr-type") rest) =
@@ -210,9 +212,9 @@ parseTLMetaTypeFromSExprs other =
 
 parseTLMetaObjectFromSExpr :: SExpr -> Either String (TL.MetaObject Range)
 parseTLMetaObjectFromSExpr (Atom range x) =
-	return $ TL.MOVar {
+	return $ TL.MOName {
 		TL.tagOfMetaObject = range,
-		TL.varOfMOVar = x
+		TL.varOfMOName = TL.Name x
 		}
 parseTLMetaObjectFromSExpr (List _ stuff) =
 	parseTLMetaObjectFromSExprs stuff
@@ -236,7 +238,7 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "sl-type") rest) =
 		(code, bindings1) <- case rest of
 			Nil p -> Left ("expected a SL type at " ++ formatPoint p)
 			Cons code bindings1 -> return (code, bindings1)
-		code' <- SL.parseTypeFromSExpr code
+		code' <- SL.parseSLTypeFromSExpr code
 		bindings2 <- parseClausesFromSExprs [("type", True, True)] bindings1
 		bindings3 <- forM ((M.!) bindings2 "type") $ \ (range, body) ->
 			parseBindingFromSExprs SL.NameOfType range body
@@ -250,7 +252,7 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "sl-term") rest) =
 		(code, bindings1) <- case rest of
 			Nil p -> Left ("expected a SL term at " ++ formatPoint p)
 			Cons code bindings1 -> return (code, bindings1)
-		code' <- SL.parseTermFromSExpr code
+		code' <- SL.parseSLTermFromSExpr code
 		bindings2 <- parseClausesFromSExprs [("type", True, True), ("term", True, True)] bindings1
 		typeBindings3 <- forM ((M.!) bindings2 "type") $ \ (range, body) ->
 			parseBindingFromSExprs SL.NameOfType range body
@@ -316,12 +318,12 @@ parseTLMetaObjectFromSExprs other =
 
 parseBindingFromSExprs :: (String -> n) -> Range -> SExprs -> Either String (TL.Binding Range n)
 parseBindingFromSExprs nameMaker range rest1 = do
-	(unparsedName, rest2) <- takeOne rest1
+	(unparsedName, rest2) <- takeOne "name" rest1
 	name <- case unparsedName of
 		Quoted _ s -> return (nameMaker s)
 		_ -> Left ("at " ++ formatRange (rangeOfSExpr unparsedName) ++ ": name of variable to bind should be quoted")
 	(unparsedParams, unparsedValue) <- breakOnAtom "=" rest2
-	params <- mapM (liftM BindingParam . parseTLMultiParameterFromSExpr) (sExprsToList unparsedParams)
+	params <- mapM (liftM TL.BindingParam . parseTLMultiParameterFromSExpr) (sExprsToList unparsedParams)
 	value <- parseTLMetaObjectFromSExprs unparsedValue
 	return (TL.Binding {
 		TL.tagOfBinding = range,

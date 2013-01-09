@@ -20,7 +20,13 @@ data MetaObjectInScope
 	= MetaObjectInScopeGlobalPresent R.MetaObject
 	| MetaObjectInScopeGlobalFuture
 	| MetaObjectInScopeLocal R.Name R.MetaType
-type Scope = M.Map TLS.Name InScope
+
+data Scope = Scope {
+	metaObjectsInScope :: M.Map TLS.Name MetaObjectInScope,
+	slTypesInScope :: M.Map SLS.NameOfType SLC.TypeInScope,
+	slCtorsInScope :: M.Map SLS.NameOfCtor R.SLCtor,
+	slTermsInScope :: M.Map SLS.NameOfTerm SLC.TermInScope
+	}
 
 compileMetaType :: Scope -> TLS.MetaType Range -> StateT LocalState (Either String) R.MetaType
 compileMetaType scope (TLS.MTFun range params result) =
@@ -58,17 +64,26 @@ compileMetaObject scope (TLS.MOApp range fun arg) = do
 	return (R.MOApp fun' arg')
 compileMetaObject scope (TLS.MOAbs range params result) =
 	compileAbstraction scope params (\scope' -> compileMetaObject scope' result) R.MOAbs
-compileMetaObject scope (TLS.MOName range name) = case M.lookup name scope of
-	Just (InScopeGlobalPresent x) -> return x
-	Just InScopeGlobalFuture -> error "top-sort should have prevented this"
-	Just (InScopeLocal name' type_) -> return (R.MOName name' type_)
+compileMetaObject scope (TLS.MOName range name) = case M.lookup name (metaObjectsInScope scope) of
+	Just (MetaObjectInScopeGlobalPresent x) -> return x
+	Just MetaObjectInScopeGlobalFuture -> error "top-sort should have prevented this"
+	Just (MetaObjectInScopeLocal name' type_) -> return (R.MOName name' type_)
+	Nothing -> lift $ Left ("at " ++ formatRange range ++ ": name `" ++ TLS.unName name ++ "` is not in scope")
 compileMetaObject scope (TLS.MOSLTypeLiteral range code typeBindings) = do
 	typeBindings' <- compileSLTypeBindings scope typeBindings
-	lift (SLC.compileSLType typeBindings' [] code)
+	lift (SLC.compileSLType
+		(M.union typeBindings' (slTypesInScope scope))
+		[] code
+		)
 compileMetaObject scope (TLS.MOSLTermLiteral range code typeBindings termBindings) = do
 	typeBindings' <- compileSLTypeBindings scope typeBindings
 	termBindings' <- compileSLTermBindings scope termBindings
-	lift (SLC.compileSLTerm typeBindings' M.empty termBindings' [] code)
+	lift (SLC.compileSLTerm
+		(M.union typeBindings' (slTypesInScope scope))
+		(slCtorsInScope scope)
+		(M.union termBindings' (slTermsInScope scope))
+		[] code
+		)
 {-
 compileMetaObject scope (TLS.MOJSEquivExprLiteral range slTerm jsType jsExpr) = do
 	...
@@ -88,11 +103,12 @@ compileAbstraction scope [] base fun = base scope
 compileAbstraction scope ((paramName, paramType):params) base fun = do
 	let paramName' = R.Name (TLS.unName paramName)
 	paramType' <- compileMetaType scope paramType
-	let scope' = M.insert paramName' (InScopeLocal paramType') scope
+	let scope' = scope { metaObjectsInScope = M.insert paramName (MetaObjectInScopeLocal paramName' paramType') (metaObjectsInScope scope) }
 	rest <- compileAbstraction scope' params base fun
 	return (fun (paramName', paramType') rest)
 
-compileBindings :: Scope
+compileBindings :: Ord n
+                => Scope
                 -> (Scope -> TLS.BindingParam Range -> StateT LocalState (Either String) (Scope, p))
                 -> (Scope -> [p] -> TLS.MetaObject Range -> StateT LocalState (Either String) a)
                 -> [TLS.Binding Range n]
@@ -114,7 +130,7 @@ compileBindings scope paramFun valueFun bindings = do
 compileSLTypeBindings :: Scope
                       -> [TLS.Binding Range SLS.NameOfType]
                       -> StateT LocalState (Either String) (M.Map SLS.NameOfType SLC.TypeInScope)
-compileSLTypeBindings scope bindings = compileBindings scope bindings
+compileSLTypeBindings scope bindings = compileBindings scope
 	(\ subScope (TLS.BindingParam parts) -> do
 		(name, type_) <- case parts of
 			[(name, type_)] -> return (name, type_)
@@ -126,7 +142,7 @@ compileSLTypeBindings scope bindings = compileBindings scope bindings
 			R.MTSLType slKind' -> return slKind'
 			_ -> lift (Left "Parameters to bindings in a `(sl-type ...)` construct should all have type \
 				\`(sl-type ...)`.")
-		let subScope' = M.insert name' (InScopeLocal type_') subScope
+		let subScope' = subScope { metaObjectsInScope = M.insert name (MetaObjectInScopeLocal name' type_') (metaObjectsInScope subScope) }
 		return (subScope', (name', slKind'))
 		)
 	(\ subScope' params' value -> do
@@ -134,30 +150,30 @@ compileSLTypeBindings scope bindings = compileBindings scope bindings
 		checkTypeSLType value'
 		return (SLC.TypeInScope {
 			SLC.typeParamsOfTypeInScope = map snd params',
-			SLC.valueOfTypeInScope = \ paramValues ->
-				R.substituteMetaObject
-					(M.fromList (zip (map fst params') paramValues))
-					value'
+			SLC.valueOfTypeInScope = \ paramValues -> let
+				metaObjectSubs = M.fromList (zip (map fst params') paramValues)
+				in R.substituteMetaObject (R.Substitutions metaObjectSubs M.empty M.empty) value'
 			})
 		)
+	bindings
 
 compileSLTermBindings :: Scope
                       -> [TLS.Binding Range SLS.NameOfTerm]
                       -> StateT LocalState (Either String) (M.Map SLS.NameOfTerm SLC.TermInScope)
-compileSLTermBindings scope bindings = compileBindings scope bindings
+compileSLTermBindings scope bindings = compileBindings scope
 	(\ subScope (TLS.BindingParam parts) -> do
 		(name, type_) <- case parts of
 			[(name, type_)] -> return (name, type_)
 			_ -> lift (Left "Parameters to bindings in a `(sl-term ...)` construct should all have exactly one \
 				\part.")
-		let name' = R.NameOfSLTerm (SLS.unNameOfTerm name)
+		let name' = R.Name (TLS.unName name)
 		type_' <- compileMetaType scope type_
 		slKindOrType' <- case type_' of
 			R.MTSLType slKind' -> return (Left slKind')
 			R.MTSLTerm slType' -> return (Right slType')
 			_ -> lift (Left "Parameters to bindings in a `(sl-term ...)` construct should all have type \
 				\`(sl-type ...)` or `(sl-term ...)`.")
-		let subScope' = M.insert name' (InScopeLocal type_') subScope
+		let subScope' = subScope { metaObjectsInScope =	M.insert name (MetaObjectInScopeLocal name' type_') (metaObjectsInScope subScope) }
 		return (subScope', (name', slKindOrType'))
 		)
 	(\ subScope' params' value -> do
@@ -174,12 +190,12 @@ compileSLTermBindings scope bindings = compileBindings scope bindings
 		return (SLC.TermInScope {
 			SLC.typeParamsOfTermInScope = map snd typeParams',
 			SLC.termParamsOfTermInScope = map snd termParams',
-			SLC.valueOfTermInScope = \ typeParamValues termParamValues ->
-				R.substituteMetaObject
-					(M.fromList (zip (map fst typeParams') typeParamValues ++ zip (map fst termParams') termParamValues))
-					value'
+			SLC.valueOfTermInScope = \ typeParamValues termParamValues -> let
+				metaObjectSubs = M.fromList (zip (map fst typeParams') typeParamValues ++ zip (map fst termParams') termParamValues)
+				in R.substituteMetaObject (R.Substitutions metaObjectSubs M.empty M.empty) value'
 			})
 		)
+	bindings
 
 checkType :: R.MetaObject -> R.MetaType -> StateT LocalState (Either String) ()
 checkType obj expectedType = if R.reduceMetaType (R.typeOfMetaObject obj) `R.equivalentMetaTypes` R.reduceMetaType expectedType
@@ -188,7 +204,7 @@ checkType obj expectedType = if R.reduceMetaType (R.typeOfMetaObject obj) `R.equ
 
 checkTypeFun :: R.MetaObject -> StateT LocalState (Either String) ((R.Name, R.MetaType), R.MetaType)
 checkTypeFun obj = case R.reduceMetaType (R.typeOfMetaObject obj) of
-	R.MTFun (paramName, paramType) returnType -> ((paramName, paramType), returnType)
+	R.MTFun (paramName, paramType) returnType -> return ((paramName, paramType), returnType)
 	_ -> lift $ Left ("expected type `(fun ... -> ...)`, got something else")
 
 checkTypeSLType :: R.MetaObject -> StateT LocalState (Either String) R.SLKind

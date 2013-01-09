@@ -42,7 +42,7 @@ parseSLKindFromSExprs other =
 -- `parseSLTypeFromSExpr` tries to interpret a S-expression as a `SL.Type`.
 
 parseSLTypeFromSExpr :: SExpr -> Either String (SL.Type Range)
-parseSLTypeFromSExpr (Atom r a) =
+parseSLTypeFromSExpr (Atom r a) | SL.isValidTypeName a =
 	return (SL.TypeName r (SL.NameOfType a))
 parseSLTypeFromSExpr (List _ xs) =
 	parseSLTypeFromSExprs xs
@@ -87,7 +87,7 @@ parseSLTypeFromSExprs other =
 -- `parseSLTermFromSExpr` tries to interpret a S-expression as a `SL.Term`.
 
 parseSLTermFromSExpr :: SExpr -> Either String (SL.Term Range)
-parseSLTermFromSExpr (Atom r a) =
+parseSLTermFromSExpr (Atom r a) | SL.isValidTermName a =
 	return (SL.TermName r (SL.NameOfTerm a) [])   -- TODO: type parameters
 parseSLTermFromSExpr (List _ xs) =
 	parseSLTermFromSExprs xs
