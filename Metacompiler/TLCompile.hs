@@ -23,9 +23,7 @@ data MetaObjectInScope
 
 data Scope = Scope {
 	metaObjectsInScope :: M.Map TLS.Name MetaObjectInScope,
-	slTypesInScope :: M.Map SLS.NameOfType SLC.TypeInScope,
-	slCtorsInScope :: M.Map SLS.NameOfCtor R.SLCtor,
-	slTermsInScope :: M.Map SLS.NameOfTerm SLC.TermInScope
+	slObjectsInScope :: SLC.Scope
 	}
 
 compileMetaType :: Scope -> TLS.MetaType Range -> StateT LocalState (Either String) R.MetaType
@@ -216,4 +214,53 @@ checkTypeSLTerm :: R.MetaObject -> StateT LocalState (Either String) R.MetaObjec
 checkTypeSLTerm obj = case R.reduceMetaType (R.typeOfMetaObject obj) of
 	R.MTSLTerm slType -> return slType
 	_ -> lift (Left "expected type `(sl-term ...)`, got something else")
+
+data GlobalResults = GlobalResults {
+	scopeOfGlobalResults :: Scope
+	}
+
+compileDirectives :: [TLS.Directive Range] -> Either String GlobalResults
+compileDirectives directives = do
+	let allSLDirs = concatMap [content | TLS.DSLCode _ content <- directives]
+	slScope <- lift $ SLC.compileSLGlobals allSLDirs
+
+	let
+		freeNamesInLet :: TLS.Directive Range -> S.Set TLS.Name
+		freeNamesInLet (TLS.DLet _ name params type_ value) = f params
+			where
+				f [] = maybe S.empty TLS.freeNamesInMetaObject type_
+					`S.union` TLS.freeNamesInMetaObject value
+				f ((paramName, paramType):params) =
+					TLS.freeNamesInMetaType paramType
+					`S.union` S.delete paramName (f params)
+	sortedLets <- [case scc of
+		Data.Graph.AcyclicSCC dlet -> return dlet
+		Data.Graph.CyclicSCC _ -> Left ("mutual recursion detected")
+		| scc <- Data.Graph.stronglyConnComp
+			[(dlet, TLS.nameOfDLet dlet, S.toList (freeNamesInLet dlet))
+			| dlet@(TLS.DLet { }) <- directives]
+		]
+
+	metaObjectScope <- foldM (\ metaObjectScope dlet -> let
+		applyParams :: M.Map TLS.Name MetaObjectInScope -> [(TLS.Name, TLS.MetaType Range)] -> R.MetaObject
+		applyParams metaObjectScope' [] = do
+			value' <- compileMetaObject (Scope metaObjectScope' slScope) [] (TLS.valueOfDLet dlet)
+			case TLS.typeOfDLet dlet of
+				Nothing -> return ()
+				Just type_ -> do
+					type_' <- compileMetaType (Scope metaObjectScope' slScope) [] type_
+					checkType value' type_'
+			return value'
+		applyParams metaObjectScope' ((paramName, paramType):params) = do
+			let paramName' = R.Name (TLS.unName paramName)
+			paramType' <- compileMetaType (Scope metaObjectScope' slScope) [] paramType
+			let metaObjectScope'' = M.insert paramName (MetaObjectInScopeLocal paramName' paramType') metaObjectScope'
+			body' <- applyParams metaObjectScope'' params
+			return (R.MOAbs (paramName', paramType') body')
+		metaObject = applyParams metaObjectScope (TLS.paramsOfDLet dlet)
+		metaObjectScope' = M.insert (TLS.nameOfDLet dlet) (MetaObjectInScopePresent metaObject) metaObjectScope
+		in metaObjectScope'
+		) M.empty sortedLets
+
+	return (Scope metaObjectScope' slScope)
 

@@ -178,3 +178,59 @@ parseSLTermFromSExprs whole@(Cons first args) = do
 parseSLTermFromSExprs other =
 	Left ("invalid term " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
 
+-- `parseSLDirFromSExpr` tries to interpret the given S-expression as a `SL.Dir`.
+
+parseSLDirFromSExpr :: SExpr -> Either String (SL.Dir Range)
+parseSLDirFromSExpr (List range (Cons (Atom _ "data") rest)) =
+	case rest of
+		Atom _ name `Cons` Atom _ "=" ctors -> do
+			let name' = SL.NameOfType name
+			ctors' <- sequence [
+				case ctor of
+					List range2 (Atom _ ctorName `Cons` fields) -> do
+						let ctorName' = SL.NameOfCtor ctorName
+						fields' <- mapM parseSLTypeFromSExprs fields
+						return (ctorName', fields')
+					_ -> Left ("cannot parse constructor at " ++ formatRange (rangeOfSExpr ctor))
+				| ctor <- sExprsToList ctors]
+			return $ SL.DirData {
+				SL.tagOfDir = range,
+				SL.nameOfDirData = name',
+				SL.typeParamsOfDirData = [],
+				SL.ctorsOfDirData = ctors'
+				}
+		_ -> Left ("expected `(data <name> = <ctors>)`")
+parseSLDirFromSExpr (List range (Cons (Atom _ "let") rest)) = do
+	(nameAndTermParamsAndType, value) <- breakOnAtom "=" rest
+	(nameAndTermParams, maybeType) <- maybeBreakOnAtom "::" termParamsAndType
+	(name, termParams) <- takeOne "name" nameAndTermParams
+	name' <- case name of
+		Atom _ n -> return (SL.NameOfTerm n)
+		_ -> Left ("expected atom as name, got " ++ formatSExpr name)
+	termParams' <- sequence [
+		case thing of
+			List _ (Atom _ paramName `Cons` Atom _ "::" `Cons` type_) -> do
+				let paramName' = SL.NameOfTerm paramName
+				type_' <- SL.parseSLTypeFromSExprs type_
+				return (paramName', type_')
+			_ -> Left ("expected `(<name> :: <type>)`, got " ++ formatSExpr thing)
+		| thing <- sExprsToList termParams]
+	maybeType' <- case maybeType of
+		Nothing -> return Nothing
+		Just type_ -> do
+			type_' <- SL.parseSLTypeFromSExprs type_
+			return (Just type_')
+	value' <- SL.parseSLTermFromSExprs value
+	return $ SL.DirLet {
+		SL.tagOfDir = range,
+		SL.nameOfDirLet = name',
+		SL.typeParamsOfDirLet = [],
+		SL.termParamsOfDirLet = termParams',
+		SL.typeOfDirLet = maybeType',
+		SL.valueOfDirLet = value'
+		}
+parseSLDirFromSExpr (List range (Cons (Atom r name) _)) =
+	Left ("invalid directive type \"" ++ name ++ "\" at " ++ formatRange r)
+parseSLDirFromSExpr other =
+	Left ("invalid directive at top level at " ++ formatRange (rangeOfSExpr other))
+

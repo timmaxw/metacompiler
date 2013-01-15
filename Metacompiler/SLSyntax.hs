@@ -38,16 +38,18 @@ data Term a
 -- `Dir` is short for "directive"
 data Dir a
 	= DirData {
-		dirNameOfType :: NameOfType,
-		dirTypeParams :: [(NameOfType, Kind a)],
-		dirCtors :: [(NameOfCtor, [Type a])]
+		tagOfDir :: a,
+		nameOfDirData :: NameOfType,
+		typeParamsOfDirData :: [(NameOfType, Kind a)],
+		ctorsOfDirData :: [(NameOfCtor, [Type a])]
 		}
 	| DirLet {
-		dirNameOfTerm :: NameOfTerm,
-		dirTypeParams :: [(NameOfType, Kind a)],
-		dirTermParams :: [(NameOfTerm, Type a)],
-		dirType :: Type a,
-		dirValue :: Term a
+		tagOfDir :: a,
+		nameOfDirLet :: NameOfTerm,
+		typeParamsOfDirLet :: [(NameOfType, Kind a)],
+		termParamsOfDirLet :: [(NameOfTerm, Type a)],
+		typeOfDirLet :: Type a,
+		valueOfDirLet :: Term a
 		}
 	deriving (Eq, Show, Ord)
 

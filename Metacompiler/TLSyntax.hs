@@ -100,7 +100,6 @@ data BindingParam a = BindingParam [(Name, MetaType a)] deriving Show
 
 -- `Directive` represents a top-level translation language directive.
 
-{-
 data Directive a
 	= DLet {
 		tagOfDirective :: a,
@@ -109,6 +108,11 @@ data Directive a
 		typeOfDLet :: Maybe (MetaType a),
 		valueOfDLet :: MetaObject a
 	}
+	| DSLCode {
+		tagOfDirective :: a,
+		contentOfDSLCode :: [SLS.Dir a]
+	}
+{-
 	| DJSExprType {
 		tagOfDirective :: a,
 		nameOfDJSExprType :: Name,
@@ -120,6 +124,41 @@ data Directive a
 		codeOfDEmit :: [JS.Statement JS.SourcePos],
 		bindJSEquivExprsOfDEmit :: [Binding a (JS.Id ())]
 	}
-	deriving Show
 -}
+	deriving Show
+
+freeNamesInMetaType :: MetaType a -> S.Set Name
+freeNamesInMetaType (MTFun _ params result) = f params
+	where
+		f :: [(Name, MetaType a)] -> S.Set Name
+		f [] = freeNamesInMetaType result
+		f ((paramName, paramType):rest) =
+			freeNamesInMetaType paramType `S.union` S.delete paramName (freeNamesInMetaObject rest)
+freeNamesInMetaType (MTSLType _ _) = S.empty
+freeNamesInMetaType (MTSLTerm _ type_) = freeNamesInMetaObject type_
+
+freeNamesInMetaObject :: MetaObject a -> S.Set Name
+freeNamesInMetaObject (MOApp _ fun arg) =
+	freeNamesInMetaObject fun `S.union` freeNamesInMetaObject arg
+freeNamesInMetaObject (MOAbs _ params result) = f params
+	where
+		f :: [(Name, MetaType a)] -> S.Set Name
+		f [] = freeNamesInMetaObject result
+		f ((paramName, paramType):rest) =
+			freeNamesInMetaType paramType `S.union` S.delete paramName (freeNamesInMetaObject rest)
+freeNamesInMetaObject (MOName _ name) = S.singleton name
+freeNamesInMetaObject (MOSLTypeLiteral _ _ bindings) =
+	S.unions (map freeNamesInBinding bindings)
+freeNamesInMetaObject (MOSLTermLiteral _ _ typeBindings termBindings) =
+	S.unions (map freeNamesInBinding bindings)
+	`S.union` S.unions (map freeNamesInBinding bindings)
+
+freeNamesInBinding :: Binding a n -> S.Set Name
+freeNamesInBinding (Binding _ _ params value) = f params
+	where
+		f [] = freeNamesInMetaObject value
+		f (BindingParam []:params) = f params
+		f (BindingParam ((paramName, paramType):paramParts):params) =
+			freeNamesInMetaType paramType
+			`S.union` S.delete paramName (f (BindingParam paramParts:params))
 

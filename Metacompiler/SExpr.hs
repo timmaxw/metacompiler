@@ -117,7 +117,8 @@ rangeOfSExprs s@(Cons x _) = Range (startOfRange (rangeOfSExpr x)) (endOfRange (
 -- an `SExprs`, it breaks the `SExprs` at the first occurrance of that atom. If
 -- the atom is not found, it produces a nice error message. `multiBreakOnAtom`
 -- is similar, except that it expects to find zero or more occurrances of the
--- atom, so it returns a list instead of a pair.
+-- atom, so it returns a list instead of a pair. `maybeBreakOnAtom` expects to
+-- find zero or one occurrance.
 
 breakOnAtom :: String -> SExprs -> Either String (SExprs, SExprs)
 breakOnAtom atom block = break' block
@@ -141,6 +142,17 @@ multiBreakOnAtom atom block = break' block
 		break' (Cons x rest) = do
 			(group:groups) <- break' rest
 			return (Cons x group:groups)
+
+maybeBreakOnAtom :: String -> SExprs -> Either String (SExprs, Maybe SExprs)
+maybeBreakOnAtom atom block = break' block
+	where
+		break' (Nil p) =
+			return (Nil p, Nothing)
+		break' (Cons (Atom r a) rest) | a == atom =
+			return (Nil (startOfRange r), Just rest)
+		break' (Cons x rest) = do
+			(before, after) <- break' rest
+			return (Cons x before, after)
 
 -- `takeOne` and `expectOne` are functions for parsers. `takeOne` expects the
 -- given sequence to contain at least one object; it splits off that object,

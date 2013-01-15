@@ -12,7 +12,6 @@ import qualified Metacompiler.TLSyntax as TL
 import qualified Text.Parsec
 import Text.Parsec.String ()   -- So `String` is an instance of `Stream`
 
-{-
 -- `parseTLDirectiveFromSExpr` tries to interpret an S-expression as a
 -- `TL.Directive`. If it doesn't work, then it returns `Left <error>`.
 
@@ -37,12 +36,21 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") rest)) =
 		value <- parseTLMetaObjectFromSExprs rest3
 		return $ TL.DLet {
 			TL.tagOfDirective = range,
-			TL.nameOfDirective = name,
-			TL.paramsOfDirective = params,
-			TL.typeOfDirective = maybeType,
-			TL.valueOfDirective = value
+			TL.nameOfDLet = name,
+			TL.paramsOfDLet = params,
+			TL.typeOfDLet = maybeType,
+			TL.valueOfDLet = value
 			}
 
+parseTLDirectiveFromSExpr (List range (Cons (Atom _ "sl-code") rest)) =
+	errorContext ("in \"sl-code\" directive at " ++ formatRange range) $ do
+		content <- mapM SL.parseSLDirFromSExpr (sExprsToList rest)
+		return $ TL.DSLCode {
+			TL.tagOfDirective = range,
+			TL.contentOfDSLCode = content
+			}
+
+{-
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-repr") rest)) =
 	errorContext ("in \"js-repr\" directive at " ++ formatRange range) $ do
 		(name, rest2) <- case rest of
@@ -84,13 +92,13 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "emit") rest)) =
 			TL.codeOfDirective = code,
 			TL.subsOfDirective = subs
 			}
+-}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom r name) rest)) =
 	Left ("invalid directive type \"" ++ name ++ "\" at " ++ formatRange r)
 
 parseTLDirectiveFromSExpr other =
 	Left ("invalid directive at top level at " ++ formatRange (rangeOfSExpr other))
--}
 
 -- `parseTLParameterFromSExpr` expects a `SExpr` that looks like
 -- `(name :: type)`. It parses the name and type and returns them as a tuple.

@@ -20,6 +20,13 @@ data TermInScope = TermInScope {
 	valueOfTermInScope :: [R.MetaObject] -> [R.MetaObject] -> R.MetaObject
 	}
 
+data Scope = Scope {
+	typesInScope :: M.Map SLS.NameOfType TypeInScope,
+	ctorsInScope :: M.Map SLS.NameOfCtor R.Ctor,
+	termsInScope :: M.Map SLS.NameOfTerm TermInScope,
+	termValuesInScope :: M.Map R.NameOfTerm R.MetaObject
+	}
+
 compileSLKind :: SLS.Kind Range -> Either String R.SLKind
 compileSLKind (SLS.KindType _) =
 	return R.SLKindType
@@ -84,16 +91,14 @@ compileSLTypeApps fun (arg:args) =
 				Left ("argument kind is not what was expected")
 			compileSLTypeApps (R.MOSLTypeApp fun arg) args
 
-compileSLTerm :: M.Map SLS.NameOfType TypeInScope
-              -> M.Map SLS.NameOfCtor R.SLCtor
-              -> M.Map SLS.NameOfTerm TermInScope
+compileSLTerm :: Scope
               -> [R.MetaObject]
               -> SLS.Term Range
               -> Either String R.MetaObject
-compileSLTerm typeScope ctorScope termScope termParams (SLS.TermName range name typeParams) = do
-	case M.lookup name termScope of
+compileSLTerm scope termParams (SLS.TermName range name typeParams) = do
+	case M.lookup name (termsInScope scope) of
 		Just termInScope -> do
-			typeParams' <- mapM (compileSLType typeScope []) typeParams
+			typeParams' <- mapM (compileSLType (typesInScope scope) []) typeParams
 			when (length typeParams /= length (typeParamsOfTermInScope termInScope)) $
 				Left ("at " ++ formatRange range ++ ": name `" ++ SLS.unNameOfTerm name ++ "` takes " ++
 					show (length (typeParamsOfTermInScope termInScope)) ++ " type parameters, but " ++
@@ -120,26 +125,26 @@ compileSLTerm typeScope ctorScope termScope termParams (SLS.TermName range name 
 			let value = valueOfTermInScope termInScope typeParams' termParamsToSub
 			compileSLTermApps value termParamsNotToSub
 		Nothing -> Left ("at " ++ formatRange range ++ ": term name `" ++ SLS.unNameOfTerm name ++ "` is not in scope")
-compileSLTerm typeScope ctorScope termScope termParams (SLS.TermApp range fun arg) = do
-	arg' <- compileSLTerm typeScope ctorScope termScope [] arg
-	compileSLTerm typeScope ctorScope termScope (arg':termParams) fun
-compileSLTerm typeScope ctorScope termScope termParams other | not (null termParams) = do
-	other' <- compileSLTerm typeScope ctorScope termScope [] other
+compileSLTerm scope termParams (SLS.TermApp range fun arg) = do
+	arg' <- compileSLTerm scope [] arg
+	compileSLTerm scope (arg':termParams) fun
+compileSLTerm scope termParams other | not (null termParams) = do
+	other' <- compileSLTerm scope [] other
 	compileSLTermApps other' termParams
-compileSLTerm typeScope ctorScope termScope [] (SLS.TermAbs range params body) = f termScope params
+compileSLTerm scope [] (SLS.TermAbs range params body) = f (termsInScope scope) params
 	where
 		f :: M.Map SLS.NameOfTerm TermInScope -> [(SLS.NameOfTerm, SLS.Type Range)] -> Either String R.MetaObject
-		f termScope' [] = compileSLTerm typeScope ctorScope termScope' [] body
+		f termScope' [] = compileSLTerm (scope { termsInScope = termScope' }) [] body
 		f termScope' ((paramName, paramType):paramsLeft) = do
 			let paramName' = R.NameOfSLTerm (SLS.unNameOfTerm paramName)
-			paramType' <- compileSLType typeScope [] paramType
+			paramType' <- compileSLType (typesInScope scope) [] paramType
 			let termScope'' = M.insert paramName (TermInScope [] [] (\ _ _ -> R.MOSLTermName paramName' [] paramType')) termScope'
 			body' <- f termScope'' paramsLeft
 			return (R.MOSLTermAbs (paramName', paramType') body')
-compileSLTerm typeScope ctorScope termScope [] (SLS.TermCase range subject clauses) = do
-	subject' <- compileSLTerm typeScope ctorScope termScope [] subject
+compileSLTerm scope [] (SLS.TermCase range subject clauses) = do
+	subject' <- compileSLTerm scope [] subject
 	clauses' <- sequence [do
-		ctor <- case M.lookup ctorName ctorScope of
+		ctor <- case M.lookup ctorName (ctorsInScope scope) of
 			Just ctor -> return ctor
 			Nothing -> Left ("constructor `" ++ SLS.unNameOfCtor ctorName ++ "` is not in scope")
 		ctorTypeArgs' <- mapM (compileSLType typeScope []) ctorTypeArgs
@@ -158,17 +163,17 @@ compileSLTerm typeScope ctorScope termScope [] (SLS.TermCase range subject claus
 		let fieldNames' = map (R.NameOfSLTerm . SLS.unNameOfTerm) fieldNames
 		let termScope' = foldr
 			(\ (name, name', type_) -> M.insert name (TermInScope [] [] (\ _ _ -> R.MOSLTermName name' [] type_)))
-			termScope
+			(termsInScope scope)
 			(zip3 fieldNames fieldNames' fieldTypes)
-		body' <- compileSLTerm typeScope ctorScope termScope' [] body
+		body' <- compileSLTerm (scope { termsInScope = termScope' }) [] body
 		return (ctor, ctorTypeArgs', fieldNames', body')
 		| (ctorName, ctorTypeArgs, fieldNames, body) <- clauses]
 	return (R.MOSLTermCase subject' clauses')
-compileSLTerm typeScope ctorScope termScope [] (SLS.TermWrap _ x) = do
-	x' <- compileSLTerm typeScope ctorScope termScope [] x
+compileSLTerm scope [] (SLS.TermWrap _ x) = do
+	x' <- compileSLTerm scope [] x
 	return (R.MOSLTermWrap x')
-compileSLTerm typeScope ctorScope termScope [] (SLS.TermUnwrap _ x) = do
-	x' <- compileSLTerm typeScope ctorScope termScope [] x
+compileSLTerm scope [] (SLS.TermUnwrap _ x) = do
+	x' <- compileSLTerm scope [] x
 	case R.reduceMetaObject (R.slTypeOfMetaObject x') of
 		R.MOSLTypeLazy _ -> return ()
 		_ -> Left ("contents of `(unwrap ...)` should have type `(lazy ...)`")
@@ -183,4 +188,79 @@ compileSLTermApps fun (arg:args) =
 				Left ("argument type is not what was expected")
 			compileSLTermApps (R.MOSLTermApp fun arg) args
 		_ -> Left ("you're trying to apply something that's not a function")
+
+compileSLGlobals :: [SLS.Dir Range]
+                 -> Either String Scope
+compileSLGlobals directives = do
+	let scope = Scope M.empty M.empty M.empty M.empty
+	-- TODO: Detect name conflicts
+	newTypesAndCtorPromises <- sequence [do
+		let typeName' = R.NameOfSLType (SLS.unNameOfType typeName)
+		paramKinds' <- sequence [compileSLKind kind | (_, kind) <- params]
+		let kind = foldr R.SLKindFun R.SLKindType paramKinds'
+		let typeInScope = TypeInScope [] (const (R.MOSLTypeName typeName' kind))
+		let
+			ctorPromise :: M.Map SLS.NameOfType R.MetaObject -> Either String [(SLS.NameOfCtor, R.Ctor)]
+			ctorPromise typeScope' = do
+				let typeScope'' = foldr (uncurry M.insert) typeScope'
+					[(paramName, TypeInScope [] (const (R.MOSLTypeName paramName' paramKind))
+					| (paramName, paramName', paramKind') <- zip (map fst params) paramNames' paramKinds]
+				sequence [
+					let ctorName' = R.NameOfSLCtor (SLS.unNameOfCtor ctorName)
+					fieldTypes' <- mapM (compileSLType typeScope'' []) fieldTypes
+					let ctor = R.SLCtor {
+						R.nameOfSLCtor = ctorName',
+						R.typeParamsOfSLCtor = paramKinds,
+						R.fieldsOfSLCtor = [\ paramValues -> let
+							subs = R.Substitutions M.empty M.empty (M.fromList (zip paramNames' paramValues))
+							in R.substituteMetaObject subs fieldType'
+							| fieldType' <- fieldTypes']
+						R.typeOfSLCtor = foldl R.MOSLTypeApp (R.MOSLTypeName typeName' kind)
+						}
+					return (ctorName, ctor)
+					| (ctorName, fieldTypes) <- ctors]
+		return (typeName, typeInScope, ctorPromise)
+		| SLS.DirData _ typeName params ctors <- directives]
+	let typeScope' = M.union
+			(M.fromList [(typeName, typeInScope) | (typeName, typeInScope, _) <- newTypesAndCtorPromises])
+			(typesInScope scope)
+	newCtors <- liftM (M.fromList . concatMap) $
+		sequence [ctorPromise typeScope | (_, _, ctorPromise) <- newTypesAndCtorPromises]
+	let ctorScope' = M.union newCtors (ctorsInScope scope)
+	newTermsAndValuePromises <- sequence [do
+		let termName' = R.NameOfSLTerm (SLS.unNameOfTerm termName)
+		let typeParamNames' = [R.NameOfSLType (SLS.unNameOfType paramName) | (paramName, _) <- typeParams]
+		typeParamKinds' <- sequence [compileSLKind kind | (_, kind) <- typeParams]
+		let typeScope'' = foldr (uncurry M.insert) typeScope'
+			[(paramName, TypeInScope [] (const (R.MOSLTypeName paramName' paramKind))
+			| (paramName, paramName', paramKind') <- zip (map fst typeParams) typeParamNames' typeParamKinds]
+		let termParamNames' = [R.NameOfSLTerm (SLS.unNameOfTerm paramName) | (paramName, _) <- termParams]
+		termParamTypes' <- sequence [compileSLType typeScope'' [] paramType | (_, paramType) <- termParams]
+		type_' <- compileSLType typeScope'' [] type_
+		let termInScope = TermInScope typeParamKinds' [] $ \typeParamValues _ -> let
+				subs = R.Substitutions M.empty M.empty (M.fromList (zip typeParamNames' typeParamValues))
+				in R.MOSLTermName termName' typeParamValues (R.substituteMetaObject subs type_')
+		let
+			valuePromise :: M.Map SLS.NameOfTerm MetaObject -> Either String MetaObject
+			valuePromise termScope' = do
+				let termScope'' = foldr (uncurry M.insert) termScope'
+					[(paramName, TermInScope [] (const (R.MOSLTermName paramName' paramKind))
+					| (paramName, paramName', paramKind') <- zip (map fst termParams) termParamNames' termParamTypes']
+				compileSLTerm (Scope typeScope'' ctorScope' termScope'') [] value
+		return (termName, termName', termInScope, valuePromise)
+		| SLS.DirLet _ termName typeParams termParams type_ value <- directives]
+	let termScope' = M.union
+			(M.fromList [(termName, termInScope) | (termName, _, termInScope, _) <- newTermsAndValuePromises])
+			(termsInScope scope)
+	newTermValues <- liftM M.fromList $ sequence [do
+		value <- valuePromise termScope'
+		return (termName', value)
+		| (_, termName', _, valuePromise) <- newTermsAndValuePromises]
+	let termValueScope' = M.union newTermValues (termValuesInScope scope)
+	return $ Scope {
+		typesInScope = typeScope',
+		ctorsInScope = ctorScope',
+		termsInScope = termScope',
+		termValuesInScope = termValueScope'
+		}
 
