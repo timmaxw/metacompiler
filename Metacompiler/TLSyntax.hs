@@ -104,7 +104,7 @@ data BindingParam a = BindingParam [(Name, MetaType a)] deriving Show
 data Directive a
 	= DLet {
 		tagOfDirective :: a,
-		nameOfDLet :: String,
+		nameOfDLet :: Name,
 		paramsOfDLet :: [(Name, MetaType a)],
 		typeOfDLet :: Maybe (MetaType a),
 		valueOfDLet :: MetaObject a

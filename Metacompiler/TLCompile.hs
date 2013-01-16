@@ -1,7 +1,9 @@
 module Metacompiler.TLCompile where
 
 import Control.Monad.State
+import qualified Data.Graph
 import qualified Data.Map as M
+import qualified Data.Set as S
 import qualified Metacompiler.Runtime as R
 import Metacompiler.SExpr (Range, formatRange)
 import qualified Metacompiler.SLCompile as SLC
@@ -76,12 +78,12 @@ compileMetaObject scope (TLS.MOSLTypeLiteral range code typeBindings) = do
 compileMetaObject scope (TLS.MOSLTermLiteral range code typeBindings termBindings) = do
 	typeBindings' <- compileSLTypeBindings scope typeBindings
 	termBindings' <- compileSLTermBindings scope termBindings
-	lift (SLC.compileSLTerm
-		(M.union typeBindings' (slTypesInScope scope))
-		(slCtorsInScope scope)
-		(M.union termBindings' (slTermsInScope scope))
-		[] code
-		)
+	let slScope' = (slObjectsInScope scope) {
+			SLC.typesInScope = typeBindings' `M.union` (SLC.typesInScope $ slObjectsInScope scope),
+			SLC.termsInScope = termBindings' `M.union` (SLC.termsInScope $ slObjectsInScope scope)
+			} 
+	lift (SLC.compileSLTerm slScope' [] code)
+
 {-
 compileMetaObject scope (TLS.MOJSEquivExprLiteral range slTerm jsType jsExpr) = do
 	...
@@ -211,24 +213,26 @@ checkTypeSLTerm obj = case R.reduceMetaType (R.typeOfMetaObject obj) of
 	_ -> lift (Left "expected type `(sl-term ...)`, got something else")
 
 data GlobalResults = GlobalResults {
-	scopeOfGlobalResults :: Scope
+	scopeOfGlobalResults :: Scope,
+	slTermValuesOfGlobalResults :: M.Map R.NameOfSLTerm R.MetaObject
 	}
 
 compileDirectives :: [TLS.Directive Range] -> Either String GlobalResults
 compileDirectives directives = do
-	let allSLDirs = concatMap [content | TLS.DSLCode _ content <- directives]
-	slScope <- lift $ SLC.compileSLGlobals allSLDirs
+	let allSLDirs = concat [content | TLS.DSLCode _ content <- directives]
+	(slScope, slTermValueScope) <- SLC.compileSLGlobals allSLDirs
 
 	let
 		freeNamesInLet :: TLS.Directive Range -> S.Set TLS.Name
 		freeNamesInLet (TLS.DLet _ name params type_ value) = f params
 			where
-				f [] = maybe S.empty TLS.freeNamesInMetaObject type_
+				f :: [(TLS.Name, TLS.MetaType Range)] -> S.Set TLS.Name
+				f [] = maybe S.empty TLS.freeNamesInMetaType type_
 					`S.union` TLS.freeNamesInMetaObject value
 				f ((paramName, paramType):params) =
 					TLS.freeNamesInMetaType paramType
 					`S.union` S.delete paramName (f params)
-	sortedLets <- [case scc of
+	sortedLets <- sequence [case scc of
 		Data.Graph.AcyclicSCC dlet -> return dlet
 		Data.Graph.CyclicSCC _ -> Left ("mutual recursion detected")
 		| scc <- Data.Graph.stronglyConnComp
@@ -236,26 +240,25 @@ compileDirectives directives = do
 			| dlet@(TLS.DLet { }) <- directives]
 		]
 
-	metaObjectScope <- foldM (\ metaObjectScope dlet -> let
-		applyParams :: M.Map TLS.Name MetaObjectInScope -> [(TLS.Name, TLS.MetaType Range)] -> R.MetaObject
-		applyParams metaObjectScope' [] = do
-			value' <- compileMetaObject (Scope metaObjectScope' slScope) [] (TLS.valueOfDLet dlet)
-			case TLS.typeOfDLet dlet of
-				Nothing -> return ()
-				Just type_ -> do
-					type_' <- compileMetaType (Scope metaObjectScope' slScope) [] type_
-					checkType value' type_'
-			return value'
-		applyParams metaObjectScope' ((paramName, paramType):params) = do
-			let paramName' = R.Name (TLS.unName paramName)
-			paramType' <- compileMetaType (Scope metaObjectScope' slScope) [] paramType
-			let metaObjectScope'' = M.insert paramName (MetaObjectInScopeLocal paramName' paramType') metaObjectScope'
-			body' <- applyParams metaObjectScope'' params
-			return (R.MOAbs (paramName', paramType') body')
-		metaObject = applyParams metaObjectScope (TLS.paramsOfDLet dlet)
-		metaObjectScope' = M.insert (TLS.nameOfDLet dlet) (MetaObjectInScopePresent metaObject) metaObjectScope
-		in metaObjectScope'
+	metaObjectScope <- foldM (\ metaObjectScope dlet -> do
+		metaObject <- liftM fst $ flip runStateT LocalState $ compileAbstraction
+			(Scope metaObjectScope slScope)
+			(TLS.paramsOfDLet dlet)
+			(\ scope -> do
+				value' <- compileMetaObject scope (TLS.valueOfDLet dlet)
+				case TLS.typeOfDLet dlet of
+					Nothing -> return ()
+					Just type_ -> do
+						type_' <- compileMetaType scope type_
+						checkType value' type_'
+				return value'
+			)
+			R.MOAbs
+		return (M.insert (TLS.nameOfDLet dlet) (MetaObjectInScopeGlobalPresent metaObject) metaObjectScope)
 		) M.empty sortedLets
 
-	return (Scope metaObjectScope' slScope)
+	return $ GlobalResults {
+		scopeOfGlobalResults = Scope metaObjectScope slScope,
+		slTermValuesOfGlobalResults = slTermValueScope
+		}
 

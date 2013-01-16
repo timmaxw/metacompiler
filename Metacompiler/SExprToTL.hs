@@ -36,7 +36,7 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") rest)) =
 		value <- parseTLMetaObjectFromSExprs rest3
 		return $ TL.DLet {
 			TL.tagOfDirective = range,
-			TL.nameOfDLet = name,
+			TL.nameOfDLet = TL.Name name,
 			TL.paramsOfDLet = params,
 			TL.typeOfDLet = maybeType,
 			TL.valueOfDLet = value
