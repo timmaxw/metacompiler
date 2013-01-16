@@ -28,14 +28,14 @@ data MetaType a
 		slTypeOfMTSLTerm :: MetaObject a
 	}
 {-
-	| MTJSEquivExprType {
+	| MTJSExprType {
 		tagOfMetaType :: a
-		slTypeOfMTJSEquivExprType :: MetaObject a
+		slTypeOfMTJSExprType :: MetaObject a
 	}
-	| MTJSEquivExpr {
+	| MTJSExpr {
 		tagOfMetaType :: a,
-		slTermOfMTJSEquivExpr :: MetaObject a,
-		jsEquivExprTypeOfMTJSEquivExpr :: MetaObject a
+		jsTypeOfMTJSExpr :: MetaObject a
+		slTermOfMTJSExpr :: MetaObject a,
 	}
 -}
 	deriving Show
@@ -69,19 +69,19 @@ data MetaObject a
 		termBindingsOfMOSLTermLiteral :: [Binding a SLS.NameOfTerm]
 	}
 {-
-	| MOJSEquivExprLiteral {
+	| MOJSExprLiteral {
 		tagOfMetaObject :: a,
-		slTermOfMOJSEquivExprLiteral :: MetaObject a,
-		jsTypeOfMOJSEquivExprLiteral :: MetaObject a,
-		codeOfMOJSEquivExprLiteral :: JS.Expression JS.SourcePos,
+		slTermOfMOJSExprLiteral :: MetaObject a,
+		jsTypeOfMOJSExprLiteral :: MetaObject a,
+		codeOfMOJSExprLiteral :: JS.Expression JS.SourcePos,
 		bindingsOfMOJSExprLiteral :: [Binding a (JS.Id ())]
 	}
-	| MOJSEquivExprGlobal {
+	| MOJSExprGlobal {
 		tagOfMetaObject :: a,
-		slTermOfMOJSEquivExprGlobal :: MetaObject a,
-		jsTypeOfMOJSEquivExprGlobal :: MetaObject a,
-		uniqueIdOfMOJSEquivExprGlobal :: JSGlobalUniqueId,
-		contentOfMOJSEquivExprGlobal :: MetaObject a
+		slTermOfMOJSExprGlobal :: MetaObject a,
+		jsTypeOfMOJSExprGlobal :: MetaObject a,
+		uniqueIdOfMOJSExprGlobal :: JSGlobalUniqueId,
+		contentOfMOJSExprGlobal :: MetaObject a
 	}
 -}
 	deriving Show
@@ -120,10 +120,10 @@ data Directive a
 		paramsOfDJSExprType :: [(Name, MetaType a)],
 		slEquivOfDJSExprType :: MetaObject a
 	}
-	| DEmit {
+	| DJSEmit {
 		tagOfDirective :: a,
-		codeOfDEmit :: [JS.Statement JS.SourcePos],
-		bindJSEquivExprsOfDEmit :: [Binding a (JS.Id ())]
+		codeOfDJSEmit :: [JS.Statement JS.SourcePos],
+		bindJSExprsOfDJSEmit :: [Binding a (JS.Id ())]
 	}
 -}
 	deriving Show
