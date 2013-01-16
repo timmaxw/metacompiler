@@ -61,6 +61,8 @@ data SExprs
 	| Nil Point   -- This `Point` is where the empty list would have been
 	deriving (Show, Eq, Ord)
 
+infixr 5 `Cons`
+
 sExprsToList :: SExprs -> [SExpr]
 sExprsToList (Cons x xs) = x : sExprsToList xs
 sExprsToList (Nil _) = []

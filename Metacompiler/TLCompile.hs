@@ -70,7 +70,7 @@ compileMetaObject scope (TLS.MOName range name) = case M.lookup name (metaObject
 compileMetaObject scope (TLS.MOSLTypeLiteral range code typeBindings) = do
 	typeBindings' <- compileSLTypeBindings scope typeBindings
 	lift (SLC.compileSLType
-		(M.union typeBindings' (slTypesInScope scope))
+		(M.union typeBindings' (SLC.typesInScope $ slObjectsInScope $ scope))
 		[] code
 		)
 compileMetaObject scope (TLS.MOSLTermLiteral range code typeBindings termBindings) = do
@@ -85,11 +85,6 @@ compileMetaObject scope (TLS.MOSLTermLiteral range code typeBindings termBinding
 {-
 compileMetaObject scope (TLS.MOJSEquivExprLiteral range slTerm jsType jsExpr) = do
 	...
--}
-
-{-
-compileDirectives :: [TLS.Directive Range] -> StateT GlobalState (Either String) ()
-...
 -}
 
 compileAbstraction :: Scope

@@ -1,6 +1,7 @@
 module Metacompiler.TLSyntax where
 
 import qualified Data.Map as M
+import qualified Data.Set as S
 import qualified Language.ECMAScript3.Syntax as JS
 import qualified Metacompiler.SLSyntax as SLS
 
@@ -133,7 +134,7 @@ freeNamesInMetaType (MTFun _ params result) = f params
 		f :: [(Name, MetaType a)] -> S.Set Name
 		f [] = freeNamesInMetaType result
 		f ((paramName, paramType):rest) =
-			freeNamesInMetaType paramType `S.union` S.delete paramName (freeNamesInMetaObject rest)
+			freeNamesInMetaType paramType `S.union` S.delete paramName (f rest)
 freeNamesInMetaType (MTSLType _ _) = S.empty
 freeNamesInMetaType (MTSLTerm _ type_) = freeNamesInMetaObject type_
 
@@ -145,13 +146,13 @@ freeNamesInMetaObject (MOAbs _ params result) = f params
 		f :: [(Name, MetaType a)] -> S.Set Name
 		f [] = freeNamesInMetaObject result
 		f ((paramName, paramType):rest) =
-			freeNamesInMetaType paramType `S.union` S.delete paramName (freeNamesInMetaObject rest)
+			freeNamesInMetaType paramType `S.union` S.delete paramName (f rest)
 freeNamesInMetaObject (MOName _ name) = S.singleton name
 freeNamesInMetaObject (MOSLTypeLiteral _ _ bindings) =
 	S.unions (map freeNamesInBinding bindings)
 freeNamesInMetaObject (MOSLTermLiteral _ _ typeBindings termBindings) =
-	S.unions (map freeNamesInBinding bindings)
-	`S.union` S.unions (map freeNamesInBinding bindings)
+	S.unions (map freeNamesInBinding typeBindings)
+	`S.union` S.unions (map freeNamesInBinding termBindings)
 
 freeNamesInBinding :: Binding a n -> S.Set Name
 freeNamesInBinding (Binding _ _ params value) = f params

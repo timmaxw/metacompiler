@@ -183,13 +183,13 @@ parseSLTermFromSExprs other =
 parseSLDirFromSExpr :: SExpr -> Either String (SL.Dir Range)
 parseSLDirFromSExpr (List range (Cons (Atom _ "data") rest)) =
 	case rest of
-		Atom _ name `Cons` Atom _ "=" ctors -> do
+		Atom _ name `Cons` Atom _ "=" `Cons` ctors -> do
 			let name' = SL.NameOfType name
 			ctors' <- sequence [
 				case ctor of
 					List range2 (Atom _ ctorName `Cons` fields) -> do
 						let ctorName' = SL.NameOfCtor ctorName
-						fields' <- mapM parseSLTypeFromSExprs fields
+						fields' <- mapM parseSLTypeFromSExpr (sExprsToList fields)
 						return (ctorName', fields')
 					_ -> Left ("cannot parse constructor at " ++ formatRange (rangeOfSExpr ctor))
 				| ctor <- sExprsToList ctors]
@@ -202,31 +202,27 @@ parseSLDirFromSExpr (List range (Cons (Atom _ "data") rest)) =
 		_ -> Left ("expected `(data <name> = <ctors>)`")
 parseSLDirFromSExpr (List range (Cons (Atom _ "let") rest)) = do
 	(nameAndTermParamsAndType, value) <- breakOnAtom "=" rest
-	(nameAndTermParams, maybeType) <- maybeBreakOnAtom "::" termParamsAndType
+	(nameAndTermParams, type_) <- breakOnAtom "::" nameAndTermParamsAndType
 	(name, termParams) <- takeOne "name" nameAndTermParams
 	name' <- case name of
 		Atom _ n -> return (SL.NameOfTerm n)
-		_ -> Left ("expected atom as name, got " ++ formatSExpr name)
+		_ -> Left ("expected atom as name")
 	termParams' <- sequence [
 		case thing of
 			List _ (Atom _ paramName `Cons` Atom _ "::" `Cons` type_) -> do
 				let paramName' = SL.NameOfTerm paramName
-				type_' <- SL.parseSLTypeFromSExprs type_
+				type_' <- parseSLTypeFromSExprs type_
 				return (paramName', type_')
-			_ -> Left ("expected `(<name> :: <type>)`, got " ++ formatSExpr thing)
+			_ -> Left ("expected `(<name> :: <type>)`")
 		| thing <- sExprsToList termParams]
-	maybeType' <- case maybeType of
-		Nothing -> return Nothing
-		Just type_ -> do
-			type_' <- SL.parseSLTypeFromSExprs type_
-			return (Just type_')
-	value' <- SL.parseSLTermFromSExprs value
+	type_' <- parseSLTypeFromSExprs type_
+	value' <- parseSLTermFromSExprs value
 	return $ SL.DirLet {
 		SL.tagOfDir = range,
 		SL.nameOfDirLet = name',
 		SL.typeParamsOfDirLet = [],
 		SL.termParamsOfDirLet = termParams',
-		SL.typeOfDirLet = maybeType',
+		SL.typeOfDirLet = type_',
 		SL.valueOfDirLet = value'
 		}
 parseSLDirFromSExpr (List range (Cons (Atom r name) _)) =
