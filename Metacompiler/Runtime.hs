@@ -9,6 +9,7 @@ import qualified Data.Map as M
 import Data.Monoid
 import qualified Data.Set as S
 import Data.Traversable (traverse)
+import qualified Language.ECMAScript3.Syntax as JS
 import Prelude hiding (all)
 
 newtype Name = Name { unName :: String } deriving (Ord, Show, Eq)
@@ -35,10 +36,8 @@ data MetaType
 	= MTFun (Name, MetaType) MetaType
 	| MTSLType SLKind
 	| MTSLTerm MetaObject
-{-
-	| MTJSEquivExprType MetaObject
-	| MTJSEquivExpr MetaObject MetaObject
--}
+	| MTJSExprType MetaObject
+	| MTJSExpr MetaObject MetaObject
 	deriving Show
 
 data MetaObject
@@ -59,18 +58,23 @@ data MetaObject
 	| MOSLTermWrap MetaObject
 	| MOSLTermUnwrap MetaObject
 
+	| MOJSExprType Name [MetaObject] MetaObject
+
+	| MOJSExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) JSExprBinding)
+
 	deriving Show
 
-{-
-	| MOJSEquivExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) BindingJSEquivExpr)
--}
-
-{-
-data BindingJSEquivExpr = BindingJSEquivExpr {
-	paramsOfBindingJSEquivExpr :: [(Name, MetaObject, Name, MetaObject)],
-	valueOfBindingJSEquivExpr :: MetaObject
+data JSExprBinding = JSExprBinding {
+	paramsOfJSExprBinding :: [JSExprBindingParam],
+	valueOfJSExprBinding :: MetaObject
 	}
--}
+
+data JSExprBindingParam = JSExprBindingParam {
+	nameOfSLOfJSExprBindingParam :: Name,
+	typeOfSLOfJSExprBindingParam :: MetaObject,
+	nameOfJSOfJSExprBindingParam :: Name,
+	typeOfJSOfJSExprBindingParam :: MetaObject
+	}
 
 typeOfMetaObject :: MetaObject -> MetaType
 typeOfMetaObject (MOApp fun arg) = case typeOfMetaObject fun of
@@ -104,9 +108,8 @@ typeOfMetaObject (MOSLTermUnwrap x) = case typeOfMetaObject x of
 	MTSLTerm xType -> case reduceMetaObject xType of
 		MOSLTypeLazy xInnerType -> MTSLTerm xInnerType
 		_ -> error "bad meta-object: MOSLTermUnwrap needs a MOSLTypeLazy"
-{-
-typeOfMetaObject (MOJSEquivExprLiteral slEquiv type_ _) = MTJSEquivExpr slEquiv type_
--}
+typeOfMetaObject (MOJSExprType _ _ equiv) = MTJSExprType equiv
+typeOfMetaObject (MOJSExprLiteral equiv type_ _ _ ) = MTJSExpr equiv type_
 
 slKindOfMetaObject :: MetaObject -> SLKind
 slKindOfMetaObject mo = case typeOfMetaObject mo of
@@ -167,6 +170,13 @@ traverseMetaObject v t = case t of
 	MOSLTermData ctor typeParams fields -> liftA2 (MOSLTermData ctor) (traverse visitO typeParams) (traverse visitO fields)
 	MOSLTermWrap x -> liftA MOSLTermWrap (visitO x)
 	MOSLTermUnwrap x -> liftA MOSLTermUnwrap (visitO x)
+	MOJSExprType x -> liftA MOJSExprType (visitO x)
+	MOJSExprLiteral equiv type_ expr bindings -> let
+		visitJSExprBinding (JSExprBinding params value) =
+			JSExprBinding <$> traverse traverseJSExprBindingParam params <*> visitO value
+		visitJSExprBindingParam (JSExprBindingParam nameOfSL typeOfSL nameOfJS typeOfJS) =
+			JSExprBindingParam <$> pure nameOfSL <*> visitO typeOfSL <$> pure nameOfJS <*> visitO nameOfJS
+		in MOJSExprLiteral <$> visitO equiv <*> visitO type_ <*> pure expr <*> traverse visitJSExprBinding bindings
 	where
 		visitT = visitMetaType v
 		visitO = visitMetaObject v
@@ -181,7 +191,12 @@ data Substitutions = Substitutions {
 	nameSubstitutions :: M.Map Name MetaObject,
 	nameOfSLTypeSubstitutions :: M.Map NameOfSLType MetaObject,
 	nameOfSLTermSubstitutions :: M.Map NameOfSLTerm MetaObject
+	nameOfJSExprSubstitutions :: M.Map (JS.Id ()) JSExprSubstitution
 	}
+
+data JSExprSubstitution
+	= DirectJSExprSubstitution (JS.Expression ())
+	| FunctionJSExprSubstitution ([JS.Expression ()] -> JS.Expression ())
 
 substituteMetaType :: Substitutions -> MetaType -> MetaType
 substituteMetaType subs (MTFun (paramName, paramType) returnType) = let
@@ -236,7 +251,8 @@ makeSubstitutionVisitor subs = Visitor {
 data FreeNames = FreeNames {
 	namesInFreeNames :: S.Set Name,
 	namesOfSLTypesInFreeNames :: S.Set NameOfSLType,
-	namesOfSLTermsInFreeNames :: S.Set NameOfSLTerm
+	namesOfSLTermsInFreeNames :: S.Set NameOfSLTerm,
+	namesOfJSExprsInFreeNames :: S.Set (JS.Id ())
 	}
 
 instance Monoid FreeNames where
@@ -279,6 +295,10 @@ freeNamesInMetaObject (MOSLTermCase subject clauses) =
 		bodyNames' = bodyNames { namesOfSLTermsInFreeNames = foldr S.delete (namesOfSLTermsInFreeNames bodyNames) fieldNames }
 		in typeParamNames `mappend` bodyNames'
 		| (_, typeParams, fieldNames, body) <- clauses]
+freeNamesInMetaObject (MOJSExprLiteral equiv type_ expr bindings) =
+	freeNamesInMetaObject equiv
+	`mappend` freeNamesInMetaObject type_
+	`mappend` (mzero { namesOfJSExprsInFreeNames = foldr S.delete (freeNamesInJSExpression expr) (M.keys bindings) })
 freeNamesInMetaObject other =
 	execWriter (traverseMetaObject freeNamesVisitor other)
 
