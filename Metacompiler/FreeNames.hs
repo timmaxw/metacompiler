@@ -11,8 +11,9 @@ data FreeNames = FreeNames {
 	}
 
 instance Monoid FreeNames where
-	mempty = FreeNames S.empty S.empty S.empty
-	mappend (FreeNames a1 b1 c1) (FreeNames a2 b2 c2) = FreeNames (S.union a1 a2) (S.union b1 b2) (S.union c1 c2)
+	mempty = FreeNames S.empty S.empty S.empty S.empty
+	mappend (FreeNames a1 b1 c1 d1) (FreeNames a2 b2 c2 d2) =
+		FreeNames (S.union a1 a2) (S.union b1 b2) (S.union c1 c2) (S.union d1 d2)
 
 freeNamesInMetaType :: MetaType -> FreeNames
 freeNamesInMetaType (MTFun (paramName, paramType) resultType) = let
@@ -53,7 +54,7 @@ freeNamesInMetaObject (MOSLTermCase subject clauses) =
 freeNamesInMetaObject (MOJSExprLiteral equiv type_ expr bindings) =
 	freeNamesInMetaObject equiv
 	`mappend` freeNamesInMetaObject type_
-	`mappend` (mzero { namesOfJSExprsInFreeNames = foldr S.delete (freeNamesInJSExpression expr) (M.keys bindings) })
+	`mappend` (mzero { namesOfJSExprsInFreeNames = foldr S.delete (JS.freeNamesInExpression expr) (M.keys bindings) })
 	`mappend` mconcat (map freeNamesInBinding bindings)
 	where
 		freeNamesInBinding :: JSExprBinding -> S.Set (JS.Id ())
@@ -73,3 +74,4 @@ freeNamesVisitor = Visitor {
 	visitMetaType = \mt -> writer (mt, freeNamesInMetaType mt),
 	visitMetaObject = \mt -> writer (mt, freeNamesInMetaObject mt)
 	}
+
