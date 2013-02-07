@@ -10,14 +10,6 @@ import qualified Metacompiler.SLCompile as SLC
 import qualified Metacompiler.SLSyntax as SLS
 import qualified Metacompiler.TLSyntax as TLS
 
-data LocalState = LocalState {
-{-
-	nameSupplyOfLocalState :: [String],
-	seenGlobalsOfLocalState :: M.Map JSGlobalUniqueId SeenGlobal,
-	globalsToProcessOfLocalState :: [M.Map TLS.Name R.MetaObject -> StateT GlobalState (Either String) ()]
--}
-	}
-
 data MetaObjectInScope
 	= MetaObjectInScopeGlobalPresent R.MetaObject
 	| MetaObjectInScopeGlobalFuture
@@ -28,7 +20,16 @@ data Scope = Scope {
 	slObjectsInScope :: SLC.Scope
 	}
 
-compileMetaType :: Scope -> TLS.MetaType Range -> StateT LocalState (Either String) R.MetaType
+data CompileState = CompileState {
+	jsGlobalsNameSupplyOfCompileState :: [JS.Id ()],
+	jsGlobalsToProcessOfCompileState :: [StateT CompileState (Either String) ()],
+	jsEmittedOfCompileState :: [JS.Statement ()],
+	metaObjectDefnsOfCompileState :: M.Map TLS.Name R.MetaObject,
+	slObjectDefnsOfCompileState :: SLC.Scope,
+	slTermValuesOfCompileState :: M.Map R.NameOfSLTerm R.MetaObject
+	}
+
+compileMetaType :: Scope -> TLS.MetaType Range -> StateT CompileState (Either String) R.MetaType
 compileMetaType scope (TLS.MTFun range params result) =
 	compileAbstraction scope params (\scope' -> compileMetaType scope' result) R.MTFun
 compileMetaType scope (TLS.MTSLType range slKind) = do
@@ -38,43 +39,46 @@ compileMetaType scope (TLS.MTSLTerm range slType) = do
 	slType' <- compileMetaObject scope slType
 	checkType slType' (R.MTSLType R.SLKindType)
 	return (R.MTSLTerm slType')
-{-
-compileMetaType scope (TLS.MTJSEquivExprType range slType) = do
+compileMetaType scope (TLS.MTJSExprType range slType) = do
 	slType' <- compileMetaObject scope slType
 	checkType slType' R.MTSLType
 	return (R.MTJSEquivExprType slEquiv')
-compileMetaType scope (TLS.MTJSEquivExpr range slTerm jsEquivExprType) = do
+compileMetaType scope (TLS.MTJSExpr range jsType slTerm) = do
+	jsType' <- compileMetaObject scope jsType
+	slType1 <- checkTypeJSExprType jsType'
 	slTerm' <- compileMetaObject scope slTerm
-	slType1 <- checkTypeSLExpr slTerm'
-	jsEquivExprType' <- compileMetaObject scope jsEquivExprType
-	slType2 <- checkTypeJSEquivExprType jsEquivExprType'
+	slType2 <- checkTypeSLExpr slTerm'
 	case testSLTypesEqual slType1 slType2 of
 		True -> return ()
 		False -> Left ("at " ++ formatRange range ++ ": The type of the SL equivalent should be the SL equivalent of \
 			\the JavaScript type.")
-	return (R.MTJSEquivExpr slTerm' jsEquivExprType')
--}
+	return (R.MTJSExpr jsType' slTerm')
 
-compileMetaObject :: Scope -> TLS.MetaObject Range -> StateT LocalState (Either String) R.MetaObject
+compileMetaObject :: Scope -> TLS.MetaObject Range -> StateT CompileState (Either String) R.MetaObject
+
 compileMetaObject scope (TLS.MOApp range fun arg) = do
 	fun' <- compileMetaObject scope fun
 	arg' <- compileMetaObject scope arg
 	((_, paramType), _) <- checkTypeFun fun'
 	checkType arg' paramType
 	return (R.MOApp fun' arg')
+
 compileMetaObject scope (TLS.MOAbs range params result) =
 	compileAbstraction scope params (\scope' -> compileMetaObject scope' result) R.MOAbs
+
 compileMetaObject scope (TLS.MOName range name) = case M.lookup name (metaObjectsInScope scope) of
 	Just (MetaObjectInScopeGlobalPresent x) -> return x
-	Just MetaObjectInScopeGlobalFuture -> error "top-sort should have prevented this"
+	Just (MetaObjectInScopeGlobalFuture) -> error "top-sort should have prevented this"
 	Just (MetaObjectInScopeLocal name' type_) -> return (R.MOName name' type_)
 	Nothing -> lift $ Left ("at " ++ formatRange range ++ ": name `" ++ TLS.unName name ++ "` is not in scope")
+
 compileMetaObject scope (TLS.MOSLTypeLiteral range code typeBindings) = do
 	typeBindings' <- compileSLTypeBindings scope typeBindings
 	lift (SLC.compileSLType
 		(M.union typeBindings' (SLC.typesInScope $ slObjectsInScope $ scope))
 		[] code
 		)
+
 compileMetaObject scope (TLS.MOSLTermLiteral range code typeBindings termBindings) = do
 	typeBindings' <- compileSLTypeBindings scope typeBindings
 	termBindings' <- compileSLTermBindings scope termBindings
@@ -84,10 +88,49 @@ compileMetaObject scope (TLS.MOSLTermLiteral range code typeBindings termBinding
 			} 
 	lift (SLC.compileSLTerm slScope' [] code)
 
-{-
-compileMetaObject scope (TLS.MOJSEquivExprLiteral range slTerm jsType jsExpr) = do
-	...
--}
+compileMetaObject scope (TLS.MOJSExprLiteral range equiv type_ expr bindings) = do
+	equiv' <- compileMetaObject scope equiv
+	type_' <- compileMetaObject scope type_
+	bindings' <- compileJSExprBindings scope bindings
+	return (R.MOJSExprLiteral equiv' type_' expr bindings')
+
+compileMetaObject scope (TLS.MOJSExprGlobal range equiv type_ content) = do
+	equiv' <- compileMetaObject scope equiv
+	type_' <- compileMetaObject scope type_
+
+	oldCompileState <- get
+
+	let globalName:newGlobalsNameSupply = jsGlobalsNameSupplyOfCompileState oldCompileState
+	let params = [(synName, runName, runType)
+		| (synName, MetaObjectInScopeLocal runName runType) <- M.toList scope
+		, synName `S.member` freeNames]
+		where freeNames = freeNamesInMetaObject content
+
+	let delayedProcessing = do
+		compileState1 <- get
+		let scope' = scope {
+			metaObjectsInScope = M.mapWithKey (\k v -> case v of
+					MetaObjectInScopeGlobalFuture -> metaObjectDefnsOfCompileState currentCompileState ! k
+					_ -> v)
+				(metaObjectsInScope scope)
+			}
+		content' <- compileMetaObject scope' content
+		compileState2 <- get
+		sequence (jsGlobalsToProcessOfCompileState compileState2)
+		compileState3 <- get
+		let paramJSNames = [JS.Id () n | (TLS.Name n, _, _) <- params]
+		let newEmit = JS.FunctionStmt () globalName paramJSNames [JS.ReturnStmt () content']
+		put $ compileState3 { jsEmittedOfCompileState = jsEmittedOfCompileState compileState3 ++ [newEmit] }
+	put $ oldCompileState {
+		jsGlobalsNameSupplyOfCompileState = newGlobalsNameSupply,
+		jsGlobalsToProcessOfCompileState = jsGlobalsToProcessOfCompileState oldCompileState ++ [delayedProcessing]
+		}
+
+	let paramJSNames = [JS.Id () n | (TLS.Name n, _, _) <- params]
+	let expr = JS.CallExpr () (JS.VarRef () globalName) [JS.CallExpr () (JS.VarRef () p) [] | p <- paramJSNames]
+	let bindings = M.fromList [(jsName, R.JSExprBinding [] (R.MOName runName runType))
+		| (jsName, (synName, runName, runType)) <- zip paramJSNames params]
+	return $ R.MOJSExprLiteral equiv' type_' expr bindings
 
 compileAbstraction :: Scope
                    -> [(TLS.Name, TLS.MetaType Range)]
@@ -190,6 +233,46 @@ compileSLTermBindings scope bindings = compileBindings scope
 				in R.substituteMetaObject (R.Substitutions metaObjectSubs M.empty M.empty) value'
 			})
 		)
+	bindings
+
+compileJSExprBindings :: Scope
+                      -> [TLS.Binding Range (JS.Id ())]
+                      -> StateT LocalState (Either String) (M.Map (JS.Id ()) R.JSExprBinding)
+compileJSExprBindings scope bindings = compileBindings scope
+	(\ subScope (TLS.BindingParam parts) = do
+		(name1, type1, name2, type2) <- case parts of
+			[(name1, type1), (name2, type2)] -> return (name1, type1, name2, type2)
+			_ -> lift (Left "JavaScript expression binding parameters should all have exactly two parts.")
+
+		let name1' = R.Name (TLS.unName name1)
+		type1' <- compileMetaType scope type1
+		slType <- checkTypeSLTerm type1'
+
+		let scopeForType2 = scope { metaObjectsInScope =
+			M.insert name1 (MetaObjectInScopeLocal name1' type1') $
+			metaObjectsInScope scope
+			}
+		let name2' = R.Name (TLS.unName name2)
+		type2' <- compileMetaType scopeForType2 type2
+		jsType <- case R.reduceMetaType type2' of
+			R.MTJSExpr jsType (R.MOName n _) | n == name1' -> return jsType
+			_ -> lift (Left "Type of second binding parameter should be `js-expr <type> <first binding parameter>`")
+
+		let subScope' = subScope { metaObjectsInScope =
+			M.insert name2 (MetaObjectInScopeLocal name2' type2') $
+			M.insert name1 (MetaObjectInScopeLocal name1' type1') $
+			metaObjectsInScope subScope
+			}
+
+		return (subScope', R.JSExprBindingParam name1' type1' name2' type2')
+		)
+
+	(\ subScope' params' value -> do
+		value' <- compileMetaObject subScope' value
+		checkTypeJSExpr value'
+		return (R.JSExprBinding params' value')
+		)
+
 	bindings
 
 checkType :: R.MetaObject -> R.MetaType -> StateT LocalState (Either String) ()

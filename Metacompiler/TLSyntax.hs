@@ -27,7 +27,6 @@ data MetaType a
 		tagOfMetaType :: a,
 		slTypeOfMTSLTerm :: MetaObject a
 	}
-{-
 	| MTJSExprType {
 		tagOfMetaType :: a
 		slTypeOfMTJSExprType :: MetaObject a
@@ -37,7 +36,6 @@ data MetaType a
 		jsTypeOfMTJSExpr :: MetaObject a
 		slTermOfMTJSExpr :: MetaObject a,
 	}
--}
 	deriving Show
 
 -- `MetaObject` represents a translation-language meta-object.
@@ -68,7 +66,6 @@ data MetaObject a
 		typeBindingsOfMOSLTermLiteral :: [Binding a SLS.NameOfType],
 		termBindingsOfMOSLTermLiteral :: [Binding a SLS.NameOfTerm]
 	}
-{-
 	| MOJSExprLiteral {
 		tagOfMetaObject :: a,
 		slTermOfMOJSExprLiteral :: MetaObject a,
@@ -80,15 +77,9 @@ data MetaObject a
 		tagOfMetaObject :: a,
 		slTermOfMOJSExprGlobal :: MetaObject a,
 		jsTypeOfMOJSExprGlobal :: MetaObject a,
-		uniqueIdOfMOJSExprGlobal :: JSGlobalUniqueId,
 		contentOfMOJSExprGlobal :: MetaObject a
 	}
--}
 	deriving Show
-
-{-
-newtype JSGlobalUniqueId = JSGlobalUniqueId String deriving (Eq, Ord, Show)
--}
 
 data Binding a name = Binding {
 	tagOfBinding :: a,
@@ -113,7 +104,6 @@ data Directive a
 		tagOfDirective :: a,
 		contentOfDSLCode :: [SLS.Dir a]
 	}
-{-
 	| DJSExprType {
 		tagOfDirective :: a,
 		nameOfDJSExprType :: Name,
@@ -125,7 +115,6 @@ data Directive a
 		codeOfDJSEmit :: [JS.Statement JS.SourcePos],
 		bindJSExprsOfDJSEmit :: [Binding a (JS.Id ())]
 	}
--}
 	deriving Show
 
 freeNamesInMetaType :: MetaType a -> S.Set Name

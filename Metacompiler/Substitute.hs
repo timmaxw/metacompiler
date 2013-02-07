@@ -56,6 +56,23 @@ substituteMetaObject subs (MOSLTermCase subject clauses) = let
 		in (ctor, typeParams', fieldNames', body')
 		| (ctor, typeParams, fieldNames, body) <- clauses]
 	in MOSLTermCase subject' clauses'
+substituteMetaObject subs (MOJSExprLiteral equiv type_ expr bindings) = let
+	equiv' = substituteMetaObject subs equiv
+	type_' = substituteMetaObject subs type_
+	bindings' = M.map (\JSExprBinding params value -> let
+		freeNamesInValue = freeNamesInMetaObject value
+		(paramNames, paramTypes) = mconcat [([n1, n2], [t1, t2]) | JSExprBindingParam n1 t1 n2 t2 <- params]
+		paramTypes' = map (substituteMetaObject subs) paramTypes
+		(subs', paramNames') = prepareForBindingNames freeNamesInValue paramTypes' (subs, paramNames)
+		params' = let
+			f :: ([Name], [MetaObject]) -> [JSExprBindingParam]
+			f ([], []) = []
+			f (n1:n2:ns, t1:t2:ts) = JSExprBindingParam n1 t1 n2 t2 : f (ns, ts)
+			in f (paramNames', paramTypes')
+		value' = substituteMetaObject subs' value
+		in JSExprBinding params' value'
+		) bindings
+	in MOJSExprLiteral equiv' type_' expr bindings'
 substituteMetaObject subs other = runIdentity (traverseMetaObject (makeSubstitutionVisitor subs) other)
 
 makeSubstitutionVisitor :: Substitutions -> Visitor Identity
