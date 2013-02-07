@@ -188,79 +188,107 @@ compileSLTermApps fun (arg:args) =
 			compileSLTermApps (R.MOSLTermApp fun arg) args
 		_ -> Left ("you're trying to apply something that's not a function")
 
-compileSLGlobals :: [SLS.Dir Range]
-                 -> Either String (Scope, M.Map R.NameOfSLTerm R.MetaObject)
-compileSLGlobals directives = do
-	let scope = Scope M.empty M.empty M.empty
+data Defns = Defns {
+	dataDefns :: M.Map SLS.NameOfType R.SLDataDefn,
+	ctorDefns :: M.Map SLS.NameOfCtor R.SLCtorDefn,
+	termDefns :: M.Map SLS.NameOfTerm R.SLTermDefn
+	}
+
+typeInScopeForDataDefn :: R.SLDataDefn -> TypeInScope
+typeInScopeForDataDefn defn = ...
+
+termInScopeForTermDefn :: R.SLTermDefn -> TermInScope
+termInScopeForTermDefn defn = ...
+
+compileSLDirectives :: [SLS.Dir Range] -> Either String Defns
+compileSLDirectives directives = do
 	-- TODO: Detect name conflicts
-	newTypesAndCtorPromises <- sequence [do
-		let typeName' = R.NameOfSLType (SLS.unNameOfType typeName)
-		let paramNames' = [R.NameOfSLType (SLS.unNameOfType paramName) | (paramName, _) <- params]
+
+	dataDefnsAndCtorDefnPromises <- sequence [do
+
 		paramKinds' <- sequence [compileSLKind kind | (_, kind) <- params]
-		let kind = foldr R.SLKindFun R.SLKindType paramKinds'
-		let typeInScope = TypeInScope [] (const (R.MOSLTypeName typeName' kind))
+
+		let dataDefn = R.SLDataDefn {
+			R.nameOfSLDataDefn = R.NameOfSLType (SLS.unNameOfType typeName),
+			R.typeParamsOfSLDataDefn = paramKinds'
+			}
+
 		let
-			ctorPromise :: M.Map SLS.NameOfType TypeInScope -> Either String [(SLS.NameOfCtor, R.SLCtor)]
-			ctorPromise typeScope' = do
-				let typeScope'' = foldr (uncurry M.insert) typeScope'
-					[(paramName, TypeInScope [] (const (R.MOSLTypeName paramName' paramKind')))
-					| (paramName, paramName', paramKind') <- zip3 (map fst params) paramNames' paramKinds']
-				sequence [do
-					let ctorName' = R.NameOfSLCtor (SLS.unNameOfCtor ctorName)
-					fieldTypes' <- mapM (compileSLType typeScope'' []) fieldTypes
-					let ctor = R.SLCtor {
-						R.nameOfSLCtor = ctorName',
-						R.typeParamsOfSLCtor = paramKinds',
-						R.fieldsOfSLCtor = [\ paramValues -> let
-							subs = R.Substitutions M.empty (M.fromList (zip paramNames' paramValues)) M.empty
-							in R.substituteMetaObject subs fieldType'
-							| fieldType' <- fieldTypes'],
-						R.typeOfSLCtor = foldl R.MOSLTypeApp (R.MOSLTypeName typeName' kind)
+			ctorPromise :: M.Map SLS.NameOfType R.SLDataDefn -> Either String (M.Map SLS.NameOfCtor R.SLCtorDefn)
+			ctorPromise dataDefns = do
+				let runNameForParamName = R.NameOfSLType . SLS.unNameOfType
+				let typeScope = M.fromList [let
+					metaObject = R.MOSLTypeName (runNameForParamName name) paramKind'
+					in (name, TypeInScope [] (const metaObject))
+					| ((name, _), paramKind') <- zip params paramKinds']
+					`M.union` M.map typeInScopeForDataDefn dataDefns
+				liftM M.fromList $ sequence [do
+					fieldTypes' <- mapM (compileSLType typeScope []) fieldTypes
+					let ctorDefn = R.SLCtorDefn {
+						R.nameOfSLCtorDefn = R.NameOfSLCtor (SLS.unNameOfCtor ctorName),
+						R.parentDataOfSLCtorDefn = dataDefn,
+						R.fieldTypesOfSLCtorDefn = [\ paramValues -> let
+							typeSubs = M.fromList (zip [runNameForParamName n | (n, _) <- params] paramValues),
+							in R.substituteMetaObject (R.Substitutions M.empty typeSubs M.empty) fieldType'
+							| fieldType' <- fieldTypes']
 						}
-					return (ctorName, ctor)
+					return (ctorName, ctorDefn)
 					| (ctorName, fieldTypes) <- ctors]
-		return (typeName, typeInScope, ctorPromise)
+
+		return (typeName, dataDefn, ctorPromise)
 		| SLS.DirData _ typeName params ctors <- directives]
-	let typeScope' = M.union
-			(M.fromList [(typeName, typeInScope) | (typeName, typeInScope, _) <- newTypesAndCtorPromises])
-			(typesInScope scope)
-	newCtors <- liftM (M.fromList . concat) $
-		sequence [ctorPromise typeScope' | (_, _, ctorPromise) <- newTypesAndCtorPromises]
-	let ctorScope' = M.union newCtors (ctorsInScope scope)
-	newTermsAndValuePromises <- sequence [do
-		let termName' = R.NameOfSLTerm (SLS.unNameOfTerm termName)
-		let typeParamNames' = [R.NameOfSLType (SLS.unNameOfType paramName) | (paramName, _) <- typeParams]
+
+	let dataDefns = M.fromList [(name, defn) | (name, defn, _) <- dataDefnsAndCtorPromises]
+	ctorDefns <- liftM M.unions $ sequence [ctorPromise dataDefns | (_, _, ctorPromise) <- dataDefnsAndCtorPromises]
+
+	-- termPromises :: M.Map SLS.NameOfTerm (M.Map SLS.NameOfTerm R.SLTermDefn -> (R.SLTermDefn, Either String ()))
+	termPromises <- liftM M.fromList $ sequence [do
+
 		typeParamKinds' <- sequence [compileSLKind kind | (_, kind) <- typeParams]
-		let typeScope'' = foldr (uncurry M.insert) typeScope'
-			[(paramName, TypeInScope [] (const (R.MOSLTypeName paramName' paramKind')))
-			| (paramName, paramName', paramKind') <- zip3 (map fst typeParams) typeParamNames' typeParamKinds']
-		let termParamNames' = [R.NameOfSLTerm (SLS.unNameOfTerm paramName) | (paramName, _) <- termParams]
-		termParamTypes' <- sequence [compileSLType typeScope'' [] paramType | (_, paramType) <- termParams]
-		type_' <- compileSLType typeScope'' [] type_
-		let termInScope = TermInScope typeParamKinds' [] $ \typeParamValues _ -> let
-				subs = R.Substitutions M.empty (M.fromList (zip typeParamNames' typeParamValues)) M.empty
-				in R.MOSLTermName termName' typeParamValues (R.substituteMetaObject subs type_')
-		let
-			valuePromise :: M.Map SLS.NameOfTerm TermInScope -> Either String R.MetaObject
-			valuePromise termScope' = do
-				let termScope'' = foldr (uncurry M.insert) termScope'
-					[(paramName, TermInScope [] [] (\ _ _ -> R.MOSLTermName paramName' [] paramType'))
-					| (paramName, paramName', paramType') <- zip3 (map fst termParams) termParamNames' termParamTypes']
-				compileSLTerm (Scope typeScope'' ctorScope' termScope'') [] value
-		return (termName, termName', termInScope, valuePromise)
+		let runNameForTypeParamName = R.NameOfSLType . SLS.unNameOfType
+
+		let typeScope = M.fromList [let
+			metaObject = R.MOSLTypeName (runNameForTypeParamName name) typeParamKind'
+			in (name, TypeInScope [] (const metaObject))
+			| ((name, _), typeParamKind') <- zip typeParams typeParamKinds']
+			`M.union` M.map typeInScopeForDataDefn dataDefns
+
+		termParamTypes' <- sequence [compileSLType typeScope [] paramType | (_, paramType) <- termParams]
+		let runNameForTermParamName = R.NameOfSLTerm . SLS.unNameOfTerm
+
+		type_' <- compileSLType typeScope [] type_
+
+		return $ \termDefns -> let
+
+			ctorScope = ctorDefns
+
+			termScope = M.fromList [let
+				metaObject = R.MOSLTermName (runNameForTermParamName name) kind'
+				in (name, TermInScope [] [] (const (const metaObject))
+				| ((name, _), termParamKind') <- zip termParams termParamTypes']
+				`M.union` M.map termInScopeForTermDefn termDefns
+
+			valueOrError = compileSLTerm (Scope typeScope ctorScope termScope) [] value
+
+			makeSubbed object typeParamValues =
+				R.substituteMetaObject (R.Substitutions M.empty typeSubs M.empty) object
+				where typeSubs = M.fromList (zip [runNameForTypeParamName n | (n, _) <- typeParams] typeParamValues)
+
+			termDefn = R.SLTermDefn {
+				R.nameOfSLTermDefn = R.NameOfSLTerm (SLS.unNameOfTerm termName),
+				R.typeParamsOfSLTermDefn = typeParamKinds',
+				R.typeOfSLTermDefn = makeSubbed (foldl R.MOSLTypeFun type_' termParamTypes'),
+				R.valueOfSLTermDefn = makeSubbed (case valueOrError of Right value -> value)
+				}
+
+			in (termDefn, valueOrError >> return ())
+
 		| SLS.DirLet _ termName typeParams termParams type_ value <- directives]
-	let termScope' = M.union
-			(M.fromList [(termName, termInScope) | (termName, _, termInScope, _) <- newTermsAndValuePromises])
-			(termsInScope scope)
-	termValueScope' <- liftM M.fromList $ sequence [do
-		value <- valuePromise termScope'
-		return (termName', value)
-		| (_, termName', _, valuePromise) <- newTermsAndValuePromises]
-	return (Scope {
-		typesInScope = typeScope',
-		ctorsInScope = ctorScope',
-		termsInScope = termScope'
-		},
-		termValueScope'
-		)
+
+	let
+		termDefns :: M.Map SLS.NameOfTerm R.SLTermDefn
+		termDefns = M.map (fst . ($ termDefns)) termPromises
+	sequence [snd (promise termDefns) | promise <- M.values termPromises]
+
+	return $ Defns dataDefns ctorDefns termDefns
 

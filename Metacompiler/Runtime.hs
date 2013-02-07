@@ -22,15 +22,29 @@ data SLKind
 	| SLKindFun SLKind SLKind
 	deriving (Show, Eq)
 
-data SLCtor = SLCtor {
-	nameOfSLCtor :: NameOfSLCtor,
-	typeParamsOfSLCtor :: [SLKind],
-	fieldsOfSLCtor :: [[MetaObject] -> MetaObject],
-	typeOfSLCtor :: [MetaObject] -> MetaObject
+data SLDataDefn = SLDataDefn {
+	nameOfSLDataDefn :: NameOfSLType,
+	typeParamsOfSLDataDefn :: [SLKind]
 	}
 
-instance Show SLCtor where
-	show (SLCtor name _ _ _) = "(SLCtor " ++ show name ++ " ...)"
+kindOfSLDataDefn :: SLDataDefn -> SLKind
+kindOfSLDataDefn defn = foldl SLKindFun SLKindType (typeParamsOfSLDataDefn defn)
+
+data SLCtorDefn = SLCtorDefn {
+	nameOfSLCtorDefn :: NameOfSLCtor,
+	parentDataOfSLCtorDefn :: SLDataDefn,
+	fieldTypesOfSLCtorDefn :: [[MetaObject] -> MetaObject]
+	}
+
+data SLTermDefn = SLTermDefn {
+	nameOfSLTermDefn :: NameOfSLTerm,
+	typeParamsOfSLTermDefn :: [SLKind],
+	typeOfSLTermDefn :: [MetaObject] -> MetaObject
+	valueOfSLTermDefn :: [MetaObject] -> MetaObject
+	}
+
+instance Show SLCtorDefn where
+	show (SLCtorDefn name _ _ _) = "(SLCtorDefn " ++ show name ++ " ...)"
 
 data MetaType
 	= MTFun (Name, MetaType) MetaType
@@ -45,16 +59,18 @@ data MetaObject
 	| MOAbs (Name, MetaType) MetaObject
 	| MOName Name MetaType
 
+	| MOSLTypeDefn SLDataDefn
 	| MOSLTypeName NameOfSLType SLKind
 	| MOSLTypeApp MetaObject MetaObject
 	| MOSLTypeFun MetaObject MetaObject
 	| MOSLTypeLazy MetaObject
 
-	| MOSLTermName NameOfSLTerm [MetaObject] MetaObject
+	| MOSLTermDefn SLTermDefn [MetaObject]
+	| MOSLTermName NameOfSLTerm MetaObject
 	| MOSLTermApp MetaObject MetaObject
 	| MOSLTermAbs (NameOfSLTerm, MetaObject) MetaObject
-	| MOSLTermCase MetaObject [(SLCtor, [MetaObject], [NameOfSLTerm], MetaObject)]
-	| MOSLTermData SLCtor [MetaObject] [MetaObject]
+	| MOSLTermCase MetaObject [(SLCtorDefn, [MetaObject], [NameOfSLTerm], MetaObject)]
+	| MOSLTermData SLCtorDefn [MetaObject] [MetaObject]
 	| MOSLTermWrap MetaObject
 	| MOSLTermUnwrap MetaObject
 
@@ -77,39 +93,58 @@ data JSExprBindingParam = JSExprBindingParam {
 	}
 
 typeOfMetaObject :: MetaObject -> MetaType
-typeOfMetaObject (MOApp fun arg) = case typeOfMetaObject fun of
-	MTFun (paramName, _) bodyType -> reduceMetaType $
-		substituteMetaType (Substitutions (M.singleton paramName arg) M.empty M.empty) bodyType
-	_ -> error "bad meta-object: MOApp of non-function"
-typeOfMetaObject (MOAbs (paramName, paramType) body) = MTFun (paramName, paramType) (typeOfMetaObject body)
-typeOfMetaObject (MOName _ type_) = type_
-typeOfMetaObject (MOSLTypeName _ kind) = MTSLType kind
-typeOfMetaObject (MOSLTypeApp fun _) = case typeOfMetaObject fun of
-	MTSLType (SLKindFun _ retKind) -> MTSLType retKind
-	_ -> error "bad meta-object: MOSLTypeApp of non-function kind"
-typeOfMetaObject (MOSLTypeFun _ _) = MTSLType SLKindType
-typeOfMetaObject (MOSLTypeLazy _) = MTSLType SLKindType
-typeOfMetaObject (MOSLTermName _ subs type_) = MTSLTerm type_
-typeOfMetaObject (MOSLTermApp fun _) = case typeOfMetaObject fun of
-	MTSLTerm funSLType -> case reduceMetaObject funSLType of
-		MOSLTypeFun _ retSLType -> MTSLTerm retSLType
-		_ -> error "bad meta-object: MOSLTypeApp of SL non-function"
-	_ -> error "bad meta-object: MOSLTypeApp of non-SL"
-typeOfMetaObject (MOSLTermAbs (_, paramType) body) = case typeOfMetaObject body of
-	MTSLTerm bodyType -> MTSLTerm (MOSLTypeFun paramType bodyType)
-	_ -> error "bad meta-object: MOSLTermAbs of non-SL"
-typeOfMetaObject (MOSLTermCase subject clauses) = case clauses of
-	(_, _, _, first):_ -> typeOfMetaObject first
-	_ -> error "bad meta-object: MOSLTermCase needs at least one clause"
-typeOfMetaObject (MOSLTermData ctor typeParams _) = MTSLTerm (typeOfSLCtor ctor typeParams)
-typeOfMetaObject (MOSLTermWrap x) = case typeOfMetaObject x of
-	MTSLTerm xType -> MTSLTerm (MOSLTypeLazy xType)
-typeOfMetaObject (MOSLTermUnwrap x) = case typeOfMetaObject x of
-	MTSLTerm xType -> case reduceMetaObject xType of
-		MOSLTypeLazy xInnerType -> MTSLTerm xInnerType
-		_ -> error "bad meta-object: MOSLTermUnwrap needs a MOSLTypeLazy"
-typeOfMetaObject (MOJSExprType _ _ equiv) = MTJSExprType equiv
-typeOfMetaObject (MOJSExprLiteral equiv type_ _ _ ) = MTJSExpr equiv type_
+typeOfMetaObject (MOApp fun arg) =
+	case typeOfMetaObject fun of
+		MTFun (paramName, _) bodyType -> reduceMetaType $
+			substituteMetaType (Substitutions (M.singleton paramName arg) M.empty M.empty) bodyType
+		_ -> error "bad meta-object: MOApp of non-function"
+typeOfMetaObject (MOAbs (paramName, paramType) body) =
+	MTFun (paramName, paramType) (typeOfMetaObject body)
+typeOfMetaObject (MOName _ type_) =
+	type_
+typeOfMetaObject (MOSLTypeDefn defn) =
+	MTSLType (kindOfSLDataDefn defn)
+typeOfMetaObject (MOSLTypeApp fun _) =
+	case typeOfMetaObject fun of
+		MTSLType (SLKindFun _ retKind) -> MTSLType retKind
+		_ -> error "bad meta-object: MOSLTypeApp of non-function kind"
+typeOfMetaObject (MOSLTypeFun _ _) =
+	MTSLType SLKindType
+typeOfMetaObject (MOSLTypeLazy _) =
+	MTSLType SLKindType
+typeOfMetaObject (MOSLTermDefn defn typeParams) =
+	MTSLTerm (typeOfSLTermDefn defn typeParams)
+typeOfMetaObject (MOSLTermName _ type_) =
+	MTSLTerm type_
+typeOfMetaObject (MOSLTermApp fun _) =
+	case typeOfMetaObject fun of
+		MTSLTerm funSLType -> case reduceMetaObject funSLType of
+			MOSLTypeFun _ retSLType -> MTSLTerm retSLType
+			_ -> error "bad meta-object: MOSLTypeApp of SL non-function"
+		_ -> error "bad meta-object: MOSLTypeApp of non-SL"
+typeOfMetaObject (MOSLTermAbs (_, paramType) body) =
+	case typeOfMetaObject body of
+		MTSLTerm bodyType -> MTSLTerm (MOSLTypeFun paramType bodyType)
+		_ -> error "bad meta-object: MOSLTermAbs of non-SL"
+typeOfMetaObject (MOSLTermCase subject clauses) =
+	case clauses of
+		(_, _, _, first):_ -> typeOfMetaObject first
+		_ -> error "bad meta-object: MOSLTermCase needs at least one clause"
+typeOfMetaObject (MOSLTermData ctor typeParams _) = let
+	dataType = MOSLTypeDefn (parentDataOfSLCtorDefn defn)
+	in MTSLTerm (foldl MOSLTypeApp dataType typeParams)
+typeOfMetaObject (MOSLTermWrap x) =
+	case typeOfMetaObject x of
+		MTSLTerm xType -> MTSLTerm (MOSLTypeLazy xType)
+typeOfMetaObject (MOSLTermUnwrap x) =
+	case typeOfMetaObject x of
+		MTSLTerm xType -> case reduceMetaObject xType of
+			MOSLTypeLazy xInnerType -> MTSLTerm xInnerType
+			_ -> error "bad meta-object: MOSLTermUnwrap needs a MOSLTypeLazy"
+typeOfMetaObject (MOJSExprType _ _ equiv) =
+	MTJSExprType equiv
+typeOfMetaObject (MOJSExprLiteral equiv type_ _ _ ) =
+	MTJSExpr equiv type_
 
 slKindOfMetaObject :: MetaObject -> SLKind
 slKindOfMetaObject mo = case typeOfMetaObject mo of
@@ -141,6 +176,8 @@ traverseMetaType v t = case t of
 	MTFun (paramName, paramType) returnType -> liftA2 MTFun (liftA ((,) paramName) (visitT paramType)) (visitT returnType)
 	MTSLType kind -> pure (MTSLType kind)
 	MTSLTerm type_ -> liftA MTSLTerm (visitO type_)
+	MTJSExprType equiv -> liftA MTJSExprType (visitO equiv)
+	MTJSExpr type_ equiv -> liftA2 MTJSExpr (visitO type_) (visitO equiv)
 	where
 		visitT = visitMetaType v
 		visitO = visitMetaObject v
@@ -150,11 +187,12 @@ traverseMetaObject v t = case t of
 	MOApp fun arg -> liftA2 MOApp (visitO fun) (visitO arg)
 	MOAbs (paramName, paramType) body -> liftA2 MOAbs (liftA ((,) paramName) (visitT paramType)) (visitO body)
 	MOName name type_ -> liftA (MOName name) (visitT type_)
-	MOSLTypeName name kind -> pure (MOSLTypeName name kind)
+	MOSLTypeDefn defn -> pure (MOSLTypeDefn defn)
 	MOSLTypeApp fun arg -> liftA2 MOSLTypeApp (visitO fun) (visitO arg)
 	MOSLTypeFun argType retType -> liftA2 MOSLTypeFun (visitO argType) (visitO retType)
 	MOSLTypeLazy x -> liftA MOSLTypeLazy (visitO x)
-	MOSLTermName name params type_ -> liftA2 (MOSLTermName name) (traverse visitO params) (visitO type_)
+	MOSLTermDefn defn params -> liftA (MOSLTermDefn defn) (traverse visitO params)
+	MOSLTermName name type_ -> liftA (MOSLTermName name) (visitO type_)
 	MOSLTermApp fun arg -> liftA2 MOSLTermApp (visitO fun) (visitO arg)
 	MOSLTermAbs (paramName, paramType) body -> liftA2 MOSLTermAbs (liftA ((,) paramName) (visitO paramType)) (visitO body)
 	MOSLTermCase subject clauses -> liftA2 MOSLTermCase

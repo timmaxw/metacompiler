@@ -73,11 +73,11 @@ data MetaObject a
 		codeOfMOJSExprLiteral :: JS.Expression JS.SourcePos,
 		bindingsOfMOJSExprLiteral :: [Binding a (JS.Id ())]
 	}
-	| MOJSExprGlobal {
+	| MOJSExprLookBreak {
 		tagOfMetaObject :: a,
-		slTermOfMOJSExprGlobal :: MetaObject a,
-		jsTypeOfMOJSExprGlobal :: MetaObject a,
-		contentOfMOJSExprGlobal :: MetaObject a
+		slTermOfMOJSExprLoopBreak :: MetaObject a,
+		jsTypeOfMOJSExprLoopBreak :: MetaObject a,
+		contentOfMOJSExprLoopBreak :: MetaObject a
 	}
 	deriving Show
 
@@ -113,7 +113,7 @@ data Directive a
 	| DJSEmit {
 		tagOfDirective :: a,
 		codeOfDJSEmit :: [JS.Statement JS.SourcePos],
-		bindJSExprsOfDJSEmit :: [Binding a (JS.Id ())]
+		bindingsOfDJSEmit :: [Binding a (JS.Id ())]
 	}
 	deriving Show
 
