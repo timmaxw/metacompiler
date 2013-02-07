@@ -6,14 +6,13 @@ module Metacompiler.FreeNames where
 data FreeNames = FreeNames {
 	namesInFreeNames :: S.Set Name,
 	namesOfSLTypesInFreeNames :: S.Set NameOfSLType,
-	namesOfSLTermsInFreeNames :: S.Set NameOfSLTerm,
-	namesOfJSExprsInFreeNames :: S.Set (JS.Id ())
+	namesOfSLTermsInFreeNames :: S.Set NameOfSLTerm
 	}
 
 instance Monoid FreeNames where
-	mempty = FreeNames S.empty S.empty S.empty S.empty
-	mappend (FreeNames a1 b1 c1 d1) (FreeNames a2 b2 c2 d2) =
-		FreeNames (S.union a1 a2) (S.union b1 b2) (S.union c1 c2) (S.union d1 d2)
+	mempty = FreeNames S.empty S.empty S.empty
+	mappend (FreeNames a1 b1 c1) (FreeNames a2 b2 c2) =
+		FreeNames (S.union a1 a2) (S.union b1 b2) (S.union c1 c2)
 
 freeNamesInMetaType :: MetaType -> FreeNames
 freeNamesInMetaType (MTFun (paramName, paramType) resultType) = let
@@ -54,10 +53,9 @@ freeNamesInMetaObject (MOSLTermCase subject clauses) =
 freeNamesInMetaObject (MOJSExprLiteral equiv type_ expr bindings) =
 	freeNamesInMetaObject equiv
 	`mappend` freeNamesInMetaObject type_
-	`mappend` (mzero { namesOfJSExprsInFreeNames = foldr S.delete (JS.freeNamesInExpression expr) (M.keys bindings) })
 	`mappend` mconcat (map freeNamesInBinding bindings)
 	where
-		freeNamesInBinding :: JSExprBinding -> S.Set (JS.Id ())
+		freeNamesInBinding :: JSExprBinding -> FreeNames
 		freeNamesInBinding (JSExprBinding params value) =
 			mconcat [
 				freeNamesInMetaObject typeOfSL `mappend` freeNamesInMetaObject typeOfJS

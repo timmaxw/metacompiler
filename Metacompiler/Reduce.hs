@@ -5,6 +5,7 @@ module Metacompiler.Reduce where
 -- terminate.
 
 reduceMetaType :: MetaType -> MetaType
+
 reduceMetaType other = runIdentity (traverseMetaType reductionVisitor other)
 
 reduceMetaObject :: MetaObject -> MetaObject
@@ -19,20 +20,33 @@ reduceMetaObject (MOApp fun arg) = let
 
 reduceMetaObject obj@(MOJSExprLiteral _) = let
 	-- This is a convenient way to reduce `equiv`, `type_`, and `bindings`
-	MOJSExprLiteral equiv type_ expr bindings = runIdentity (traverseMetaObject reductionVisitor obj)
+	obj'@(MOJSExprLiteral equiv type_ expr bindings) = runIdentity (traverseMetaObject reductionVisitor obj)
 
-	-- If a binding hasn't resolved to a `MOJSExprLiteral`, it stays the way it is
-	oldBindings :: M.Map (JS.Id ()) JSExprBinding
-	oldBindings = M.filter (\b -> case valueOfJSExprBinding b of
-		MOJSExprLiteral -> False
-		_ -> True
-		) bindings
+	tryReduce :: S.Set Name -> MetaObject -> Maybe (M.Map Name (JS.Expression ()) -> JS.Expression ())
+	tryReduce promised obj@(MOName n _) = if n `S.member` names
+		then Just (\values -> (M.!) values n)
+		else Nothing
+	tryReduce promised (MOJSExprLiteral equiv type_ expr bindings) = do
+		reduced <- liftM M.fromList $ sequence [do
+			let paramNames = [n | JSExprBindingParam _ _ n _ <- params]
+			let promised' = promised `S.union` S.fromList paramNames
+			value' <- tryReduce promised' value
+			return (name, (paramNames, value'))
+			| (name, JSExprBinding params value) <- M.toList bindings]
+		return (\valuesFromAbove -> let
+			subs = M.map (\ (paramNames, value') -> let
+				fun' = \ paramValues -> if length paramValues == length paramNames
+					then value' (M.fromList (zip paramNames paramValues) `M.union` valuesFromAbove)
+					else error "wrong number of parameters"
+				dummyValues = M.fromList [(pn, JS.NullLit ()) | pn <- paramNames] `M.union` valuesFromAbove
+				possibleVars = JS.freeVarsInExpression (value' dummyValues)
+				in SubstFun fun possibleVars
+				)
+			in substituteExpression subs expr)
 
-	-- If a binding has resolved to a `MOJSExprLiteral`, collapse it into the parent `MOJSExprLiteral`.
-	subs :: [(JS.Id (), 
-
-	subsOrBindings' :: [Either (JS.Id (), 
-	subsOrBindings' = 
+	in case tryReduce S.empty obj' of
+		Nothing -> obj'
+		Just fun -> MOJSExprLiteral equiv type_ (fun M.empty) M.empty
 
 reduceMetaObject other = runIdentity (traverseMetaObject reductionVisitor other)
 
@@ -42,3 +56,4 @@ reductionVisitor = Visitor {
 	visitMetaObject = Identity . reduceMetaObject
 	}
 
+	
