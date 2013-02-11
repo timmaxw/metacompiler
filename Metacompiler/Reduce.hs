@@ -21,30 +21,7 @@ reduceMetaObject (MOApp fun arg) = let
 reduceMetaObject obj@(MOJSExprLiteral _) = let
 	-- This is a convenient way to reduce `equiv`, `type_`, and `bindings`
 	obj'@(MOJSExprLiteral equiv type_ expr bindings) = runIdentity (traverseMetaObject reductionVisitor obj)
-
-	tryReduce :: S.Set Name -> MetaObject -> Maybe (M.Map Name (JS.Expression ()) -> JS.Expression ())
-	tryReduce promised obj@(MOName n _) = if n `S.member` names
-		then Just (\values -> (M.!) values n)
-		else Nothing
-	tryReduce promised (MOJSExprLiteral equiv type_ expr bindings) = do
-		reduced <- liftM M.fromList $ sequence [do
-			let paramNames = [n | JSExprBindingParam _ _ n _ <- params]
-			let promised' = promised `S.union` S.fromList paramNames
-			value' <- tryReduce promised' value
-			return (name, (paramNames, value'))
-			| (name, JSExprBinding params value) <- M.toList bindings]
-		return (\valuesFromAbove -> let
-			subs = M.map (\ (paramNames, value') -> let
-				fun' = \ paramValues -> if length paramValues == length paramNames
-					then value' (M.fromList (zip paramNames paramValues) `M.union` valuesFromAbove)
-					else error "wrong number of parameters"
-				dummyValues = M.fromList [(pn, JS.NullLit ()) | pn <- paramNames] `M.union` valuesFromAbove
-				possibleVars = JS.freeVarsInExpression (value' dummyValues)
-				in SubstFun fun possibleVars
-				)
-			in substituteExpression subs expr)
-
-	in case tryReduce S.empty obj' of
+	in case tryReduceMetaObjectToJSExpression S.empty obj' of
 		Nothing -> obj'
 		Just fun -> MOJSExprLiteral equiv type_ (fun M.empty) M.empty
 
@@ -56,4 +33,25 @@ reductionVisitor = Visitor {
 	visitMetaObject = Identity . reduceMetaObject
 	}
 
-	
+tryReduceMetaObjectToJSExpression :: S.Set Name -> MetaObject -> Maybe (M.Map Name (JS.Expression ()) -> JS.Expression ())
+tryReduceMetaObjectToJSExpression promised obj@(MOName n _) = if n `S.member` names
+	then Just (\values -> (M.!) values n)
+	else Nothing
+tryReduceMetaObjectToJSExpression promised (MOJSExprLiteral _ _ expr bindings) = do
+	reduced <- mapM (tryReduceJSExprBindingToJSSubst promised) bindings
+	return (\valuesOfPromised -> JS.substituteExpression (M.map ($ valuesOfPromised) reduced) expr)
+
+tryReduceJSExprBindingToJSSubst :: S.Set Name -> JSExprBinding -> Maybe (M.Map Name (JS.Expression ()) -> JS.Subst)
+tryReduceJSExprBindingToJSSubst promised (JSExprBinding params value) = do
+	let paramNames = [n | JSExprBindingParam _ _ n _ <- params]
+	let promised' = promised `S.union` S.fromList paramNames
+	valueAsFun <- tryReduceMetaObjectToJSExpression promised' value
+	return (\valuesOfPromised -> let
+		substFun = \ paramValues -> if length paramValues == length paramNames
+			then valueAsFun (M.fromList (zip paramNames paramValues) `M.union` valuesOfPromised)
+			else error "wrong number of parameters"
+		dummyValues = M.fromList (zip paramNames (repeat (JS.NullLit ()))) `M.union` valuesOfPromised
+		possibleVars = JS.freeVarsInExpression (valueAsFun dummyValues)
+		in SubstFun substFun possibleVars
+		)
+

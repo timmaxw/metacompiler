@@ -200,6 +200,13 @@ typeInScopeForDataDefn defn = ...
 termInScopeForTermDefn :: R.SLTermDefn -> TermInScope
 termInScopeForTermDefn defn = ...
 
+scopeForDefns :: Defns -> Scope
+scopeForDefns defns = Scope {
+	typesInScope = M.map typeInScopeForDataDefn (dataDefns defns),
+	ctorsInScope = ctorDefns,
+	termsInScope = M.map termInScopeForTermDefn (termDefns defns)
+	}
+
 compileSLDirectives :: [SLS.Dir Range] -> Either String Defns
 compileSLDirectives directives = do
 	-- TODO: Detect name conflicts

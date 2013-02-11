@@ -73,7 +73,7 @@ data MetaObject a
 		codeOfMOJSExprLiteral :: JS.Expression JS.SourcePos,
 		bindingsOfMOJSExprLiteral :: [Binding a (JS.Id ())]
 	}
-	| MOJSExprLookBreak {
+	| MOJSExprLoopBreak {
 		tagOfMetaObject :: a,
 		slTermOfMOJSExprLoopBreak :: MetaObject a,
 		jsTypeOfMOJSExprLoopBreak :: MetaObject a,
@@ -118,24 +118,16 @@ data Directive a
 	deriving Show
 
 freeNamesInMetaType :: MetaType a -> S.Set Name
-freeNamesInMetaType (MTFun _ params result) = f params
-	where
-		f :: [(Name, MetaType a)] -> S.Set Name
-		f [] = freeNamesInMetaType result
-		f ((paramName, paramType):rest) =
-			freeNamesInMetaType paramType `S.union` S.delete paramName (f rest)
+freeNamesInMetaType (MTFun _ params result) = 
+	freeNamesInAbstraction params (freeNamesInMetaType result)
 freeNamesInMetaType (MTSLType _ _) = S.empty
 freeNamesInMetaType (MTSLTerm _ type_) = freeNamesInMetaObject type_
 
 freeNamesInMetaObject :: MetaObject a -> S.Set Name
 freeNamesInMetaObject (MOApp _ fun arg) =
 	freeNamesInMetaObject fun `S.union` freeNamesInMetaObject arg
-freeNamesInMetaObject (MOAbs _ params result) = f params
-	where
-		f :: [(Name, MetaType a)] -> S.Set Name
-		f [] = freeNamesInMetaObject result
-		f ((paramName, paramType):rest) =
-			freeNamesInMetaType paramType `S.union` S.delete paramName (f rest)
+freeNamesInMetaObject (MOAbs _ params result) =
+	freeNamesInAbstraction params (freeNamesInMetaObject result)
 freeNamesInMetaObject (MOName _ name) = S.singleton name
 freeNamesInMetaObject (MOSLTypeLiteral _ _ bindings) =
 	S.unions (map freeNamesInBinding bindings)
@@ -151,4 +143,20 @@ freeNamesInBinding (Binding _ _ params value) = f params
 		f (BindingParam ((paramName, paramType):paramParts):params) =
 			freeNamesInMetaType paramType
 			`S.union` S.delete paramName (f (BindingParam paramParts:params))
+
+freeNamesInAbstraction :: [(Name, MetaType a)] -> S.Set a -> S.Set a
+freeNamesInAbstraction [] inner = inner
+freeNamesInAbstraction ((name, type_):rest) inner =
+	freeNamesInMetaObject type_ `S.union`
+	S.delete name (freeNamesInAbstraction rest inner)
+
+freeNamesInDirective :: TLS.Directive Range -> S.Set Name
+freeNamesInDirective (DLet _ name params type_ value) =
+	freeNamesInAbstraction params $
+		freeNamesInMetaObject value `S.union` maybe S.empty freeNamesInMetaType type_
+freeNamesInDirective (DSLCode _ _) = S.empty
+freeNamesInDirective (DJSExprType _ name params slEquiv) =
+	freeNamesInAbstraction params (freeNamesInMetaObject slEquiv)
+freeNamesInDirective (DJSEmit _ _ bindings) =
+	S.unions (map freeNamesInBinding bindings)
 
