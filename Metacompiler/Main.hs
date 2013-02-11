@@ -1,15 +1,16 @@
 module Metacompiler.Main where
 
 import Control.Monad (liftM)
-import Control.Monad.State
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.PrettyPrint as JS
 import Metacompiler.ParseSExpr
+import Metacompiler.Runtime as R
 import Metacompiler.SExpr
-import Metacompiler.SExprToSL (errorContext)   -- TODO: Move `errorContext` into its own file
 import Metacompiler.SExprToTL
-import Metacompiler.TLEval
-import Metacompiler.TLRuntime
+import Metacompiler.SLCompile as SLC
+import Metacompiler.SLSyntax as SLS
+import Metacompiler.TLCompile as TLC
+import Metacompiler.TLSyntax as TLS
 import System.Environment
 import System.Exit
 import System.IO
@@ -19,7 +20,7 @@ main = do
 	allDirectives <- liftM concat $ sequence [do
 		hPutStrLn stderr ("note: reading " ++ filename)
 		contents <- readFile filename
-		let maybeDirectives = errorContext ("in " ++ show filename) $ do
+		let maybeDirectives = do
 			sexprs <- parseSExprs contents
 			mapM parseTLDirectiveFromSExpr (sExprsToList sexprs)
 		case maybeDirectives of
@@ -29,20 +30,26 @@ main = do
 				exitFailure
 			Right d -> return d
 		| filename <- filenames]
-	case runStateT (compileDirectives allDirectives) initialCompileState of
+	case TLC.compileDirectives allDirectives of
 		Left err -> do
 			hPutStrLn stderr "error:"
 			hPutStrLn stderr err
 			exitFailure
-		Right ((), finalCompileState) -> do
-			hPutStrLn stderr ("note: found " ++ show (M.size (definitionsOfCompileState finalCompileState)) ++ " definition(s)")
-			forM_ (M.toList (definitionsOfCompileState finalCompileState)) $ \ (name, rmo) -> do
-				hPutStrLn stderr ("note:     " ++ name ++ " :: " ++ formatRMT (typeOfRMO rmo))
-			hPutStrLn stderr ("note: found " ++ show (M.size (seenGlobalsOfCompileState finalCompileState)) ++ " global(s)")
-			when (null (emitsOfCompileState finalCompileState)) $ do
-				hPutStrLn stderr "warning: nothing is being emitted because \
-					\there are no `(emit ...)` or `(js-global ...)` \
-					\constructs, so nothing is being emitted"
-			putStrLn (JS.renderStatements (emitsOfCompileState finalCompileState))
+		Right (TLC.GlobalResults (SLC.Defns slDataDefns slCtorDefns slTermDefns) tlDefns emits) -> do
+			hPutStrLn stderr ("note: found " ++ show (M.size slDataDefns) ++ " SL data definition(s)")
+			forM_ (M.toList slDataDefns) $ \ (name, _) -> do
+				hPutStrLn stderr ("note:     " ++ SLS.unNameOfType name)
+			hPutStrLn stderr ("note: found " ++ show (M.size slCtorDefns) ++ " SL ctor definition(s)")
+			forM_ (M.toList slCtorDefns) $ \ (name, _) -> do
+				hPutStrLn stderr ("note:     " ++ SLS.unNameOfCtor name)
+			hPutStrLn stderr ("note: found " ++ show (M.size slTermDefns) ++ " SL term definition(s)")
+			forM_ (M.toList slTermDefns) $ \ (name, _) -> do
+				hPutStrLn stderr ("note:     " ++ SLS.unNameOfTerm name)
+			hPutStrLn stderr ("note: found " ++ show (M.size tlDefns) ++ " TL meta-object definition(s)")
+			forM_ (M.toList tlDefns) $ \ (name, _) -> do
+				hPutStrLn stderr ("note:     " ++ TLS.unName name)
+			when (null emits) $ do
+				hPutStrLn stderr "warning: there is no JS code to emit"
+			putStrLn (JS.renderStatements emits)
 			exitSuccess
 

@@ -28,13 +28,13 @@ data MetaType a
 		slTypeOfMTSLTerm :: MetaObject a
 	}
 	| MTJSExprType {
-		tagOfMetaType :: a
+		tagOfMetaType :: a,
 		slTypeOfMTJSExprType :: MetaObject a
 	}
 	| MTJSExpr {
 		tagOfMetaType :: a,
-		jsTypeOfMTJSExpr :: MetaObject a
-		slTermOfMTJSExpr :: MetaObject a,
+		jsTypeOfMTJSExpr :: MetaObject a,
+		slTermOfMTJSExpr :: MetaObject a
 	}
 	deriving Show
 
@@ -144,13 +144,13 @@ freeNamesInBinding (Binding _ _ params value) = f params
 			freeNamesInMetaType paramType
 			`S.union` S.delete paramName (f (BindingParam paramParts:params))
 
-freeNamesInAbstraction :: [(Name, MetaType a)] -> S.Set a -> S.Set a
+freeNamesInAbstraction :: [(Name, MetaType a)] -> S.Set Name -> S.Set Name
 freeNamesInAbstraction [] inner = inner
 freeNamesInAbstraction ((name, type_):rest) inner =
-	freeNamesInMetaObject type_ `S.union`
+	freeNamesInMetaType type_ `S.union`
 	S.delete name (freeNamesInAbstraction rest inner)
 
-freeNamesInDirective :: TLS.Directive Range -> S.Set Name
+freeNamesInDirective :: Directive a -> S.Set Name
 freeNamesInDirective (DLet _ name params type_ value) =
 	freeNamesInAbstraction params $
 		freeNamesInMetaObject value `S.union` maybe S.empty freeNamesInMetaType type_

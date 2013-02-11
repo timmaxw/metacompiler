@@ -39,7 +39,7 @@ data SLCtorDefn = SLCtorDefn {
 data SLTermDefn = SLTermDefn {
 	nameOfSLTermDefn :: NameOfSLTerm,
 	typeParamsOfSLTermDefn :: [SLKind],
-	typeOfSLTermDefn :: [MetaObject] -> MetaObject
+	typeOfSLTermDefn :: [MetaObject] -> MetaObject,
 	valueOfSLTermDefn :: [MetaObject] -> MetaObject
 	}
 
