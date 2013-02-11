@@ -1,4 +1,4 @@
-module Metacompiler.JSEval where
+module Metacompiler.JS.Eval where
 
 import qualified Language.ECMAScript3.PrettyPrint as JS
 import qualified Language.ECMAScript3.Syntax as JS
