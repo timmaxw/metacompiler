@@ -22,7 +22,7 @@ data TermInScope = TermInScope {
 
 data Scope = Scope {
 	typesInScope :: M.Map SLS.NameOfType TypeInScope,
-	ctorsInScope :: M.Map SLS.NameOfCtor R.SLCtor,
+	ctorsInScope :: M.Map SLS.NameOfCtor R.SLCtorDefn,
 	termsInScope :: M.Map SLS.NameOfTerm TermInScope
 	}
 
@@ -195,10 +195,12 @@ data Defns = Defns {
 	}
 
 typeInScopeForDataDefn :: R.SLDataDefn -> TypeInScope
-typeInScopeForDataDefn defn = ...
+typeInScopeForDataDefn defn =
+	TypeInScope [] (\ [] -> R.MOSLDataDefn defn)
 
 termInScopeForTermDefn :: R.SLTermDefn -> TermInScope
-termInScopeForTermDefn defn = ...
+termInScopeForTermDefn defn = 
+	TermInScope (R.typeParamsOfSLTermDefn defn) [] (\ typeParams [] -> R.MOSLTermDefn defn typeParams)
 
 scopeForDefns :: Defns -> Scope
 scopeForDefns defns = Scope {
@@ -235,7 +237,7 @@ compileSLDirectives directives = do
 						R.nameOfSLCtorDefn = R.NameOfSLCtor (SLS.unNameOfCtor ctorName),
 						R.parentDataOfSLCtorDefn = dataDefn,
 						R.fieldTypesOfSLCtorDefn = [\ paramValues -> let
-							typeSubs = M.fromList (zip [runNameForParamName n | (n, _) <- params] paramValues),
+							typeSubs = M.fromList (zip [runNameForParamName n | (n, _) <- params] paramValues)
 							in R.substituteMetaObject (R.Substitutions M.empty typeSubs M.empty) fieldType'
 							| fieldType' <- fieldTypes']
 						}
@@ -271,7 +273,7 @@ compileSLDirectives directives = do
 
 			termScope = M.fromList [let
 				metaObject = R.MOSLTermName (runNameForTermParamName name) kind'
-				in (name, TermInScope [] [] (const (const metaObject))
+				in (name, TermInScope [] [] (const (const metaObject)))
 				| ((name, _), termParamKind') <- zip termParams termParamTypes']
 				`M.union` M.map termInScopeForTermDefn termDefns
 

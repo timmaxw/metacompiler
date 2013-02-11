@@ -1,4 +1,7 @@
-module Metacompiler.TestEquivalent where
+module Metacompiler.Runtime.TestEquivalent where
+
+import qualified Data.Set as S
+import Metacompiler.Runtime.Types
 
 -- `equivalentMetaTypes` and `equivalentMetaObjects` return `True` if the given meta-types or meta-objects are provably
 -- equivalent under all values of all variables, and `False` otherwise.

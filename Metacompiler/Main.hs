@@ -4,7 +4,6 @@ import Control.Monad (liftM)
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.PrettyPrint as JS
 import Metacompiler.ParseSExpr
-import Metacompiler.Runtime as R
 import Metacompiler.SExpr
 import Metacompiler.SExprToTL
 import Metacompiler.SLCompile as SLC

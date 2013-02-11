@@ -1,4 +1,8 @@
-module Metacompiler.FreeNames where
+module Metacompiler.Runtime.FreeNames where
+
+import Data.Monoid
+import qualified Data.Set as S
+import Metacompiler.Runtime.Types
 
 -- `freeNamesInMetaType` and `freeNamesInMetaObject` return sets of all unbound TL and SL variables that appear in the
 -- given meta-type or meta-object.

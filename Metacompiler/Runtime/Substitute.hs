@@ -1,4 +1,10 @@
-module Metacompiler.Substitute where
+module Metacompiler.Runtime.Substitute where
+
+import Control.Monad.Identity
+import qualified Data.Map as M
+import qualified Language.ECMAScript3.Syntax as JS
+import Metacompiler.Runtime.Traverse
+import Metacompiler.Runtime.Types
 
 -- `substituteMetaType` and `substituteMetaObject` traverse the given meta-type or meta-object; whenever they encounter
 -- a reference to a free variable that appears in the given map, they replace it with its value from the map. They

@@ -1,4 +1,11 @@
-module Metacompiler.Reduce where
+module Metacompiler.Runtime.Reduce where
+
+import Control.Monad.Identity
+import qualified Data.Map as M
+import qualified Language.ECMAScript3.Syntax as JS
+import qualified Metacompiler.JSUtils as JS
+import Metacompiler.Runtime.Substitute
+import Metacompiler.Runtime.Types
 
 -- `reduceMetaType` and `reduceMetaObject` return the simplest meta-type or meta-object equivalent to the given
 -- meta-type or meta-object. They are idempotent. Note that they do not reduce SL terms because this might never
