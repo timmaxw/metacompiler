@@ -1,8 +1,12 @@
 module Metacompiler.Runtime.Substitute where
 
 import Control.Monad.Identity
+import Data.List
 import qualified Data.Map as M
-import qualified Language.ECMAScript3.Syntax as JS
+import Data.Monoid
+import qualified Data.Set as S
+import qualified Metacompiler.JS as JS
+import Metacompiler.Runtime.FreeNames
 import Metacompiler.Runtime.Traverse
 import Metacompiler.Runtime.Types
 
@@ -15,7 +19,7 @@ import Metacompiler.Runtime.Types
 data Substitutions = Substitutions {
 	nameSubstitutions :: M.Map Name MetaObject,
 	nameOfSLTypeSubstitutions :: M.Map NameOfSLType MetaObject,
-	nameOfSLTermSubstitutions :: M.Map NameOfSLTerm MetaObject
+	nameOfSLTermSubstitutions :: M.Map NameOfSLTerm MetaObject,
 	nameOfJSExprSubstitutions :: M.Map (JS.Id ()) JSExprSubstitution
 	}
 
@@ -43,9 +47,9 @@ substituteMetaObject subs (MOName name type_) = case M.lookup name (nameSubstitu
 substituteMetaObject subs (MOSLTypeName name kind) = case M.lookup name (nameOfSLTypeSubstitutions subs) of
 	Just value -> value
 	Nothing -> MOSLTypeName name kind
-substituteMetaObject subs (MOSLTermName name typeParams type_) = case M.lookup name (nameOfSLTermSubstitutions subs) of
+substituteMetaObject subs (MOSLTermName name type_) = case M.lookup name (nameOfSLTermSubstitutions subs) of
 	Just value -> value
-	Nothing -> MOSLTermName name (map (substituteMetaObject subs) typeParams) (substituteMetaObject subs type_)
+	Nothing -> MOSLTermName name (substituteMetaObject subs type_)
 substituteMetaObject subs (MOSLTermAbs (paramName, paramType) body) = let
 	paramType' = substituteMetaObject subs paramType
 	(subs', [paramName']) = prepareForBindingNamesOfSLTerms (freeNamesInMetaObject body) [paramType'] (subs, [paramName])
@@ -56,7 +60,7 @@ substituteMetaObject subs (MOSLTermCase subject clauses) = let
 	clauses' = [let
 		freeNamesInBody = freeNamesInMetaObject body
 		typeParams' = map (substituteMetaObject subs) typeParams
-		fieldTypes = map ($ typeParams') (fieldsOfSLCtor ctor)
+		fieldTypes = map ($ typeParams') (fieldTypesOfSLCtorDefn ctor)
 		(subs', fieldNames') = prepareForBindingNamesOfSLTerms freeNamesInBody fieldTypes (subs, fieldNames)
 		body' = substituteMetaObject subs' body
 		in (ctor, typeParams', fieldNames', body')
@@ -65,17 +69,19 @@ substituteMetaObject subs (MOSLTermCase subject clauses) = let
 substituteMetaObject subs (MOJSExprLiteral equiv type_ expr bindings) = let
 	equiv' = substituteMetaObject subs equiv
 	type_' = substituteMetaObject subs type_
-	bindings' = M.map (\JSExprBinding params value -> let
+	bindings' = M.map (\(JSExprBinding params value) -> let
 		freeNamesInValue = freeNamesInMetaObject value
-		(paramNames, paramTypes) = mconcat [([n1, n2], [t1, t2]) | JSExprBindingParam n1 t1 n2 t2 <- params]
-		paramTypes' = map (substituteMetaObject subs) paramTypes
-		(subs', paramNames') = prepareForBindingNames freeNamesInValue paramTypes' (subs, paramNames)
-		params' = let
-			f :: ([Name], [MetaObject]) -> [JSExprBindingParam]
-			f ([], []) = []
-			f (n1:n2:ns, t1:t2:ts) = JSExprBindingParam n1 t1 n2 t2 : f (ns, ts)
-			in f (paramNames', paramTypes')
-		value' = substituteMetaObject subs' value
+		(slParamNames, slParamTypes, jsParamNames, jsParamTypes) = unzip4 [
+			(n1, t1, n2, t2)
+			| JSExprBindingParam n1 t1 n2 t2 <- params]
+		slParamTypes' = map (substituteMetaObject subs) slParamTypes
+		fullSLParamTypes = [MTSLTerm t | t <- slParamTypes']
+		(subs', slParamNames') = prepareForBindingNames freeNamesInValue fullSLParamTypes (subs, slParamNames)
+		jsParamTypes' = map (substituteMetaObject subs') jsParamTypes
+		fullJSParamTypes = [MTJSExpr t2 (MOName n1 t1) | (t2, n1, t1) <- zip3 jsParamTypes' slParamNames' fullSLParamTypes]
+		(subs'', jsParamNames') = prepareForBindingNames freeNamesInValue fullJSParamTypes (subs, jsParamNames)
+		params' = zipWith4 JSExprBindingParam slParamNames' slParamTypes' jsParamNames' jsParamTypes'
+		value' = substituteMetaObject subs'' value
 		in JSExprBinding params' value'
 		) bindings
 	in MOJSExprLiteral equiv' type_' expr bindings'
@@ -162,6 +168,6 @@ prepareForBindingNamesOfSLTerms freeNamesWithin nameTypes (subs, names) = let
 		Just name' = find (`S.notMember` forbidden) candidates
 		innerSubs' = if name' == name
 			then innerSubs
-			else innerSubs { nameOfSLTermSubstitutions = M.insert name (MOSLTermName name' [] nameType) (nameOfSLTermSubstitutions innerSubs) }
+			else innerSubs { nameOfSLTermSubstitutions = M.insert name (MOSLTermName name' nameType) (nameOfSLTermSubstitutions innerSubs) }
 		in processNames (processed ++ [name']) toProcess innerSubs'
 	in processNames [] (zip names nameTypes) subs'

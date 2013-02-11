@@ -2,9 +2,13 @@ module Metacompiler.JS.Substitute (
 	Subst(..), substituteExpression, substituteLValue, substituteStatement, substituteScope
 	) where
 
-import qualified Data.Map
+import Control.Monad.Identity
+import Data.List
+import qualified Data.Map as M
+import qualified Data.Set as S
 import Language.ECMAScript3.Syntax
 import Metacompiler.JS.FreeNames
+import Metacompiler.JS.Traverse
 
 -- `substitute*` traverses the given Javascript expression or statement, looking for mentions of the variables in the
 -- given map. What happens when it finds a variable depends on the value in the map:
@@ -46,31 +50,33 @@ substituteExpression subs (CallExpr _ (VarRef _ i) args) = case M.lookup i subs 
 	Nothing -> CallExpr () (VarRef () i) args'
 	where
 		args' = map (substituteExpression subs) args
-substituteExpression subs (FuncExpr _ name args body) = let
-	name' = case M.lookup name subs of
-		Just (SubstId i') -> i'
-		Just _ -> error "variable to be substituted appears in assignment context"
-		Nothing -> name
+substituteExpression subs (FuncExpr _ maybeName args body) = let
+	maybeName' = case maybeName of
+		Nothing -> Nothing
+		Just name -> Just $ case M.lookup name subs of
+			Just (SubstId i') -> i'
+			Just _ -> error "variable to be substituted appears in assignment context"
+			Nothing -> name
 	freeInBody = freeNamesInScope body
 	(subs', args') = prepareForBindingNames freeInBody (subs, args)
 	body' = substituteScope subs' (M.fromList (zip args args')) body
-	in FuncExpr () name' args' body'
+	in FuncExpr () maybeName' args' body'
 substituteExpression subs other =
 	runIdentity (traverseExpression (substitutionVisitor subs) other)
 
 substituteLValue :: M.Map (Id ()) Subst -> LValue () -> LValue ()
-substituteLValue subs (LVar _ i) = case M.lookup i subs of
+substituteLValue subs (LVar _ i) = case M.lookup (Id () i) subs of
 	Just (SubstValue _) -> error "variable to be substituted appears in assignment context"
 	Just (SubstFun _ _) -> error "variable to be substituted appears in assignment context"
-	Just (SubstId i') -> LVar () i'
+	Just (SubstId i') -> LVar () (unId i')
 	Nothing -> LVar () i
 substituteLValue subs other =
 	runIdentity (traverseLValue (substitutionVisitor subs) other)
 
 substitutionVisitor :: M.Map (Id ()) Subst -> Visitor Identity ()
 substitutionVisitor subs = Visitor {
-	visitExpression = substituteExpression subs,
-	visitLValue = substituteLValue subs,
+	visitExpression = Identity . substituteExpression subs,
+	visitLValue = Identity . substituteLValue subs,
 	visitStatement = error "we shouldn't get from an expression to a statement without going through FuncExpr"
 	}
 
@@ -80,8 +86,8 @@ substituteStatement subs declSubs (VarDeclStmt _ vars) = let
 		i' = case M.lookup i declSubs of
 			Just i' -> i'
 			Nothing -> i
-		v' = substituteExpression subs v
-		in VarDecl i' v'
+		v' = fmap (substituteExpression subs) v
+		in VarDecl () i' v'
 		| VarDecl _ i v <- vars]
 	in VarDeclStmt () vars'
 substituteStatement subs declSubs (ForInStmt _ (ForInVar i) subj body) = let
@@ -96,11 +102,11 @@ substituteStatement subs declSubs (ForStmt _ (VarInit vars) test step body) = le
 		i' = case M.lookup i declSubs of
 			Just i' -> i'
 			Nothing -> i
-		v' = substituteExpression subs v
-		in VarDecl i' v'
+		v' = fmap (substituteExpression subs) v
+		in VarDecl () i' v'
 		| VarDecl _ i v <- vars]
-	test' = substituteExpression subs test
-	step' = substituteExpression subs step
+	test' = fmap (substituteExpression subs) test
+	step' = fmap (substituteExpression subs) step
 	body' = substituteStatement subs declSubs body
 	in ForStmt () (VarInit vars') test' step' body'
 substituteStatement subs declSubs (FunctionStmt _ name args body) = let
@@ -117,9 +123,9 @@ substituteStatement subs declSubs other =
 
 substitutionWithDeclSubsVisitor :: M.Map (Id ()) Subst -> M.Map (Id ()) (Id ()) -> Visitor Identity ()
 substitutionWithDeclSubsVisitor subs declSubs = Visitor {
-	visitExpression = substituteExpression subs,
-	visitLValue = substituteLValue subs,
-	visitStatement = substituteStatement subs declSubs
+	visitExpression = Identity . substituteExpression subs,
+	visitLValue = Identity . substituteLValue subs,
+	visitStatement = Identity . substituteStatement subs declSubs
 	}
 
 substituteScope :: M.Map (Id ()) Subst -> M.Map (Id ()) (Id ()) -> [Statement ()] -> [Statement ()]
@@ -132,8 +138,8 @@ substituteScope subs declSubs scope = let
 	in map (substituteStatement subs' declSubs') scope
 
 prepareForBindingNames :: S.Set (Id ())
-                       -> (M.Map (Id ()) Subst, [Name])
-                       -> (M.Map (Id ()) Subst, [Name])
+                       -> (M.Map (Id ()) Subst, [Id ()])
+                       -> (M.Map (Id ()) Subst, [Id ()])
 prepareForBindingNames freeNamesWithin (subs, names) = let
 	forbidden = S.unions [
 		case M.lookup name subs of
@@ -141,15 +147,15 @@ prepareForBindingNames freeNamesWithin (subs, names) = let
 			Just (SubstFun _ x) -> x
 			Just (SubstId i) -> S.singleton i
 			Nothing -> S.singleton name
-		| name <- S.toList (freeNamesWithin \\ S.fromList names)]
+		| name <- S.toList ((S.\\) freeNamesWithin (S.fromList names))]
 	names' = snd (mapAccumL
 		(\ forbidden name -> let
 			candidates = [Id () (unId name ++ replicate n '\'') | n <- [0..]]
-			name' = find (`S.notMember` forbidden) candidates
+			Just name' = find (`S.notMember` forbidden) candidates
 			in (S.insert name' forbidden, name'))
 		forbidden
 		names)
 	subs' = M.fromList (zip names (map SubstId names'))
-		`M.union` M.filter (`notElem` names') subs
+		`M.union` M.filterWithKey (\k _ -> k `notElem` names') subs
 	in (subs', names')
 

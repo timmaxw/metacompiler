@@ -2,7 +2,7 @@ module Metacompiler.TLSyntax where
 
 import qualified Data.Map as M
 import qualified Data.Set as S
-import qualified Language.ECMAScript3.Syntax as JS
+import qualified Metacompiler.JS as JS
 import qualified Metacompiler.SLSyntax as SLS
 
 newtype Name = Name { unName :: String } deriving (Eq, Ord, Show)

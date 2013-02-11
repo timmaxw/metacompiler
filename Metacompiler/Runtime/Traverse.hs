@@ -1,6 +1,7 @@
 module Metacompiler.Runtime.Traverse where
 
 import Control.Applicative
+import Data.Traversable
 import Metacompiler.Runtime.Types
 
 -- `traverseMetaType` and `traverseMetaObject` invoke `visitMetaType` or `visitMetaObject` of the given visitor on each
@@ -55,12 +56,12 @@ traverseMetaObject v t = case t of
 	MOSLTermData ctor typeParams fields -> liftA2 (MOSLTermData ctor) (traverse visitO typeParams) (traverse visitO fields)
 	MOSLTermWrap x -> liftA MOSLTermWrap (visitO x)
 	MOSLTermUnwrap x -> liftA MOSLTermUnwrap (visitO x)
-	MOJSExprType x -> liftA MOJSExprType (visitO x)
+	MOJSExprTypeDefn defn params -> liftA (MOJSExprTypeDefn defn) (traverse visitO params)
 	MOJSExprLiteral equiv type_ expr bindings -> let
 		visitJSExprBinding (JSExprBinding params value) =
-			JSExprBinding <$> traverse traverseJSExprBindingParam params <*> visitO value
+			JSExprBinding <$> traverse visitJSExprBindingParam params <*> visitO value
 		visitJSExprBindingParam (JSExprBindingParam nameOfSL typeOfSL nameOfJS typeOfJS) =
-			JSExprBindingParam <$> pure nameOfSL <*> visitO typeOfSL <$> pure nameOfJS <*> visitO nameOfJS
+			JSExprBindingParam <$> pure nameOfSL <*> visitO typeOfSL <*> pure nameOfJS <*> visitO typeOfJS
 		in MOJSExprLiteral <$> visitO equiv <*> visitO type_ <*> pure expr <*> traverse visitJSExprBinding bindings
 	where
 		visitT = visitMetaType v

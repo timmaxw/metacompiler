@@ -1,6 +1,7 @@
 module Metacompiler.Runtime.TestEquivalent where
 
 import qualified Data.Set as S
+import Metacompiler.Runtime.Reduce
 import Metacompiler.Runtime.Types
 
 -- `equivalentMetaTypes` and `equivalentMetaObjects` return `True` if the given meta-types or meta-objects are provably
@@ -69,6 +70,9 @@ equivalentMetaObjects' equivs (MOSLTermWrap x1) (MOSLTermWrap x2) =
 	equivalentMetaObjects' equivs x1 x2
 equivalentMetaObjects' equivs (MOSLTermUnwrap x1) (MOSLTermUnwrap x2) =
 	equivalentMetaObjects' equivs x1 x2
+equivalentMetaObjects' equivs (MOJSExprTypeDefn defn1 params1) (MOJSExprTypeDefn defn2 params2) =
+	nameOfJSExprTypeDefn defn1 == nameOfJSExprTypeDefn defn2
+	&& and (zipWith (equivalentMetaObject' equivs) params1 params2)
 equivalentMetaObjects' _ _ _ =
 	False
 

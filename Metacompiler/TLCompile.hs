@@ -360,7 +360,14 @@ compileDirectives directives = flip evalStateT S.empty $ do
 				compileAbstraction scope params $ \params' scope' -> do
 					slEquiv' <- compileMetaObject scope' slEquiv
 					embedEither $ checkType (R.typeOfMetaObject value') (R.MTSLType R.SLKindType)
-					return (R.MOJSExprType name [R.MOName paramName paramType | (paramName, paramType) <- params'] slEquiv')
+					let defn = R.JSExprTypeDefn {
+						R.nameOfJSExprTypeDefn = name,
+						R.paramsOfJSExprTypeDefn = map snd params',
+						R.slEquivOfJSExprTypeDefn = \paramValues -> let
+							subs = zip (map fst params') paramValues
+							in R.substituteMetaObject (R.Substitutions subs M.empty M.empty M.empty) slEquiv'
+						}
+					return (R.MOJSExprType defn [R.MOName paramName paramType | (paramName, paramType) <- params'])
 
 		foldM (\ tlDefns (name, defnDir) -> do
 			let scope = Scope (M.map MetaObjectInScopeGlobalPresent tlDefns) (SLC.scopeForDefns slDefns)

@@ -1,7 +1,10 @@
 module Metacompiler.Runtime.FreeNames where
 
+import Control.Applicative
 import Data.Monoid
+import qualified Data.Map as M
 import qualified Data.Set as S
+import Metacompiler.Runtime.Traverse
 import Metacompiler.Runtime.Types
 
 -- `freeNamesInMetaType` and `freeNamesInMetaObject` return sets of all unbound TL and SL variables that appear in the
@@ -25,7 +28,7 @@ freeNamesInMetaType (MTFun (paramName, paramType) resultType) = let
 	resultNames' = resultNames { namesInFreeNames = S.delete paramName (namesInFreeNames resultNames) }
 	in paramNames `mappend` resultNames
 freeNamesInMetaType other =
-	execWriter (traverseMetaType freeNamesVisitor other)
+	getConst (traverseMetaType freeNamesVisitor other)
 
 freeNamesInMetaObject :: MetaObject -> FreeNames
 freeNamesInMetaObject (MOAbs (paramName, paramType) body) = let
@@ -37,9 +40,10 @@ freeNamesInMetaObject (MOName n type_) =
 	FreeNames (S.singleton n) S.empty S.empty `mappend` freeNamesInMetaType type_
 freeNamesInMetaObject (MOSLTypeName n _) =
 	FreeNames S.empty (S.singleton n) S.empty
-freeNamesInMetaObject (MOSLTermName n typeParams type_) =
+freeNamesInMetaObject (MOSLTermDefn _ typeParams) =
+	mconcat (map freeNamesInMetaObject typeParams)
+freeNamesInMetaObject (MOSLTermName n type_) =
 	FreeNames S.empty S.empty (S.singleton n)
-	`mappend` mconcat (map freeNamesInMetaObject typeParams)
 	`mappend` freeNamesInMetaObject type_
 freeNamesInMetaObject (MOSLTermAbs (paramName, paramType) body) = let
 	paramNames = freeNamesInMetaObject paramType
@@ -57,23 +61,25 @@ freeNamesInMetaObject (MOSLTermCase subject clauses) =
 freeNamesInMetaObject (MOJSExprLiteral equiv type_ expr bindings) =
 	freeNamesInMetaObject equiv
 	`mappend` freeNamesInMetaObject type_
-	`mappend` mconcat (map freeNamesInBinding bindings)
+	`mappend` mconcat (map freeNamesInBinding (M.elems bindings))
 	where
 		freeNamesInBinding :: JSExprBinding -> FreeNames
 		freeNamesInBinding (JSExprBinding params value) =
 			mconcat [
 				freeNamesInMetaObject typeOfSL `mappend` freeNamesInMetaObject typeOfJS
-				| JSExprParamBinding nameOfSL typeOfSL nameOfJS typeOfJS <- params]
-			`mappend` (
-				freeNamesInMetaObject value
-				\\ mzero { namesOfSLTermsInFreeNames = S.unions [S.fromList [n1, n2] | JSExprParamBinding n1 _ n2 _ <- params] }
+				| JSExprBindingParam nameOfSL typeOfSL nameOfJS typeOfJS <- params]
+			`mappend` (let
+				freeNamesInValue = freeNamesInMetaObject value
+				names = namesInFreeNames freeNamesInValue
+				names' = (S.\\) names (S.unions [S.fromList [n1, n2] | JSExprBindingParam n1 _ n2 _ <- params])
+				in freeNamesInValue { namesInFreeNames = names' }
 				)
 freeNamesInMetaObject other =
-	execWriter (traverseMetaObject freeNamesVisitor other)
+	getConst (traverseMetaObject freeNamesVisitor other)
 
-freeNamesVisitor :: Visitor (Writer FreeNames)
+freeNamesVisitor :: Visitor (Const FreeNames)
 freeNamesVisitor = Visitor {
-	visitMetaType = \mt -> writer (mt, freeNamesInMetaType mt),
-	visitMetaObject = \mt -> writer (mt, freeNamesInMetaObject mt)
+	visitMetaType = Const . freeNamesInMetaType,
+	visitMetaObject = Const . freeNamesInMetaObject
 	}
 

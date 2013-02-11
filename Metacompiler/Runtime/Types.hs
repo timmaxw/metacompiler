@@ -1,21 +1,7 @@
 module Metacompiler.Runtime.Types where
 
 import qualified Data.Map as M
-import qualified Language.ECMAScript3.Syntax as JS
-
-{-
-import Control.Applicative
-import Control.Monad.Writer
-import Data.Foldable (all)
-import Data.Functor.Identity
-import Data.List (find)
-import qualified Data.Map as M
-import Data.Monoid
-import qualified Data.Set as S
-import Data.Traversable (traverse)
-
-import Prelude hiding (all)
--}
+import qualified Metacompiler.JS as JS
 
 newtype Name = Name { unName :: String } deriving (Ord, Show, Eq)
 newtype NameOfSLType = NameOfSLType { unNameOfSLType :: String } deriving (Eq, Show, Ord)
@@ -52,6 +38,12 @@ data MetaType
 	| MTJSExprType MetaObject
 	| MTJSExpr MetaObject MetaObject
 
+data JSExprTypeDefn = JSExprTypeDefn {
+	nameOfJSExprTypeDefn :: Name,
+	paramsOfJSExprTypeDefn :: [MetaType],
+	slEquivOfJSExprTypeDefn :: [MetaObject] -> MetaObject
+	}
+
 data MetaObject
 	= MOApp MetaObject MetaObject
 	| MOAbs (Name, MetaType) MetaObject
@@ -72,7 +64,7 @@ data MetaObject
 	| MOSLTermWrap MetaObject
 	| MOSLTermUnwrap MetaObject
 
-	| MOJSExprType Name [MetaObject] MetaObject
+	| MOJSExprTypeDefn JSExprTypeDefn [MetaObject]
 
 	| MOJSExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) JSExprBinding)
 

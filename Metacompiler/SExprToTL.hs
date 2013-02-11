@@ -4,7 +4,7 @@ import Control.Monad
 import Data.Char (isSpace)
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.Parser as JS
-import qualified Language.ECMAScript3.Syntax as JS
+import qualified Metacompiler.JS as JS
 import Metacompiler.SExpr
 import Metacompiler.SExprToSL as SL
 import qualified Metacompiler.SLSyntax as SL
