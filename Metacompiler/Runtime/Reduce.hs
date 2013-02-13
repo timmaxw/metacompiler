@@ -2,6 +2,7 @@ module Metacompiler.Runtime.Reduce where
 
 import Control.Monad.Identity
 import qualified Data.Map as M
+import qualified Data.Set as S
 import qualified Metacompiler.JS as JS
 import Metacompiler.Runtime.Substitute
 import Metacompiler.Runtime.Traverse
@@ -25,7 +26,7 @@ reduceMetaObject (MOApp fun arg) = let
 			substituteMetaObject (Substitutions (M.singleton paramName arg') M.empty M.empty) body
 		_ -> MOApp fun' arg'
 
-reduceMetaObject obj@(MOJSExprLiteral _) = let
+reduceMetaObject obj@(MOJSExprLiteral { }) = let
 	-- This is a convenient way to reduce `equiv`, `type_`, and `bindings`
 	obj'@(MOJSExprLiteral equiv type_ expr bindings) = runIdentity (traverseMetaObject reductionVisitor obj)
 	in case tryReduceMetaObjectToJSExpression S.empty obj' of
@@ -41,12 +42,15 @@ reductionVisitor = Visitor {
 	}
 
 tryReduceMetaObjectToJSExpression :: S.Set Name -> MetaObject -> Maybe (M.Map Name (JS.Expression ()) -> JS.Expression ())
-tryReduceMetaObjectToJSExpression promised obj@(MOName n _) = if n `S.member` names
+tryReduceMetaObjectToJSExpression promised obj@(MOName n _) = if n `S.member` promised
 	then Just (\values -> (M.!) values n)
 	else Nothing
 tryReduceMetaObjectToJSExpression promised (MOJSExprLiteral _ _ expr bindings) = do
-	reduced <- mapM (tryReduceJSExprBindingToJSSubst promised) bindings
-	return (\valuesOfPromised -> JS.substituteExpression (M.map ($ valuesOfPromised) reduced) expr)
+	reducedBindings <- liftM M.fromList $ sequence [do
+		reducedBind <- tryReduceJSExprBindingToJSSubst promised bind
+		return (name, reducedBind)
+		| (name, bind) <- M.toList bindings]
+	return (\valuesOfPromised -> JS.substituteExpression (M.map ($ valuesOfPromised) reducedBindings) expr)
 
 tryReduceJSExprBindingToJSSubst :: S.Set Name -> JSExprBinding -> Maybe (M.Map Name (JS.Expression ()) -> JS.Subst)
 tryReduceJSExprBindingToJSSubst promised (JSExprBinding params value) = do
@@ -58,7 +62,7 @@ tryReduceJSExprBindingToJSSubst promised (JSExprBinding params value) = do
 			then valueAsFun (M.fromList (zip paramNames paramValues) `M.union` valuesOfPromised)
 			else error "wrong number of parameters"
 		dummyValues = M.fromList (zip paramNames (repeat (JS.NullLit ()))) `M.union` valuesOfPromised
-		possibleVars = JS.freeVarsInExpression (valueAsFun dummyValues)
-		in SubstFun substFun possibleVars
+		possibleVars = JS.freeNamesInExpression (valueAsFun dummyValues)
+		in JS.SubstFun substFun possibleVars
 		)
 

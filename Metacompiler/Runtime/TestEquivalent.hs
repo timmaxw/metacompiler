@@ -1,8 +1,10 @@
 module Metacompiler.Runtime.TestEquivalent where
 
 import qualified Data.Set as S
+import Data.Foldable (all)
 import Metacompiler.Runtime.Reduce
 import Metacompiler.Runtime.Types
+import Prelude hiding (all)
 
 -- `equivalentMetaTypes` and `equivalentMetaObjects` return `True` if the given meta-types or meta-objects are provably
 -- equivalent under all values of all variables, and `False` otherwise.
@@ -34,6 +36,8 @@ equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOAbs (name1, paramType
 	where nameEquivs' = S.insert (name1, name2) (S.filter (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameEquivs)
 equivalentMetaObjects' (nameEquivs, _) (MOName name1 _) (MOName name2 _) =
 	(name1, name2) `S.member` nameEquivs || name1 == name2 && all (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameEquivs
+equivalentMetaObjects' equivs (MOSLTypeDefn defn1) (MOSLTypeDefn defn2) =
+	nameOfSLDataDefn defn1 == nameOfSLDataDefn defn2
 equivalentMetaObjects' _ (MOSLTypeName name1 _) (MOSLTypeName name2 _) =
 	name1 == name2
 equivalentMetaObjects' equivs (MOSLTypeApp fun1 arg1) (MOSLTypeApp fun2 arg2) =
@@ -42,9 +46,11 @@ equivalentMetaObjects' equivs (MOSLTypeFun argType1 retType1) (MOSLTypeFun argTy
 	equivalentMetaObjects' equivs argType1 argType2 && equivalentMetaObjects' equivs retType1 retType2
 equivalentMetaObjects' equivs (MOSLTypeLazy x1) (MOSLTypeLazy x2) =
 	equivalentMetaObjects' equivs x1 x2
-equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermName name1 types1 _) (MOSLTermName name2 types2 _) =
-	((name1, name2) `S.member` nameOfSLTermEquivs || name1 == name2 && all (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameOfSLTermEquivs)
-	&& all (\(t1, t2) -> equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) t1 t2) (zip types1 types2)
+equivalentMetaObjects' equivs (MOSLTermDefn defn1 typeParams1) (MOSLTermDefn defn2 typeParams2) =
+	nameOfSLTermDefn defn1 == nameOfSLTermDefn defn2
+	&& all (\(t1, t2) -> equivalentMetaObjects' equivs t1 t2) (zip typeParams1 typeParams2)
+equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermName name1 _) (MOSLTermName name2 _) =
+	(name1, name2) `S.member` nameOfSLTermEquivs || name1 == name2 && all (\(n1, n2) -> n1 /= name1 && n2 /= name2) nameOfSLTermEquivs
 equivalentMetaObjects' equivs (MOSLTermApp fun1 arg1) (MOSLTermApp fun2 arg2) =
 	equivalentMetaObjects' equivs fun1 fun2 && equivalentMetaObjects' equivs arg1 arg2
 equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermAbs (name1, paramType1) body1) (MOSLTermAbs (name2, paramType2) body2) =
@@ -55,7 +61,7 @@ equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermCase subject1 c
 	equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) subject1 subject2
 	&& length clauses1 == length clauses2
 	&& all (\((ctor1, ctorTypeParams1, fieldNames1, body1), (ctor2, ctorTypeParams2, fieldNames2, body2)) ->
-		nameOfSLCtor ctor1 == nameOfSLCtor ctor2
+		nameOfSLCtorDefn ctor1 == nameOfSLCtorDefn ctor2
 		&& and (zipWith (equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs)) ctorTypeParams1 ctorTypeParams2)
 		&& let
 			nameOfSLTermEquivs' = S.filter (\(n1, n2) -> n1 `notElem` fieldNames1 && n2 `notElem` fieldNames2) nameOfSLTermEquivs
@@ -63,7 +69,7 @@ equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOSLTermCase subject1 c
 			in equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs'') body1 body2
 		) (zip clauses1 clauses2)
 equivalentMetaObjects' equivs (MOSLTermData ctor1 typeParams1 fields1) (MOSLTermData ctor2 typeParams2 fields2) =
-	nameOfSLCtor ctor1 == nameOfSLCtor ctor2
+	nameOfSLCtorDefn ctor1 == nameOfSLCtorDefn ctor2
 	&& and (zipWith (equivalentMetaObjects' equivs) typeParams1 typeParams2)
 	&& and (zipWith (equivalentMetaObjects' equivs) fields1 fields2)
 equivalentMetaObjects' equivs (MOSLTermWrap x1) (MOSLTermWrap x2) =
@@ -72,7 +78,7 @@ equivalentMetaObjects' equivs (MOSLTermUnwrap x1) (MOSLTermUnwrap x2) =
 	equivalentMetaObjects' equivs x1 x2
 equivalentMetaObjects' equivs (MOJSExprTypeDefn defn1 params1) (MOJSExprTypeDefn defn2 params2) =
 	nameOfJSExprTypeDefn defn1 == nameOfJSExprTypeDefn defn2
-	&& and (zipWith (equivalentMetaObject' equivs) params1 params2)
+	&& and (zipWith (equivalentMetaObjects' equivs) params1 params2)
 equivalentMetaObjects' _ _ _ =
 	False
 

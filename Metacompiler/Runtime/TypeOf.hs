@@ -1,6 +1,7 @@
 module Metacompiler.Runtime.TypeOf where
 
 import qualified Data.Map as M
+import Metacompiler.Runtime.Reduce
 import Metacompiler.Runtime.Substitute
 import Metacompiler.Runtime.Types
 
@@ -46,7 +47,7 @@ typeOfMetaObject (MOSLTermCase subject clauses) =
 		(_, _, _, first):_ -> typeOfMetaObject first
 		_ -> error "bad meta-object: MOSLTermCase needs at least one clause"
 typeOfMetaObject (MOSLTermData ctor typeParams _) = let
-	dataType = MOSLTypeDefn (parentDataOfSLCtorDefn defn)
+	dataType = MOSLTypeDefn (parentDataOfSLCtorDefn ctor)
 	in MTSLTerm (foldl MOSLTypeApp dataType typeParams)
 typeOfMetaObject (MOSLTermWrap x) =
 	case typeOfMetaObject x of
@@ -56,8 +57,8 @@ typeOfMetaObject (MOSLTermUnwrap x) =
 		MTSLTerm xType -> case reduceMetaObject xType of
 			MOSLTypeLazy xInnerType -> MTSLTerm xInnerType
 			_ -> error "bad meta-object: MOSLTermUnwrap needs a MOSLTypeLazy"
-typeOfMetaObject (MOJSExprType _ _ equiv) =
-	MTJSExprType equiv
+typeOfMetaObject (MOJSExprTypeDefn defn params) =
+	MTJSExprType (slEquivOfJSExprTypeDefn defn params)
 typeOfMetaObject (MOJSExprLiteral equiv type_ _ _ ) =
 	MTJSExpr equiv type_
 

@@ -24,7 +24,7 @@ data Scope = Scope {
 newtype LoopBreakerToProcess
 	= LoopBreakerToProcess (M.Map TLS.Name R.MetaObject -> StateT (S.Set (JS.Id ())) (Either String) [JS.Statement ()])
 
-type LocalCompileMonad a = WriterT [LoopBreakerToProcess] (StateT (S.Set (JS.Id ()) (Either String)) a
+type LocalCompileMonad a = WriterT [LoopBreakerToProcess] (StateT (S.Set (JS.Id ())) (Either String)) a
 
 embedEither :: Either String a -> LocalCompileMonad a
 embedEither = lift . lift
@@ -263,7 +263,7 @@ compileJSExprBindings :: Scope
                       -> [TLS.Binding Range (JS.Id ())]
                       -> StateT LocalState (Either String) (M.Map (JS.Id ()) R.JSExprBinding)
 compileJSExprBindings scope bindings = compileBindings scope
-	(\ subScope (TLS.BindingParam parts) = do
+	(\ subScope (TLS.BindingParam parts) -> do
 		(name1, type1, name2, type2) <- case parts of
 			[(name1, type1), (name2, type2)] -> return (name1, type1, name2, type2)
 			_ -> lift (Left "JavaScript expression binding parameters should all have exactly two parts.")
@@ -300,7 +300,7 @@ compileJSExprBindings scope bindings = compileBindings scope
 	bindings
 
 checkType :: R.MetaType -> R.MetaType -> Either String ()
-checkType actualType expectedType = if R.reduceMetaType actualType `R.equivalentMetaTypes` R.reduceMetaType expectedType
+checkType actualType expectedType = if actualType `R.equivalentMetaTypes` expectedType
 	then return ()
 	else Left "expected type `<not implemented>`, got something else")
 

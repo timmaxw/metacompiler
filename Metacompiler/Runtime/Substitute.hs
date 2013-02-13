@@ -19,13 +19,8 @@ import Metacompiler.Runtime.Types
 data Substitutions = Substitutions {
 	nameSubstitutions :: M.Map Name MetaObject,
 	nameOfSLTypeSubstitutions :: M.Map NameOfSLType MetaObject,
-	nameOfSLTermSubstitutions :: M.Map NameOfSLTerm MetaObject,
-	nameOfJSExprSubstitutions :: M.Map (JS.Id ()) JSExprSubstitution
+	nameOfSLTermSubstitutions :: M.Map NameOfSLTerm MetaObject
 	}
-
-data JSExprSubstitution
-	= DirectJSExprSubstitution (JS.Expression ())
-	| FunctionJSExprSubstitution ([JS.Expression ()] -> JS.Expression ())
 
 substituteMetaType :: Substitutions -> MetaType -> MetaType
 substituteMetaType subs (MTFun (paramName, paramType) returnType) = let
