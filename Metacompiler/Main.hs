@@ -1,6 +1,6 @@
 module Metacompiler.Main where
 
-import Control.Monad (liftM)
+import Control.Monad
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.PrettyPrint as JS
 import Metacompiler.ParseSExpr
