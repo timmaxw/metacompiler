@@ -1,5 +1,14 @@
 (sl-code [[
-(data Nat = (Zero) (Succ Nat))
+
+	(data Nat = (Zero) (Succ Nat))
+
+	(let plus (x :: Nat) (y :: Nat) :: Nat =
+		(case x of
+			(Zero) -> y
+			(Succ x') -> (Succ (plus x' y))
+		)
+	)
+
 ]])
 
 (js-expr-type NatAsNumber =
@@ -18,8 +27,8 @@
 		(xJS :: js-expr NatAsNumber xSL)
 		= (js-expr
 	(type NatAsNumber)
-	(spec (sl-term "Succ x"))
-	(impl "x() + 1" (expr "x" = x))
+	(spec (sl-term "Succ x" (term "x" = xSL)))
+	(impl "x() + 1" (expr "x" = xJS))
 ))
 
 (let NatAsNumberPlus
