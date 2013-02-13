@@ -196,22 +196,41 @@ data Defns = Defns {
 
 typeInScopeForDataDefn :: R.SLDataDefn -> TypeInScope
 typeInScopeForDataDefn defn =
-	TypeInScope [] (\ [] -> R.MOSLTypeDefn defn)
+	TypeInScope
+		[]
+		(\ [] -> R.MOSLTypeDefn defn)
+
+termInScopeForCtorDefn :: R.SLCtorDefn -> TermInScope
+termInScopeForCtorDefn defn =
+	TermInScope
+		(R.typeParamsOfSLDataDefn (R.parentDataOfSLCtorDefn defn))
+		[]
+		(\ typeParams [] -> let
+			fieldTypes = map ($ typeParams) (R.fieldTypesOfSLCtorDefn defn)
+			fieldNames = take (length fieldTypes) [R.NameOfSLTerm ("f" ++ show i) | i <- [1..]]
+			body = R.MOSLTermData defn typeParams [R.MOSLTermName n t | (n, t) <- zip fieldNames fieldTypes]
+			fun = foldr R.MOSLTermAbs body (zip fieldNames fieldTypes)
+			in fun
+			)
 
 termInScopeForTermDefn :: R.SLTermDefn -> TermInScope
 termInScopeForTermDefn defn = 
-	TermInScope (R.typeParamsOfSLTermDefn defn) [] (\ typeParams [] -> R.MOSLTermDefn defn typeParams)
+	TermInScope
+		(R.typeParamsOfSLTermDefn defn)
+		[]
+		(\ typeParams [] -> R.MOSLTermDefn defn typeParams)
 
 scopeForDefns :: Defns -> Scope
 scopeForDefns defns = Scope {
 	typesInScope = M.map typeInScopeForDataDefn (dataDefns defns),
 	ctorsInScope = ctorDefns defns,
 	termsInScope = M.map termInScopeForTermDefn (termDefns defns)
+		`M.union` M.map termInScopeForCtorDefn (M.mapKeysMonotonic (SLS.NameOfTerm . SLS.unNameOfCtor) (ctorDefns defns))
 	}
 
 compileSLDirectives :: [SLS.Dir Range] -> Either String Defns
 compileSLDirectives directives = do
-	-- TODO: Detect name conflicts
+	-- TODO: Detect name conflicts: type/type, term/term, ctor/ctor, term/ctor
 
 	dataDefnsAndCtorDefnPromises <- sequence [do
 

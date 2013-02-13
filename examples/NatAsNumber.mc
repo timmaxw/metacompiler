@@ -1,3 +1,7 @@
+(sl-code [[
+(data Nat = (Zero) (Succ Nat))
+]])
+
 (js-expr-type NatAsNumber =
 	(spec (sl-type "Nat"))
 )

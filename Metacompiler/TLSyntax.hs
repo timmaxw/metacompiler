@@ -120,20 +120,37 @@ data Directive a
 freeNamesInMetaType :: MetaType a -> S.Set Name
 freeNamesInMetaType (MTFun _ params result) = 
 	freeNamesInAbstraction params (freeNamesInMetaType result)
-freeNamesInMetaType (MTSLType _ _) = S.empty
-freeNamesInMetaType (MTSLTerm _ type_) = freeNamesInMetaObject type_
+freeNamesInMetaType (MTSLType _ _) =
+	S.empty
+freeNamesInMetaType (MTSLTerm _ type_) =
+	freeNamesInMetaObject type_
+freeNamesInMetaType (MTJSExprType _ equiv) =
+	freeNamesInMetaObject equiv
+freeNamesInMetaType (MTJSExpr _ type_ equiv) =
+	freeNamesInMetaObject type_ `S.union` freeNamesInMetaObject equiv
 
 freeNamesInMetaObject :: MetaObject a -> S.Set Name
 freeNamesInMetaObject (MOApp _ fun arg) =
 	freeNamesInMetaObject fun `S.union` freeNamesInMetaObject arg
 freeNamesInMetaObject (MOAbs _ params result) =
 	freeNamesInAbstraction params (freeNamesInMetaObject result)
-freeNamesInMetaObject (MOName _ name) = S.singleton name
+freeNamesInMetaObject (MOName _ name) =
+	S.singleton name
 freeNamesInMetaObject (MOSLTypeLiteral _ _ bindings) =
 	S.unions (map freeNamesInBinding bindings)
 freeNamesInMetaObject (MOSLTermLiteral _ _ typeBindings termBindings) =
 	S.unions (map freeNamesInBinding typeBindings)
 	`S.union` S.unions (map freeNamesInBinding termBindings)
+freeNamesInMetaObject (MOJSExprLiteral _ equiv type_ _ bindings) =
+	freeNamesInMetaObject equiv
+	`S.union` freeNamesInMetaObject type_
+	`S.union` S.unions (map freeNamesInBinding bindings)
+freeNamesInMetaObject (MOJSExprLoopBreak _ equiv type_ _) =
+	-- Note: We ignore `content`, because that's the point of a loop break. This behavior is necessary for the only
+	-- thing that uses `freeNamesInMetaObject` to work properly, that thing being `TLCompile`; but it's kind of
+	-- unintuitive.
+	freeNamesInMetaObject equiv
+	`S.union` freeNamesInMetaObject type_
 
 freeNamesInBinding :: Binding a n -> S.Set Name
 freeNamesInBinding (Binding _ _ params value) = f params
