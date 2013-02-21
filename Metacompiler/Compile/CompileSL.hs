@@ -1,10 +1,10 @@
-module Metacompiler.SLCompile where
+module Metacompiler.Compile.CompileSL where
 
 import Control.Monad (when, unless, liftM)
 import qualified Data.Map as M
 import qualified Metacompiler.Runtime as R
-import Metacompiler.SExpr (Range, formatRange)
-import qualified Metacompiler.SLSyntax as SLS
+import Metacompiler.SExpr.Types (Range, formatRange)
+import qualified Metacompiler.SL.Syntax as SLS
 
 formatKind :: R.SLKind -> String
 formatKind _ = "<not implemented>"

@@ -1,4 +1,4 @@
-module Metacompiler.SExpr where
+module Metacompiler.SExpr.Types where
 
 -- This module describes S-expression types. Our S-expressions consist only of
 -- lists, atoms, and string literals. This module is primarily meant to be used

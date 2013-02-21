@@ -1,15 +1,15 @@
-module Metacompiler.SExprToTL where
+module Metacompiler.TL.FromSExpr where
 
 import Control.Monad
 import Data.Char (isSpace)
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.Parser as JS
 import qualified Metacompiler.JS as JS
-import Metacompiler.ParseSExpr
-import Metacompiler.SExpr
-import Metacompiler.SExprToSL as SL
-import qualified Metacompiler.SLSyntax as SL
-import qualified Metacompiler.TLSyntax as TL
+import Metacompiler.SExpr.Parse
+import Metacompiler.SExpr.Types
+import qualified Metacompiler.SL.FromSExpr as SL
+import qualified Metacompiler.SL.Syntax as SL
+import qualified Metacompiler.TL.Syntax as TL
 import qualified Text.Parsec
 import Text.Parsec.String ()   -- So `String` is an instance of `Stream`
 

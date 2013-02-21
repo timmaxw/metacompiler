@@ -3,13 +3,13 @@ module Metacompiler.Main where
 import Control.Monad
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.PrettyPrint as JS
-import Metacompiler.ParseSExpr
-import Metacompiler.SExpr
-import Metacompiler.SExprToTL
-import Metacompiler.SLCompile as SLC
-import Metacompiler.SLSyntax as SLS
-import Metacompiler.TLCompile as TLC
-import Metacompiler.TLSyntax as TLS
+import Metacompiler.Compile.CompileSL as CSL
+import Metacompiler.Compile.CompileTL as CTL
+import Metacompiler.SExpr.Parse
+import Metacompiler.SExpr.Types
+import Metacompiler.SL.Syntax as SL
+import Metacompiler.TL.FromSExpr as TL
+import Metacompiler.TL.Syntax as TL
 import System.Environment
 import System.Exit
 import System.IO
@@ -21,7 +21,7 @@ main = do
 		contents <- readFile filename
 		let maybeDirectives = do
 			sexprs <- parseSExprs contents
-			mapM parseTLDirectiveFromSExpr (sExprsToList sexprs)
+			mapM TL.parseTLDirectiveFromSExpr (sExprsToList sexprs)
 		case maybeDirectives of
 			Left err -> do
 				hPutStrLn stderr "error:"
@@ -29,24 +29,24 @@ main = do
 				exitFailure
 			Right d -> return d
 		| filename <- filenames]
-	case TLC.compileDirectives allDirectives of
+	case CTL.compileDirectives allDirectives of
 		Left err -> do
 			hPutStrLn stderr "error:"
 			hPutStrLn stderr err
 			exitFailure
-		Right (TLC.GlobalResults (SLC.Defns slDataDefns slCtorDefns slTermDefns) tlDefns emits) -> do
+		Right (CTL.GlobalResults (CSL.Defns slDataDefns slCtorDefns slTermDefns) tlDefns emits) -> do
 			hPutStrLn stderr ("note: found " ++ show (M.size slDataDefns) ++ " SL data definition(s)")
 			forM_ (M.toList slDataDefns) $ \ (name, _) -> do
-				hPutStrLn stderr ("note:     " ++ SLS.unNameOfType name)
+				hPutStrLn stderr ("note:     " ++ SL.unNameOfType name)
 			hPutStrLn stderr ("note: found " ++ show (M.size slCtorDefns) ++ " SL ctor definition(s)")
 			forM_ (M.toList slCtorDefns) $ \ (name, _) -> do
-				hPutStrLn stderr ("note:     " ++ SLS.unNameOfCtor name)
+				hPutStrLn stderr ("note:     " ++ SL.unNameOfCtor name)
 			hPutStrLn stderr ("note: found " ++ show (M.size slTermDefns) ++ " SL term definition(s)")
 			forM_ (M.toList slTermDefns) $ \ (name, _) -> do
-				hPutStrLn stderr ("note:     " ++ SLS.unNameOfTerm name)
+				hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)
 			hPutStrLn stderr ("note: found " ++ show (M.size tlDefns) ++ " TL meta-object definition(s)")
 			forM_ (M.toList tlDefns) $ \ (name, _) -> do
-				hPutStrLn stderr ("note:     " ++ TLS.unName name)
+				hPutStrLn stderr ("note:     " ++ TL.unName name)
 			when (null emits) $ do
 				hPutStrLn stderr "warning: there is no JS code to emit"
 			putStrLn (JS.renderStatements emits)

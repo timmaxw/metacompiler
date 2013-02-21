@@ -1,11 +1,11 @@
-module Metacompiler.ParseSExpr (parseSExprs) where
+module Metacompiler.SExpr.Parse (parseSExprs, errorContext) where
 
 -- This module contains facilities for parsing a string into an `SExpr`.
 
 import Control.Monad (unless)
 import Control.Monad.Error
 import Data.List
-import Metacompiler.SExpr
+import Metacompiler.SExpr.Types
 
 -- `stepPoint` is used every time we advance one character in the source file.
 -- `stepNewlinePoint` is used when we encounter a newline. `stepPoint'` is used

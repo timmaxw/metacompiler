@@ -1,9 +1,9 @@
-module Metacompiler.TLSyntax where
+module Metacompiler.TL.Syntax where
 
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Metacompiler.JS as JS
-import qualified Metacompiler.SLSyntax as SLS
+import qualified Metacompiler.SL.Syntax as SLS
 
 newtype Name = Name { unName :: String } deriving (Eq, Ord, Show)
 

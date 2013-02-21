@@ -1,4 +1,4 @@
-module Metacompiler.SLSyntax where
+module Metacompiler.SL.Syntax where
 
 import Data.Char
 
