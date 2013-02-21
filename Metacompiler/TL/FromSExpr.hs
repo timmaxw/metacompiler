@@ -6,6 +6,7 @@ import qualified Data.Map as M
 import qualified Language.ECMAScript3.Parser as JS
 import qualified Metacompiler.JS as JS
 import Metacompiler.Range
+import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Parse
 import Metacompiler.SExpr.Types
 import qualified Metacompiler.SL.FromSExpr as SL
@@ -301,7 +302,7 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) =
 			TL.bindingsOfMOJSExprLiteral = bindings
 			}
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr-loop-break") rest) =
-	errorContext ("in \"js-global\" at " ++ formatRange (rangeOfSExprs whole)) $ do
+	errorContext ("in \"js-expr-loop-break\" at " ++ formatRange (rangeOfSExprs whole)) $ do
 		clauses <- parseClausesFromSExprs [("type", False, False), ("spec", False, False), ("content", False, False)] rest
 		type_ <- let [(_, unparsedType)] = (M.!) clauses "type" in
 			errorContext ("in type at " ++ formatRange (rangeOfSExprs unparsedType)) $

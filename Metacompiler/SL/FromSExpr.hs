@@ -1,7 +1,9 @@
 module Metacompiler.SL.FromSExpr where
 
 import Metacompiler.Range
+import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Types
+import Metacompiler.SExpr.UtilsFrom
 import Metacompiler.SL.Syntax as SL
 
 -- `errorContext` puts a line before every error message that occurs within it,
