@@ -1,5 +1,6 @@
 module Metacompiler.SL.FromSExpr where
 
+import Metacompiler.Range
 import Metacompiler.SExpr.Types
 import Metacompiler.SL.Syntax as SL
 

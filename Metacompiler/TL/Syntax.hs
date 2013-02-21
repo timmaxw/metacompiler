@@ -3,7 +3,7 @@ module Metacompiler.TL.Syntax where
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Metacompiler.JS as JS
-import qualified Metacompiler.SL.Syntax as SLS
+import qualified Metacompiler.SL.Syntax as SL
 
 newtype Name = Name { unName :: String } deriving (Eq, Ord, Show)
 
@@ -21,7 +21,7 @@ data MetaType a
 	}
 	| MTSLType {
 		tagOfMetaType :: a,
-		slKindOfMTSLType :: SLS.Kind a
+		slKindOfMTSLType :: SL.Kind a
 	}
 	| MTSLTerm {
 		tagOfMetaType :: a,
@@ -57,14 +57,14 @@ data MetaObject a
 	}
 	| MOSLTypeLiteral {
 		tagOfMetaObject :: a,
-		codeOfMOSLTypeLiteral :: SLS.Type a,
-		typeBindingsOfMOSLTypeLiteral :: [Binding a SLS.NameOfType]
+		codeOfMOSLTypeLiteral :: SL.Type a,
+		typeBindingsOfMOSLTypeLiteral :: [Binding a SL.NameOfType]
 	}
 	| MOSLTermLiteral {
 		tagOfMetaObject :: a,
-		codeOfMOSLTermLiteral :: SLS.Term a,
-		typeBindingsOfMOSLTermLiteral :: [Binding a SLS.NameOfType],
-		termBindingsOfMOSLTermLiteral :: [Binding a SLS.NameOfTerm]
+		codeOfMOSLTermLiteral :: SL.Term a,
+		typeBindingsOfMOSLTermLiteral :: [Binding a SL.NameOfType],
+		termBindingsOfMOSLTermLiteral :: [Binding a SL.NameOfTerm]
 	}
 	| MOJSExprLiteral {
 		tagOfMetaObject :: a,
@@ -102,7 +102,7 @@ data Directive a
 	}
 	| DSLCode {
 		tagOfDirective :: a,
-		contentOfDSLCode :: [SLS.Dir a]
+		contentOfDSLCode :: [SL.Dir a]
 	}
 	| DJSExprType {
 		tagOfDirective :: a,

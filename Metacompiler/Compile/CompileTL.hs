@@ -8,8 +8,8 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Language.ECMAScript3.Syntax.Annotations as JS
 import qualified Metacompiler.JS as JS
+import Metacompiler.Range
 import qualified Metacompiler.Runtime as R
-import Metacompiler.SExpr.Types (Range, formatRange)
 import qualified Metacompiler.Compile.CompileSL as CSL
 import qualified Metacompiler.SL.Syntax as SL
 import qualified Metacompiler.TL.Syntax as TL

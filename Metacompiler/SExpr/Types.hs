@@ -7,40 +7,7 @@ module Metacompiler.SExpr.Types where
 
 import Control.Monad.Error
 import Data.List
-
--- `Point` is a location in the source file.
-
-data Point = Point {
-	lineOfPoint :: Int,
-	columnOfPoint :: Int
-	}
-	deriving (Eq, Ord)
-
-instance Show Point where
-	showsPrec p (Point a b) s
-		| p == 10 || p == 11 = "(" ++ showsPrec 0 (Point a b) (")" ++ s)
-		| otherwise = "Point " ++ showsPrec 10 a (" " ++ showsPrec 10 b s)
-
-formatPoint :: Point -> String
-formatPoint (Point l c) = show l ++ ":" ++ show c
-
--- `Range` is a range of characters in the source file.
-
-data Range = Range {
-	startOfRange :: Point,
-	endOfRange :: Point
-	}
-	deriving (Eq, Ord)
-
-instance Show Range where
-	showsPrec p (Range a b) s
-		| p == 10 || p == 11 = "(" ++ showsPrec 0 (Range a b) (")" ++ s)
-		| otherwise = "Range " ++ showsPrec 10 a (" " ++ showsPrec 10 b s)
-
-formatRange :: Range -> String
-formatRange (Range a b)
-	| a == b = formatPoint a
-	| otherwise = formatPoint a ++ "-" ++ formatPoint b
+import Metacompiler.Range
 
 -- `SExpr` is a S-expression, tagged with line/column information. `SExprs` is
 -- a sequence of S-expressions, tagged with line/column information. Some

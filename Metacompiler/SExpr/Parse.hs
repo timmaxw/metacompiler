@@ -5,20 +5,8 @@ module Metacompiler.SExpr.Parse (parseSExprs, errorContext) where
 import Control.Monad (unless)
 import Control.Monad.Error
 import Data.List
+import Metacompiler.Range
 import Metacompiler.SExpr.Types
-
--- `stepPoint` is used every time we advance one character in the source file.
--- `stepNewlinePoint` is used when we encounter a newline. `stepPoint'` is used
--- to step more than one point at a time.
-
-stepPoint :: Point -> Point
-stepPoint = stepPoint' 1
-
-stepPoint' :: Int -> Point -> Point
-stepPoint' n (Point l c) = (Point l (c+n))
-
-stepNewlinePoint :: Point -> Point
-stepNewlinePoint (Point l c) = (Point (l+1) 1)
 
 -- `summarize` returns the input in quotes, truncated if it is long.
 

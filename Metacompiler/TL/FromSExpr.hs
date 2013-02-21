@@ -5,6 +5,7 @@ import Data.Char (isSpace)
 import qualified Data.Map as M
 import qualified Language.ECMAScript3.Parser as JS
 import qualified Metacompiler.JS as JS
+import Metacompiler.Range
 import Metacompiler.SExpr.Parse
 import Metacompiler.SExpr.Types
 import qualified Metacompiler.SL.FromSExpr as SL
