@@ -41,7 +41,9 @@ reductionVisitor = Visitor {
 	visitMetaObject = Identity . reduceMetaObject
 	}
 
-tryReduceMetaObjectToJSExpression :: S.Set Name -> MetaObject -> Maybe (M.Map Name (JS.Expression ()) -> JS.Expression ())
+tryReduceMetaObjectToJSExpression :: S.Set NameOfMetaObject
+                                  -> MetaObject
+                                  -> Maybe (M.Map NameOfMetaObject (JS.Expression ()) -> JS.Expression ())
 tryReduceMetaObjectToJSExpression promised obj@(MOName n _) = if n `S.member` promised
 	then Just (\values -> (M.!) values n)
 	else Nothing
@@ -52,7 +54,9 @@ tryReduceMetaObjectToJSExpression promised (MOJSExprLiteral _ _ expr bindings) =
 		| (name, bind) <- M.toList bindings]
 	return (\valuesOfPromised -> JS.substituteExpression (M.map ($ valuesOfPromised) reducedBindings) expr)
 
-tryReduceJSExprBindingToJSSubst :: S.Set Name -> JSExprBinding -> Maybe (M.Map Name (JS.Expression ()) -> JS.Subst)
+tryReduceJSExprBindingToJSSubst :: S.Set NameOfMetaObject
+                                -> JSExprBinding
+                                -> Maybe (M.Map NameOfMetaObject (JS.Expression ()) -> JS.Subst)
 tryReduceJSExprBindingToJSSubst promised (JSExprBinding params value) = do
 	let paramNames = [n | JSExprBindingParam _ _ n _ <- params]
 	let promised' = promised `S.union` S.fromList paramNames

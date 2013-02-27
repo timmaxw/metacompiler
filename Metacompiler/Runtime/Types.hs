@@ -3,10 +3,9 @@ module Metacompiler.Runtime.Types where
 import qualified Data.Map as M
 import qualified Metacompiler.JS as JS
 
-newtype Name = Name { unName :: String } deriving (Ord, Show, Eq)
+newtype NameOfMetaObject = NameOfMetaObject { unNameOfMetaObject :: String } deriving (Ord, Show, Eq)
 newtype NameOfSLType = NameOfSLType { unNameOfSLType :: String } deriving (Eq, Show, Ord)
 newtype NameOfSLTerm = NameOfSLTerm { unNameOfSLTerm :: String } deriving (Eq, Show, Ord)
-newtype NameOfSLCtor = NameOfSLCtor { unNameOfSLCtor :: String } deriving (Eq, Show, Ord)
 
 data SLKind
 	= SLKindType
@@ -19,7 +18,7 @@ data SLDataDefn = SLDataDefn {
 	}
 
 data SLCtorDefn = SLCtorDefn {
-	nameOfSLCtorDefn :: NameOfSLCtor,
+	nameOfSLCtorDefn :: NameOfSLTerm,
 	parentDataOfSLCtorDefn :: SLDataDefn,
 	fieldTypesOfSLCtorDefn :: [[MetaObject] -> MetaObject]
 	}
@@ -32,22 +31,22 @@ data SLTermDefn = SLTermDefn {
 	}
 
 data MetaType
-	= MTFun (Name, MetaType) MetaType
+	= MTFun (NameOfMetaObject, MetaType) MetaType
 	| MTSLType SLKind
 	| MTSLTerm MetaObject
 	| MTJSExprType MetaObject
 	| MTJSExpr MetaObject MetaObject
 
 data JSExprTypeDefn = JSExprTypeDefn {
-	nameOfJSExprTypeDefn :: Name,
+	nameOfJSExprTypeDefn :: NameOfMetaObject,
 	paramsOfJSExprTypeDefn :: [MetaType],
 	slEquivOfJSExprTypeDefn :: [MetaObject] -> MetaObject
 	}
 
 data MetaObject
 	= MOApp MetaObject MetaObject
-	| MOAbs (Name, MetaType) MetaObject
-	| MOName Name MetaType
+	| MOAbs (NameOfMetaObject, MetaType) MetaObject
+	| MOName NameOfMetaObject MetaType
 
 	| MOSLTypeDefn SLDataDefn
 	| MOSLTypeName NameOfSLType SLKind
@@ -74,9 +73,9 @@ data JSExprBinding = JSExprBinding {
 	}
 
 data JSExprBindingParam = JSExprBindingParam {
-	nameOfSLOfJSExprBindingParam :: Name,
+	nameOfSLOfJSExprBindingParam :: NameOfMetaObject,
 	typeOfSLOfJSExprBindingParam :: MetaObject,
-	nameOfJSOfJSExprBindingParam :: Name,
+	nameOfJSOfJSExprBindingParam :: NameOfMetaObject,
 	typeOfJSOfJSExprBindingParam :: MetaObject
 	}
 

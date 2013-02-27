@@ -1,4 +1,4 @@
-build/metacompiler: Metacompiler/*.hs
+build/metacompiler: Metacompiler/*.hs Metacompiler/*/*.hs
 	ghc --make Metacompiler/Main.hs -o $@ -main-is Metacompiler.Main.main -outputdir build/objs
 
 run_tests: Metacompiler/*.hs Test/*.hs

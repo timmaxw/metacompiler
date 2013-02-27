@@ -139,7 +139,7 @@ parseSLTermFromSExprs whole@(Cons (Atom _ "case") rest) = case rest of
 						" at " ++ formatRange (rangeOfSExprs clause)) $ do
 					(ctor, vars) <- case pattern of
 						Atom _ name ->
-							return (SL.NameOfCtor name, [])
+							return (SL.NameOfTerm name, [])
 						List _ (Cons (Atom _ name) vars) -> do
 							vars' <- sequence [
 								case var of
@@ -148,7 +148,7 @@ parseSLTermFromSExprs whole@(Cons (Atom _ "case") rest) = case rest of
 										summarizeSExpr var ++ " at " ++
 										formatRange (rangeOfSExpr var))
 								| var <- sExprsToList vars]
-							return (SL.NameOfCtor name, vars')
+							return (SL.NameOfTerm name, vars')
 						_ -> Left ("expected pattern, of the form \"ctor\" or \"(ctor var1 var2 \
 							\...)\", instead got " ++ summarizeSExpr pattern ++ " at " ++
 							formatRange (rangeOfSExpr pattern))
@@ -191,7 +191,7 @@ parseSLDirFromSExpr (List range (Cons (Atom _ "data") rest)) =
 			ctors' <- sequence [
 				case ctor of
 					List range2 (Atom _ ctorName `Cons` fields) -> do
-						let ctorName' = SL.NameOfCtor ctorName
+						let ctorName' = SL.NameOfTerm ctorName
 						fields' <- mapM parseSLTypeFromSExpr (sExprsToList fields)
 						return (ctorName', fields')
 					_ -> Left ("cannot parse constructor at " ++ formatRange (rangeOfSExpr ctor))

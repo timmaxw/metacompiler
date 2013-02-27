@@ -22,7 +22,7 @@ data TermInScope = TermInScope {
 
 data Scope = Scope {
 	typesInScope :: M.Map SL.NameOfType TypeInScope,
-	ctorsInScope :: M.Map SL.NameOfCtor R.SLCtorDefn,
+	ctorsInScope :: M.Map SL.NameOfTerm R.SLCtorDefn,
 	termsInScope :: M.Map SL.NameOfTerm TermInScope
 	}
 
@@ -145,17 +145,17 @@ compileSLTerm scope [] (SL.TermCase range subject clauses) = do
 	clauses' <- sequence [do
 		ctor <- case M.lookup ctorName (ctorsInScope scope) of
 			Just ctor -> return ctor
-			Nothing -> Left ("constructor `" ++ SL.unNameOfCtor ctorName ++ "` is not in scope")
+			Nothing -> Left ("constructor `" ++ SL.unNameOfTerm ctorName ++ "` is not in scope")
 		ctorTypeArgs' <- mapM (compileSLType (typesInScope scope) []) ctorTypeArgs
 		unless (length ctorTypeArgs' == length (R.typeParamsOfSLDataDefn (R.parentDataOfSLCtorDefn ctor))) $
-			Left ("constructor `" ++ SL.unNameOfCtor ctorName ++ "` expects " ++
+			Left ("constructor `" ++ SL.unNameOfTerm ctorName ++ "` expects " ++
 				show (length (R.typeParamsOfSLDataDefn (R.parentDataOfSLCtorDefn ctor))) ++ " type parameters, but instead it got " ++
 				show (length ctorTypeArgs') ++ ".")
 		sequence [do
 			let actualKind = R.slKindOfMetaObject type_
 			unless (actualKind == expectedKind) $
 				Left ("at " ++ formatRange range ++ ": type parameter #" ++ show i ++ " to constructor `" ++
-					SL.unNameOfCtor ctorName ++ "` should have kind " ++ formatKind expectedKind ++ ", but actually \
+					SL.unNameOfTerm ctorName ++ "` should have kind " ++ formatKind expectedKind ++ ", but actually \
 					\has kind " ++ formatKind actualKind)
 			| (type_, expectedKind, i) <- zip3 ctorTypeArgs' (R.typeParamsOfSLDataDefn (R.parentDataOfSLCtorDefn ctor)) [1..]]
 		let fieldTypes = map ($ ctorTypeArgs') (R.fieldTypesOfSLCtorDefn ctor)
@@ -190,7 +190,7 @@ compileSLTermApps fun (arg:args) =
 
 data Defns = Defns {
 	dataDefns :: M.Map SL.NameOfType R.SLDataDefn,
-	ctorDefns :: M.Map SL.NameOfCtor R.SLCtorDefn,
+	ctorDefns :: M.Map SL.NameOfTerm R.SLCtorDefn,
 	termDefns :: M.Map SL.NameOfTerm R.SLTermDefn
 	}
 
@@ -225,7 +225,7 @@ scopeForDefns defns = Scope {
 	typesInScope = M.map typeInScopeForDataDefn (dataDefns defns),
 	ctorsInScope = ctorDefns defns,
 	termsInScope = M.map termInScopeForTermDefn (termDefns defns)
-		`M.union` M.map termInScopeForCtorDefn (M.mapKeysMonotonic (SL.NameOfTerm . SL.unNameOfCtor) (ctorDefns defns))
+		`M.union` M.map termInScopeForCtorDefn (ctorDefns defns)
 	}
 
 compileSLDirectives :: [SL.Dir Range] -> Either String Defns
@@ -242,7 +242,7 @@ compileSLDirectives directives = do
 			}
 
 		let
-			ctorPromise :: M.Map SL.NameOfType R.SLDataDefn -> Either String (M.Map SL.NameOfCtor R.SLCtorDefn)
+			ctorPromise :: M.Map SL.NameOfType R.SLDataDefn -> Either String (M.Map SL.NameOfTerm R.SLCtorDefn)
 			ctorPromise dataDefns = do
 				let runNameForParamName = R.NameOfSLType . SL.unNameOfType
 				let typeScope = M.fromList [let
@@ -253,7 +253,7 @@ compileSLDirectives directives = do
 				liftM M.fromList $ sequence [do
 					fieldTypes' <- mapM (compileSLType typeScope []) fieldTypes
 					let ctorDefn = R.SLCtorDefn {
-						R.nameOfSLCtorDefn = R.NameOfSLCtor (SL.unNameOfCtor ctorName),
+						R.nameOfSLCtorDefn = R.NameOfSLTerm (SL.unNameOfTerm ctorName),
 						R.parentDataOfSLCtorDefn = dataDefn,
 						R.fieldTypesOfSLCtorDefn = [\ paramValues -> let
 							typeSubs = M.fromList (zip [runNameForParamName n | (n, _) <- params] paramValues)

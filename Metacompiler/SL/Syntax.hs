@@ -3,7 +3,6 @@ module Metacompiler.SL.Syntax where
 import Data.Char
 
 newtype NameOfType = NameOfType { unNameOfType :: String } deriving (Eq, Show, Ord)
-newtype NameOfCtor = NameOfCtor { unNameOfCtor :: String } deriving (Eq, Show, Ord)
 newtype NameOfTerm = NameOfTerm { unNameOfTerm :: String } deriving (Eq, Show, Ord)
 
 isValidTypeName :: String -> Bool
@@ -30,7 +29,7 @@ data Term a
 	= TermName a NameOfTerm [Type a]
 	| TermApp a (Term a) (Term a)
 	| TermAbs a [(NameOfTerm, Type a)] (Term a)
-	| TermCase a (Term a) [(NameOfCtor, [Type a], [NameOfTerm], Term a)]
+	| TermCase a (Term a) [(NameOfTerm, [Type a], [NameOfTerm], Term a)]
 	| TermWrap a (Term a)
 	| TermUnwrap a (Term a)
 	deriving (Eq, Show, Ord)
@@ -41,7 +40,7 @@ data Dir a
 		tagOfDir :: a,
 		nameOfDirData :: NameOfType,
 		typeParamsOfDirData :: [(NameOfType, Kind a)],
-		ctorsOfDirData :: [(NameOfCtor, [Type a])]
+		ctorsOfDirData :: [(NameOfTerm, [Type a])]
 		}
 	| DirLet {
 		tagOfDir :: a,

@@ -17,7 +17,7 @@ import qualified Metacompiler.TL.Syntax as TL
 data MetaObjectInScope
 	= MetaObjectInScopeGlobalPresent R.MetaObject
 	| MetaObjectInScopeGlobalFuture
-	| MetaObjectInScopeLocal R.Name R.MetaType
+	| MetaObjectInScopeLocal R.NameOfMetaObject R.MetaType
 	| MetaObjectInScopeCantTransfer R.MetaType
 
 data Scope = Scope {
@@ -162,12 +162,12 @@ compileMetaObject scope (TL.MOJSExprLoopBreak range equiv type_ content) = do
 
 compileAbstraction :: Scope
                    -> [(TL.Name, TL.MetaType Range)]
-                   -> ([(R.Name, R.MetaType)] -> Scope -> LocalCompileMonad a)
-                   -> ((R.Name, R.MetaType) -> a -> a)
+                   -> ([(R.NameOfMetaObject, R.MetaType)] -> Scope -> LocalCompileMonad a)
+                   -> ((R.NameOfMetaObject, R.MetaType) -> a -> a)
                    -> LocalCompileMonad a
 compileAbstraction scope [] base fun = base [] scope
 compileAbstraction scope ((paramName, paramType):params) base fun = do
-	let paramName' = R.Name (TL.unName paramName)
+	let paramName' = R.NameOfMetaObject (TL.unName paramName)
 	paramType' <- compileMetaType scope paramType
 	let scope' = scope { metaObjectsInScope = M.insert paramName (MetaObjectInScopeLocal paramName' paramType') (metaObjectsInScope scope) }
 	let base' = base . ((paramName', paramType'):)
@@ -203,7 +203,7 @@ compileSLTypeBindings scope bindings = compileBindings scope
 			[(name, type_)] -> return (name, type_)
 			_ -> embedEither $ Left ("Parameters to bindings in a `(sl-type ...)` construct should all have exactly one \
 				\part.")
-		let name' = R.Name (TL.unName name)
+		let name' = R.NameOfMetaObject (TL.unName name)
 		type_' <- compileMetaType scope type_
 		slKind' <- case type_' of
 			R.MTSLType slKind' -> return slKind'
@@ -233,7 +233,7 @@ compileSLTermBindings scope bindings = compileBindings scope
 			[(name, type_)] -> return (name, type_)
 			_ -> embedEither (Left "Parameters to bindings in a `(sl-term ...)` construct should all have exactly one \
 				\part.")
-		let name' = R.Name (TL.unName name)
+		let name' = R.NameOfMetaObject (TL.unName name)
 		type_' <- compileMetaType scope type_
 		slKindOrType' <- case type_' of
 			R.MTSLType slKind' -> return (Left slKind')
@@ -273,7 +273,7 @@ compileJSExprBindings scope bindings = compileBindings scope
 			[(name1, type1), (name2, type2)] -> return (name1, type1, name2, type2)
 			_ -> embedEither (Left "JavaScript expression binding parameters should all have exactly two parts.")
 
-		let name1' = R.Name (TL.unName name1)
+		let name1' = R.NameOfMetaObject (TL.unName name1)
 		type1' <- compileMetaType scope type1
 		slType <- embedEither $ checkTypeSLTerm type1'
 
@@ -281,7 +281,7 @@ compileJSExprBindings scope bindings = compileBindings scope
 			M.insert name1 (MetaObjectInScopeLocal name1' type1') $
 			metaObjectsInScope scope
 			}
-		let name2' = R.Name (TL.unName name2)
+		let name2' = R.NameOfMetaObject (TL.unName name2)
 		type2' <- compileMetaType scopeForType2 type2
 		jsType <- case R.reduceMetaType type2' of
 			R.MTJSExpr jsType (R.MOName n _) | n == name1' -> return jsType
@@ -309,7 +309,7 @@ checkType actualType expectedType = if actualType `R.equivalentMetaTypes` expect
 	then return ()
 	else Left ("expected type `<not implemented>`, got something else")
 
-checkTypeFun :: R.MetaType -> Either String ((R.Name, R.MetaType), R.MetaType)
+checkTypeFun :: R.MetaType -> Either String ((R.NameOfMetaObject, R.MetaType), R.MetaType)
 checkTypeFun actualType = case R.reduceMetaType actualType of
 	R.MTFun (paramName, paramType) returnType -> return ((paramName, paramType), returnType)
 	_ -> Left ("expected type `(fun ... -> ...)`, got something else")
@@ -377,7 +377,7 @@ compileDirectives directives = flip evalStateT S.empty $ do
 					slEquiv' <- compileMetaObject scope' slEquiv
 					embedEither $ checkType (R.typeOfMetaObject slEquiv') (R.MTSLType R.SLKindType)
 					let defn = R.JSExprTypeDefn {
-						R.nameOfJSExprTypeDefn = R.Name (TL.unName name),
+						R.nameOfJSExprTypeDefn = R.NameOfMetaObject (TL.unName name),
 						R.paramsOfJSExprTypeDefn = map snd params',
 						R.slEquivOfJSExprTypeDefn = \paramValues -> let
 							subs = M.fromList $ zip (map fst params') paramValues

@@ -40,7 +40,7 @@ main = do
 				hPutStrLn stderr ("note:     " ++ SL.unNameOfType name)
 			hPutStrLn stderr ("note: found " ++ show (M.size slCtorDefns) ++ " SL ctor definition(s)")
 			forM_ (M.toList slCtorDefns) $ \ (name, _) -> do
-				hPutStrLn stderr ("note:     " ++ SL.unNameOfCtor name)
+				hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)
 			hPutStrLn stderr ("note: found " ++ show (M.size slTermDefns) ++ " SL term definition(s)")
 			forM_ (M.toList slTermDefns) $ \ (name, _) -> do
 				hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)

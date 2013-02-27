@@ -2,6 +2,9 @@ module Metacompiler.SExpr.Format (
 	formatSExpr, formatSExprs, summarizeSExpr, summarizeSExprs
 	) where
 
+import Data.List
+import Metacompiler.SExpr.Types
+
 -- `formatSExpr` and `formatSExprs` convert the given S-expression back into textual form, using the same syntax that
 -- is accepted by `parseSExpr`.
 
@@ -9,7 +12,7 @@ formatSExpr :: SExpr -> String
 formatSExpr = summarizeSExpr' maxBound
 
 formatSExprs :: SExprs -> String
-formatSExprs = summarizeSExpr' maxBound
+formatSExprs = summarizeSExprs' maxBound
 
 -- `summarizeSExpr` and `summarizeSExprs` are for formatting error messages. They return a textual representation of
 -- the `SExpr` or `SExprs`, with parts replaced with `...` as necessary to keep it from getting too long.

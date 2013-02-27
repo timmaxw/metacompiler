@@ -15,7 +15,10 @@ equivalentMetaTypes t1 t2 = equivalentMetaTypes' (S.empty, S.empty) (reduceMetaT
 equivalentMetaObjects :: MetaObject -> MetaObject -> Bool
 equivalentMetaObjects o1 o2 = equivalentMetaObjects' (S.empty, S.empty) (reduceMetaObject o1) (reduceMetaObject o2)
 
-equivalentMetaTypes' :: (S.Set (Name, Name), S.Set (NameOfSLTerm, NameOfSLTerm)) -> MetaType -> MetaType -> Bool
+equivalentMetaTypes' :: (S.Set (NameOfMetaObject, NameOfMetaObject), S.Set (NameOfSLTerm, NameOfSLTerm))
+                     -> MetaType
+                     -> MetaType
+                     -> Bool
 equivalentMetaTypes' (nameEquivs, nameOfSLTermEquivs) (MTFun (name1, paramType1) retType1) (MTFun (name2, paramType2) retType2) =
 	equivalentMetaTypes' (nameEquivs, nameOfSLTermEquivs) paramType1 paramType2
 	&& equivalentMetaTypes' (nameEquivs', nameOfSLTermEquivs) retType1 retType2
@@ -27,7 +30,10 @@ equivalentMetaTypes' equivs (MTSLTerm t1) (MTSLTerm t2) =
 equivalentMetaTypes' equivs _ _ =
 	False
 
-equivalentMetaObjects' :: (S.Set (Name, Name), S.Set (NameOfSLTerm, NameOfSLTerm)) -> MetaObject -> MetaObject -> Bool
+equivalentMetaObjects' :: (S.Set (NameOfMetaObject, NameOfMetaObject), S.Set (NameOfSLTerm, NameOfSLTerm))
+                       -> MetaObject
+                       -> MetaObject
+                       -> Bool
 equivalentMetaObjects' equivs (MOApp fun1 arg1) (MOApp fun2 arg2) =
 	equivalentMetaObjects' equivs fun1 fun2 && equivalentMetaObjects' equivs arg1 arg2
 equivalentMetaObjects' (nameEquivs, nameOfSLTermEquivs) (MOAbs (name1, paramType1) body1) (MOAbs (name2, paramType2) body2) =

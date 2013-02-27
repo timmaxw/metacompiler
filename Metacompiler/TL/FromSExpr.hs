@@ -9,6 +9,7 @@ import Metacompiler.Range
 import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Parse
 import Metacompiler.SExpr.Types
+import Metacompiler.SExpr.UtilsFrom
 import qualified Metacompiler.SL.FromSExpr as SL
 import qualified Metacompiler.SL.Syntax as SL
 import qualified Metacompiler.TL.Syntax as TL
