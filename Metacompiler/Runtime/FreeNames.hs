@@ -83,3 +83,44 @@ freeNamesVisitor = Visitor {
 	visitMetaObject = Const . freeNamesInMetaObject
 	}
 
+-- `globalNamesInMetaType` and `globalNamesInMetaObject` return the names of all the global objects that the given type
+-- or term refers to.
+
+globalNamesInMetaType :: MetaType -> FreeNames
+globalNamesInMetaType other =
+	getConst (traverseMetaType freeNamesVisitor other)
+
+globalNamesInMetaObject :: MetaObject -> FreeNames
+globalNamesInMetaObject (MOSLTypeDefn defn) =
+	mempty { namesOfSLTypesInFreeNames = S.singleton (nameOfSLDataDefn defn) }
+globalNamesInMetaObject obj@(MOSLTermDefn defn) =
+	mempty { namesOfSLTermsInFreeNames = S.singleton (nameOfSLTermDefn defn) }
+	`mappend` globalNamesInMetaObject obj
+globalNamesInMetaObject obj@(MOSLTermCase _ clauses) =
+	mempty { namesOfSLTermsInFreeNames = S.fromList [NameOfSLTerm (unNameOfSLCtor (nameOfSLCtorDefn ctor)) | (ctor, _, _, _) <- clauses] }
+	`mappend` globalNamesInMetaObject obj
+globalNamesInMetaObject obj@(MOSLTermData ctor _ _) =
+	mempty { namesOfSLTermsInFreeNames = S.singleton (NameOfSLTerm (unNameOfSLCtor (nameOfSLCtorDefn ctor))) }
+	`mappend` globalNamesInMetaObject obj
+globalNamesInMetaObject obj@(MOJSExprTypeDefn defn _) =
+	mempty { namesInFreeNames = S.singleton (nameOfJSExprTypeDefn defn) }
+	`mappend` globalNamesInMetaObject obj
+globalNamesInMetaObject other =
+	getConst (traverseMetaObject globalNamesVisitor other)
+
+globalNamesVisitor :: Visitor (Const FreeNames)
+globalNamesVisitor = Visitor {
+	visitMetaType = Const . globalNamesInMetaType,
+	visitMetaObject = Const . globalNamesInMetaObject
+	}
+
+-- `freeAndGlobalNamesInMetaType` and `freeAndGlobalNamesInMetaObject` return both free and global names.
+
+freeAndGlobalNamesInMetaObject :: MetaObject -> FreeNames
+freeAndGlobalNamesInMetaObject o =
+	freeNamesInMetaObject o `mappend` globalNamesInMetaObject o
+
+freeAndGlobalNamesInMetaType :: MetaType -> FreeNames
+freeAndGlobalNamesInMetaType t =
+	freeNamesInMetaType t `mappend` globalNamesInMetaType t
+

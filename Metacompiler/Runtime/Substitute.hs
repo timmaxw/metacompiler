@@ -106,12 +106,12 @@ prepareForBindingNames freeNamesWithin nameTypes (subs, names) = let
 	subs' = subs { nameSubstitutions = foldr M.delete (nameSubstitutions subs) names }
 	incomingNames =
 			S.unions [
-				maybe S.empty (\mo -> namesInFreeNames (freeNamesInMetaObject mo))
+				maybe S.empty (\mo -> namesInFreeNames (freeAndGlobalNamesInMetaObject mo))
 					(M.lookup name (nameSubstitutions subs'))
 				| name <- S.toList (namesInFreeNames freeNamesWithin)]
 		`S.union`
 			S.unions [
-				maybe S.empty (\mo -> namesInFreeNames (freeNamesInMetaObject mo))
+				maybe S.empty (\mo -> namesInFreeNames (freeAndGlobalNamesInMetaObject mo))
 					(M.lookup name (nameOfSLTermSubstitutions subs'))
 				| name <- S.toList (namesOfSLTermsInFreeNames freeNamesWithin)]
 	processNames :: [Name] -> [(Name, MetaType)] -> Substitutions -> (Substitutions, [Name])
@@ -142,12 +142,12 @@ prepareForBindingNamesOfSLTerms freeNamesWithin nameTypes (subs, names) = let
 	subs' = subs { nameOfSLTermSubstitutions = foldr M.delete (nameOfSLTermSubstitutions subs) names }
 	incomingNames =
 			S.unions [
-				maybe S.empty (\mo -> namesOfSLTermsInFreeNames (freeNamesInMetaObject mo))
+				maybe S.empty (\mo -> namesOfSLTermsInFreeNames (freeAndGlobalNamesInMetaObject mo))
 					(M.lookup name (nameSubstitutions subs'))
 				| name <- S.toList (namesInFreeNames freeNamesWithin)]
 		`S.union`
 			S.unions [
-				maybe S.empty (\mo -> namesOfSLTermsInFreeNames (freeNamesInMetaObject mo))
+				maybe S.empty (\mo -> namesOfSLTermsInFreeNames (freeAndGlobalNamesInMetaObject mo))
 					(M.lookup name (nameOfSLTermSubstitutions subs'))
 				| name <- S.toList (namesOfSLTermsInFreeNames freeNamesWithin)]
 	processNames :: [NameOfSLTerm] -> [(NameOfSLTerm, MetaObject)] -> Substitutions -> (Substitutions, [NameOfSLTerm])
