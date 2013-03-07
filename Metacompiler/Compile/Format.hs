@@ -25,19 +25,60 @@ formatMetaObjectAsTL obj =
 		(obj', TLFS [] []) -> obj'
 		_ -> error "unbound SL type/term variables at top level"
 
+-- This next part is a bit complicated:
+-- 
+-- `formatMetaTypeAsTL'` and `formatMetaObjectAsTL'` run in the `State TLFS` monad. The `typeBindingsInTLFS` and
+-- `termBindingsInTLFS` fields will be added to but not read or otherwise modified. `forbiddenNamesInTLFS` will be both
+-- read and added to.
+-- 
+-- Suppose that we run `(formatMetaTypeAsTL' someType)`. Let the result be `someType'`, and let the parts added to
+-- `typeBindingsInTLFS` and `termBindingsInTLFS` be `types` and `terms` respectively. Then if `someType'` is evaluated
+-- such that each key in `types` is bound to its value and each key in `terms` is bound to its value, then the result
+-- of that evaluation will be equivalent to the original `someType`.
+--
+-- Each value in `typeBindingsInTLFS` will have meta-type `(R.MTSLType ...)`. Each value in `termBindingsInTLFS` will
+-- have meta-type `(R.MTSLTerm ...)`. When a key-value pair is added `typeBindingsInTLFS` or `termBindingsInTLFS`, the
+-- key will also be added to `forbiddenNamesInTLFS`. Names in `forbiddenNamesInTLFS` will not be used for new key-value
+-- pairs.
+
 data TLFS = TLFS {
 	forbiddenNamesInTLFS :: S.Set TL.Name,
-	typeParamsInTLFS :: [(BindingParam (), R.MetaObject)],
-	termParamsInTLFS :: [(BindingParam (), R.MetaObject)]
+	typeBindingsInTLFS :: M.Map TL.Name R.MetaObject,
+	termBindingsInTLFS :: M.Map TL.Name R.MetaObject
 	}
 
 forbidNamesForTLFS :: S.Set TL.Name -> State TLFS a -> State TLFS a
 forbidNamesForTLFS newFns inner = do
-	TLFS oldFns typs teps <- get
-	let fns' = newFns `S.union` oldFns
-	let (result, TLFS _ typs' teps') = runState inner (TLFS fns' typs teps)
-	put (TLFS oldFns typs' teps')
+	state <- get
+	let innerState = state { forbiddenNamesInTLFS = names' names `S.union` forbiddenNamesInTLFS state }
+	let (result, innerState') = runState inner innerState
+	let state' = state { typeBindingsInTLFS = typeBindingsInTLFS innerState', termBindingsInTLFS = termBindingsInTLFS innerState' }
+	put state'
 	return result
+
+bindTypeForTLFS :: R.MetaObject -> State TLFS TL.Name
+bindTypeForTLFS obj = do
+	state <- get
+	let candidates = [TL.Name ([c] ++ n) | c <- "abcdefghijklmnopqrstuvwxyz", n <- [""] ++ map show [2..]]
+	let Just name = find (`S.notMember` forbiddenNamesInTLFS state) candidates
+	let state' = state {
+			forbiddenNamesInTLFS = S.insert name (forbiddenNamesInTLFS state),
+			typeBindingsInTLFS = M.insert name obj (typeBindingsInTLFS state)
+			}
+	put state'
+	return name
+
+bindTermForTLFS :: R.MetaObject -> State TLFS TL.Name
+bindTypeForTLFS obj = do
+	state <- get
+	let candidates = [TL.Name ([c] ++ n) | c <- "abcdefghijklmnopqrstuvwxyz", n <- [""] ++ map show [2..]]
+	let Just name = find (`S.notMember` forbiddenNamesInTLFS state) candidates
+	let state' = state {
+			forbiddenNamesInTLFS = S.insert name (forbiddenNamesInTLFS state),
+			termBindingsInTLFS = M.insert name obj (termBindingsInTLFS state)
+			}
+	put state'
+	return name
 
 formatMetaTypeAsTL' :: R.MetaType -> State TLFS (TL.MetaType ())
 formatMetaTypeAsTL' (R.MTFun (pn, pt) rt) = do
@@ -120,32 +161,84 @@ formatMetaObjectAsTL (R.MOJSExprLiteral e t c bs) = do
 		| (n, R.JSExprBinding ps v) <- M.toList bs]
 	return (TL.MOJSExprLiteral () e' t' c bs')
 
+-- `formatMetaObjectAsSLType` and `formatMetaObjectAsSLTerm` run in the `SLFS` monad. Like with `TLFS`, the fields
+-- `forbiddenTypeNamesInSLFS` and `forbiddenTermNamesInSLFS` are both read and added to, but the fields
+-- `typeBindingsInSLFS` and `termBindingsInSLFS` are append-only.
+--
+-- Suppose that running `(formatMetaObjectAsSLTerm someTerm)` produces the result `someTerm'` while adding `types` and
+-- `terms` to the `typeBindingsInSLFS` and `termBindingsInSLFS` fields of the state. Then if `someTerm'` is evaluated
+-- with each key in `types` bound to its value and each key in `terms` bound to its value, the result will be
+-- equivalent to the original `someTerm`.
+
 data SLFS = SLFS {
 	forbiddenTypeNamesInSLFS :: S.Set SL.NameOfType,
 	forbiddenTermNamesInSLFS :: S.Set SL.NameOfTerm,
-	typeBindingsInSLFS :: [TL.Binding () SL.NameOfType],
-	termBindingsInSLFS :: [TL.Binding () SL.NameOfTerm]
+	typeBindingsInSLFS :: M.Map SL.NameOfType R.MetaObject,
+	termBindingsInSLFS :: M.Map SL.NameOfType R.MetaObject
 	}
 
-formatMetaObjectAsTLSLType :: R.MetaObject -> State TLFS TL.MetaObject ()
-formatMetaObjectAsTLSLType obj = case freeNamesInMetaObject obj of
-	FreeNames _ _ tens | not (S.null a) -> error "how'd we get a free term name in a type?"
-	FreeNames _ tyns _ | S.null tyns -> do
-		let FreeNames _ ftyns _ = globalNamesInMetaObject obj
-		let (obj', SLFS tybs []) = runState (formatMetaObjectAsSLType ftyns obj) (SLFS [] [])
-		return (TL.MOSLTypeLiteral () obj' tybs)
-	FreeNames ns tyns _ | S.null ns && not (S.null tyns) -> do
-		TLFS typs teps <- get
-		let candidates = [TL.Name ([c] ++ n)
-			| c <- "abcdefghijklmnopqrstuvwxyz", n <- [""] ++ map show [2..]]
-		let fns' = fns `S.union` S.fromList [name | TL.BindingParam () [(name, _)] <- tybs]
-		let Just name = find (`S.notMember` fns') candidates
-		ty' <- formatMetaTypeAsTL (R.typeOfMetaObject obj)
-		let p = TL.BindingParam () [(name, ty')]
-		put (TLFS (typs ++ [(p, obj)]) teps)
-	FreeNames ns tyns _ | not (S.null ns) -> do
-		
-		
+forbidTermNamesForSLFS :: S.Set TL.NameOfTerm -> State TLFS a -> State TLFS a
+forbidTermNamesForSLFS names inner = do
+	state <- get
+	let innerState = state { forbiddenTermNamesInSLFS = names' names `S.union` forbiddenTermNamesInSLFS state }
+	let (result, innerState') = runState inner innerState
+	let state' = state { typeBindingsInSLFS = typeBindingsInSLFS innerState', termBindingsInSLFS = termBindingsInSLFS innerState' }
+	put state'
+	return result
+
+bindTypeForSLFS :: R.MetaObject -> State SLFS SL.NameOfType
+bindTypeForSLFS obj = do
+	state <- get
+	let candidates = [SL.NameOfType ([c] ++ n) | c <- "ABCDEFGHIJKLMNOPQRSTUVWXYZ", n <- [""] ++ map show [2..]]
+	let Just name = find (`S.notMember` forbiddenTypeNamesInSLFS state) candidates
+	let state' = state {
+			forbiddenTypeNamesInSLFS = S.insert name (forbiddenTypeNamesInSLFS state),
+			typeBindingsInSLFS = M.insert name obj (typeBindingsInSLFS state)
+			}
+	put state'
+	return name
+
+bindTermForSLFS :: R.MetaObject -> State SLFS SL.NameOfTerm
+bindTermForSLFS obj = do
+	state <- get
+	let candidates = [SL.NameOfTerm ([c] ++ n) | c <- "abcdefghijklmnopqrstuvwxyz", n <- [""] ++ map show [2..]]
+	let Just name = find (`S.notMember` forbiddenTermNamesInSLFS state) candidates
+	let state' = state {
+			forbiddenTermNamesInSLFS = S.insert name (forbiddenTermNamesInSLFS state),
+			termBindingsInSLFS = M.insert name obj (termBindingsInSLFS state)
+			}
+	put state'
+	return name
+
+formatMetaObjectAsTLSLType :: R.MetaObject -> State TLFS (TL.MetaObject ())
+formatMetaObjectAsTLSLType obj = do
+	(code, typeBindings, termBindings) <- formatMetaObjectAsTLSLThing formatMetaObjectAsSLType obj
+	unless (M.null termBindings) (error "how did we get a term binding in a type?")
+	return (TL.MOSLTypeLiteral () code typeBindings)
+
+formatMetaObjectAsTLSLTerm :: R.MetaObject -> State TLFS (TL.MetaObject ())
+formatMetaObjectAsTLSLTerm obj = do
+	(code, typeBindings, termBindings) <- formatMetaObjectAsTLSLThing formatMetaObjectAsSLTerm obj
+	return (TL.MOSLTypeLiteral () code typeBindings termBindings)
+
+formatMetaObjectAsTLSLThing :: (R.MetaObject -> State SLFS a)
+                            -> R.MetaObject
+                            -> (State TLFS a, [TL.Binding () SL.NameOfType], [TL.Binding () SL.NameOfTerm])
+formatMetaObjectAsTLSLThing fun obj = let
+	FreeNamesAndTypes _ freeSLTypes freeSLTerms = freeNamesInMetaObject obj
+	typeSubs = liftM M.fromList $ sequence [do
+		name' <- bindTypeForTLFS (R.MOSLTypeName name kind)
+		return (name, R.MOName name' (R.MTSLType kind))
+		| (name, kind) <- M.toList freeSLTypes]
+	termSubs = liftM M.fromList $ sequence [do
+		name' <- bindTermForTLFS (R.MOSLTermName name type_)
+		return (name, R.MOName name' (R.MTSLTerm type_))
+		| (name, type_) <- M.toList freeSLTerms]
+	let obj' = R.substituteMetaObject (Substitutions M.empty typeSubs termSubs) obj
+	let (code, (SLFS _ _ typeBindings termBindings)) = runState (fun obj') (SLFS S.empty S.empty M.empty M.empty)
+	typeParams <- [do
+		let (value', (TLFS _ 
+		| (name, value) <- typeBindings]
 
 formatMetaObjectAsTLSLTerm :: R.MetaObject -> State TLFS TL.MetaObject () 
 formatMetaObjectAsTLSLTerm obj = let
@@ -153,23 +246,23 @@ formatMetaObjectAsTLSLTerm obj = let
 	(obj', SLFS tybs tebs) = runState (formatMetaObjectAsSLTerm ftyns ftens obj) (SLFS [] [])
 	in TL.MOSLTermLiteral () obj' tybs tebs
 
-formatMetaObjectAsSLType :: S.Set SL.NameOfType -> R.MetaObject -> State SLFS (SL.Type ())
-formatMetaObjectAsSLType ftyns (R.MOSLTypeDefn defn) =
+formatMetaObjectAsSLType :: R.MetaObject -> State SLFS (SL.Type ())
+formatMetaObjectAsSLType (R.MOSLTypeDefn defn) =
 	return (SL.TypeName () (SL.NameOfType (R.unNameOfSLType (R.nameOfSLDataDefn defn))))
-formatMetaObjectAsSLType ftyns (R.MOSLTypeName n k) =
+formatMetaObjectAsSLType (R.MOSLTypeName n k) =
 	return (SL.TypeName () (SL.NameOfType (R.unNameOfSLType n)))
-formatMetaObjectAsSLType ftyns (R.MOSLTypeApp f x) = do
-	f' <- formatMetaObjectAsSLType ftyns f
-	x' <- formatMetaObjectAsSLType ftyns x
+formatMetaObjectAsSLType (R.MOSLTypeApp f x) = do
+	f' <- formatMetaObjectAsSLType f
+	x' <- formatMetaObjectAsSLType x
 	return (SL.TypeApp f' x')
-formatMetaObjectAsSLType ftyns (R.MOSLTypeFun a r) = do
-	a' <- formatMetaObjectAsSLType ftyns a
-	r' <- formatMetaObjectAsSLType ftyns r
+formatMetaObjectAsSLType (R.MOSLTypeFun a r) = do
+	a' <- formatMetaObjectAsSLType a
+	r' <- formatMetaObjectAsSLType r
 	return (SL.TypeFun a' r')
-formatMetaObjectAsSLType ftyns (R.MOSLTypeLazy x) = do
+formatMetaObjectAsSLType (R.MOSLTypeLazy x) = do
 	x' <- formatMetaObjectAsSLType ftyns x
 	return (SL.TypeLazy x')
-formatMetaObjectAsSLType ftyns other = do
+formatMetaObjectAsSLType other = do
 	SLFS tybs tebs <- get
 	let candidates = [SL.NameOfType ([c] ++ n)
 		| c <- "abcdefghijklmnopqrstuvwxyz", n <- [""] ++ map show [2..]]
@@ -181,42 +274,42 @@ formatMetaObjectAsSLType ftyns other = do
 	put (SLFS (tybs ++ [binding]) tebs)
 	return (SL.TypeName () name)
 
-formatMetaObjectAsSLTerm :: S.Set SL.NameOfType -> S.Set SL.NameOfTerm -> R.MetaObject -> State SLFS (SL.Term ())
-formatMetaObjectAsSLTerm ftyns ftens (R.MOSLTermDefn d typs) =
+formatMetaObjectAsSLTerm :: R.MetaObject -> State SLFS (SL.Term ())
+formatMetaObjectAsSLTerm (R.MOSLTermDefn d typs) =
 	return (SL.TermName () (SL.NameOfTerm (R.unNameOfSLTerm (R.nameOfSLTermDefn d))))
-formatMetaObjectAsSLTerm ftyns ftens (R.MOSLTermName n _) =
+formatMetaObjectAsSLTerm (R.MOSLTermName n _) =
 	return (SL.TermName () (SL.NameOfTerm (R.unNameOfSLTerm n)))
-formatMetaObjectAsSLTerm ftyns ftens (R.MOSLTermApp f x) = do
-	f' <- formatMetaObjectAsSLTerm ftyns ftens f
-	x' <- formatMetaObjectAsSLTerm ftyns ftens x
+formatMetaObjectAsSLTerm (R.MOSLTermApp f x) = do
+	f' <- formatMetaObjectAsSLTerm f
+	x' <- formatMetaObjectAsSLTerm x
 	return (SL.TermApp () f' x')
-formatMetaObjectAsSLTerm ftyns ftens (R.MOSLTermAbs (a, at) b) = do
+formatMetaObjectAsSLTerm (R.MOSLTermAbs (a, at) b) = do
 	let a' = SL.NameOfTerm (R.unNameOfSLType a)
-	at' <- formatMetaObjectAsSLType ftyns at
-	b' <- formatMetaObjectAsSLTerm ftyns (S.insert a' ftens) b
+	at' <- formatMetaObjectAsSLType at
+	b' <- formatMetaObjectAsSLTerm (S.insert a' ftens) b
 	return (SL.TermAbs [(a', at')] b')
-formatMetaObjectAsSLTerm ftyns ftens (R.MOSLTermCase s cs) = do
-	s' <- formatMetaObjectAsSLTerm ftyns ftens s
+formatMetaObjectAsSLTerm (R.MOSLTermCase s cs) = do
+	s' <- formatMetaObjectAsSLTerm s
 	cs' <- sequence [do
 		let c' = SL.NameOfCtor (R.unNameOfSLCtor (R.nameOfSLCtorDefn c))
 		let fns' = [SL.NameOfTerm (R.unNameOfSLTerm n) | n <- fns]
-		typs' <- mapM (formatMetaObjectAsSLType ftyns) typs
-		v' <- formatMetaObjectAsSLTerm ftyns (ftens `S.union` S.fromList fns') v
+		typs' <- mapM formatMetaObjectAsSLType typs
+		v' <- formatMetaObjectAsSLTerm (ftens `S.union` S.fromList fns') v
 		return (c', typs', fns', v')
 		| (c, typs, fns, v) <- cs]
 	return (SL.TermCase s' cs')
-formatMetaObjectAsSLTerm ftyns ftens (R.MOSLTermData c typs teps) = do
+formatMetaObjectAsSLTerm (R.MOSLTermData c typs teps) = do
 	let c' = SL.NameOfTerm (R.unNameOfSLCtor (R.nameOfSLCtorDefn c))
-	typs' <- mapM (formatMetaObjectAsSLType ftyns) typs
-	teps' <- mapM (formatMetaObjectAsSLType ftyns ftens) teps
+	typs' <- mapM formatMetaObjectAsSLType typs
+	teps' <- mapM formatMetaObjectAsSLType teps
 	return (foldl (SL.TermApp ()) (SL.TermName () c' typs') teps)
-formatMetaObjectAsSLTerm ftyns ftens (R.MOSLTermWrap x) = do
-	x' <- formatMetaObjectAsSLTerm ftyns ftens x
+formatMetaObjectAsSLTerm (R.MOSLTermWrap x) = do
+	x' <- formatMetaObjectAsSLTerm x
 	return (SL.TermWrap () x')
-formatMetaObjectAsSLTerm ftyns ftens (R.MOSLTermUnwrap x) = do
-	x' <- formatMetaObjectAsSLTerm ftyns ftens x
+formatMetaObjectAsSLTerm (R.MOSLTermUnwrap x) = do
+	x' <- formatMetaObjectAsSLTerm x
 	return (SL.TermUnwrap () x')
-formatMetaObjectAsSLTerm ftyns ftens other = do
+formatMetaObjectAsSLTerm other = do
 	SLFS tybs tebs <- get
 	let candidates = [SL.NameOfType ([c] ++ n)
 		| c <- "abcdefghijklmnopqrstuvwxyz", n <- [""] ++ map show [2..]]
