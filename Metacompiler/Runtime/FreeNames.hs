@@ -108,16 +108,16 @@ globalNamesInMetaObject (MOSLTypeDefn defn) =
 	mempty { slTypesInNames = S.singleton (nameOfSLDataDefn defn) }
 globalNamesInMetaObject obj@(MOSLTermDefn defn _) =
 	mempty { slTermsInNames = S.singleton (nameOfSLTermDefn defn) }
-	`mappend` globalNamesInMetaObject obj
+	`mappend` getConst (traverseMetaObject globalNamesVisitor obj)
 globalNamesInMetaObject obj@(MOSLTermCase _ clauses) =
 	mempty { slTermsInNames = S.fromList [nameOfSLCtorDefn ctor | (ctor, _, _, _) <- clauses] }
-	`mappend` globalNamesInMetaObject obj
+	`mappend` getConst (traverseMetaObject globalNamesVisitor obj)
 globalNamesInMetaObject obj@(MOSLTermData ctor _ _) =
 	mempty { slTermsInNames = S.singleton (nameOfSLCtorDefn ctor) }
-	`mappend` globalNamesInMetaObject obj
+	`mappend` getConst (traverseMetaObject globalNamesVisitor obj)
 globalNamesInMetaObject obj@(MOJSExprTypeDefn defn _) =
 	mempty { metaObjectsInNames = S.singleton (nameOfJSExprTypeDefn defn) }
-	`mappend` globalNamesInMetaObject obj
+	`mappend` getConst (traverseMetaObject globalNamesVisitor obj)
 globalNamesInMetaObject other =
 	getConst (traverseMetaObject globalNamesVisitor other)
 

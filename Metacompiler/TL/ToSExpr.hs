@@ -4,6 +4,7 @@ import qualified Data.List
 import qualified Language.ECMAScript3.PrettyPrint as JS
 import qualified Metacompiler.JS as JS
 import Metacompiler.Range
+import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Types
 import Metacompiler.SExpr.UtilsTo
 import qualified Metacompiler.SL.Syntax as SL
@@ -14,10 +15,10 @@ formatTLMetaTypeAsSExpr :: TL.MetaType a -> SExpr
 formatTLMetaTypeAsSExpr (TL.MTFun _ ps r) =
 	mkList' $
 		[mkAtom "fun"] ++
-		[mkList' ([mkAtom n, mkAtom "::"] ++ formatTlMetaTypeAsSExprs t)
+		[mkList' ([mkAtom n, mkAtom "::"] ++ sExprsToList (formatTLMetaTypeAsSExprs t))
 			| (TL.Name n, t) <- ps] ++
 		[mkAtom "->"] ++
-		sExprsToList (formatTlMetaTypeAsSExprs r)
+		sExprsToList (formatTLMetaTypeAsSExprs r)
 formatTLMetaTypeAsSExpr other =
 	mkList (formatTLMetaTypeAsSExprs other)
 
@@ -40,7 +41,7 @@ formatTLMetaObjectAsSExpr :: TL.MetaObject a -> SExpr
 formatTLMetaObjectAsSExpr (TL.MOAbs _ ps r) =
 	mkList' $
 		[mkAtom "fun"] ++
-		[mkList' ([mkAtom n, mkAtom "::"] ++ formatTlMetaTypeAsSExprs t)
+		[mkList' ([mkAtom n, mkAtom "::"] ++ sExprsToList (formatTLMetaTypeAsSExprs t))
 			| (TL.Name n, t) <- ps] ++
 		[mkAtom "->"] ++
 		sExprsToList (formatTLMetaObjectAsSExprs r)
@@ -58,8 +59,8 @@ formatTLMetaObjectAsSExpr (TL.MOSLTermLiteral _ c tybs tebs) =
 formatTLMetaObjectAsSExpr (TL.MOJSExprLiteral _ e t c bs) =
 	mkList' [
 		mkAtom "js-expr",
-		mkList' ([mkAtom "spec"] ++ sExprsToList (formatTLMetaObjectAsSExprs e),
-		mkList' ([mkAtom "type"] ++ sExprsToList (formatTLMetaObjectAsSExprs t),
+		mkList' ([mkAtom "spec"] ++ sExprsToList (formatTLMetaObjectAsSExprs e)),
+		mkList' ([mkAtom "type"] ++ sExprsToList (formatTLMetaObjectAsSExprs t)),
 		mkList' (
 			[mkAtom "impl", mkQuoted (JS.renderExpression c)] ++
 			map (formatTLBindingAsSExpr "expr" JS.unId) bs
@@ -82,7 +83,7 @@ formatTLMetaObjectAsSExprs (TL.MOApp _ f a) = let
 formatTLMetaObjectAsSExprs other =
 	sExprsFromList [formatTLMetaObjectAsSExpr other]
 
-formatTLMetaObjectAsString :: Tl.MetaObject a -> String
+formatTLMetaObjectAsString :: TL.MetaObject a -> String
 formatTLMetaObjectAsString = formatSExpr . formatTLMetaObjectAsSExpr
 
 formatTLBindingAsSExpr :: String -> (name -> String) -> TL.Binding a name -> SExpr
@@ -95,7 +96,7 @@ formatTLBindingAsSExpr tag nameFun (TL.Binding _ n ps v) =
 
 formatTLBindingParamAsSExpr :: TL.BindingParam a -> SExpr
 formatTLBindingParamAsSExpr (TL.BindingParam ps) =
-	mkList' $ Data.List.intercalate (mkAtom "|") $ [
+	mkList' $ Data.List.intercalate [mkAtom "|"] $ [
 		[mkAtom n, mkAtom "::"] ++
 		sExprsToList (formatTLMetaTypeAsSExprs t)
 		| (TL.Name n, t) <- ps]

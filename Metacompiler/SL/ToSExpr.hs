@@ -1,6 +1,7 @@
 module Metacompiler.SL.ToSExpr where
 
 import Metacompiler.Range
+import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Types
 import Metacompiler.SExpr.UtilsTo
 import qualified Metacompiler.SL.Syntax as SL
@@ -43,12 +44,14 @@ formatSLTypeAsString :: SL.Type a -> String
 formatSLTypeAsString = formatSExpr . formatSLTypeAsSExpr
 
 formatSLTermAsSExpr :: SL.Term a -> SExpr
-formatSLTermAsSExpr (SL.TermName _ (SL.NameOfTerm name)) =
-	mkAtom name
+formatSLTermAsSExpr (SL.TermName _ (SL.NameOfTerm name) typs) =
+	case typs of
+		[] -> mkAtom name
+		_ -> error "type parameters on SL term names not really supported yet"
 formatSLTermAsSExpr (SL.TermAbs _ as b) =
 	mkList' $
 		[mkAtom "\\"] ++
-		[mkList ([mkAtom n, mkAtom "::"] ++ sExprsToList (formatSLTypeAsSExprs t))
+		[mkList' ([mkAtom n, mkAtom "::"] ++ sExprsToList (formatSLTypeAsSExprs t))
 			| (SL.NameOfTerm n, t) <- as] ++
 		[mkAtom "->"] ++
 		sExprsToList (formatSLTermAsSExprs b)
@@ -57,7 +60,7 @@ formatSLTermAsSExpr (SL.TermCase _ s cs) =
 		[mkAtom "case", formatSLTermAsSExpr s, mkAtom "of"] ++
 		concat [[
 				-- TODO: Type parameters on ctor
-				mkList' ([mkAtom c] ++ map mkAtom [n | SL.NameOfTerm n <- fns]),
+				mkList' ([mkAtom (SL.unNameOfTerm c)] ++ map mkAtom [n | SL.NameOfTerm n <- fns]),
 				mkAtom "->",
 				formatSLTermAsSExpr b
 			]
@@ -67,7 +70,7 @@ formatSLTermAsSExpr (SL.TermWrap _ x) =
 formatSLTermAsSExpr (SL.TermUnwrap _ x) =
 	mkList' [mkAtom "unwrap", formatSLTermAsSExpr x]
 formatSLTermAsSExpr other =
-	mkList (formatSLTermAsSExprs t)
+	mkList (formatSLTermAsSExprs other)
 
 formatSLTermAsSExprs :: SL.Term a -> SExprs
 formatSLTermAsSExprs (SL.TermApp _ f a) = let
