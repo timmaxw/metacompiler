@@ -8,7 +8,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Language.ECMAScript3.Syntax.Annotations as JS
 import qualified Metacompiler.JS as JS
-import Metacompiler.Range
+import Metacompiler.Error
 import qualified Metacompiler.Runtime as R
 import qualified Metacompiler.Compile.CompileSL as CSL
 import qualified Metacompiler.SL.Syntax as SL
@@ -54,7 +54,7 @@ compileMetaType scope (TL.MTJSExpr range jsType slTerm) = do
 	slType2 <- embedEither $ checkTypeSLTerm (R.typeOfMetaObject slTerm')
 	case R.equivalentMetaObjects (R.reduceMetaObject slType1) (R.reduceMetaObject slType2) of
 		True -> return ()
-		False -> embedEither $ Left ("at " ++ formatRange range ++ ": The type of the SL equivalent should be the SL \
+		False -> embedEither $ fail ("at " ++ formatRange range ++ ": The type of the SL equivalent should be the SL \
 			\equivalent of the JavaScript type.")
 	return (R.MTJSExpr jsType' slTerm')
 
@@ -78,9 +78,9 @@ compileMetaObject scope (TL.MOName range name) = case M.lookup name (metaObjects
 	Just (MetaObjectInScopeLocal name' type_) ->
 		return (R.MOName name' type_)
 	Just (MetaObjectInScopeCantTransfer type_) ->
-		embedEither $ Left ("can't transfer variable of that type across a JS loop breaker")
+		embedEither $ fail ("can't transfer variable of that type across a JS loop breaker")
 	Nothing ->
-		embedEither $ Left ("at " ++ formatRange range ++ ": name `" ++ TL.unName name ++ "` is not in scope")
+		embedEither $ fail ("at " ++ formatRange range ++ ": name `" ++ TL.unName name ++ "` is not in scope")
 
 compileMetaObject scope (TL.MOSLTypeLiteral range code typeBindings) = do
 	typeBindings' <- compileSLTypeBindings scope typeBindings
@@ -201,13 +201,13 @@ compileSLTypeBindings scope bindings = compileBindings scope
 	(\ subScope (TL.BindingParam parts) -> do
 		(name, type_) <- case parts of
 			[(name, type_)] -> return (name, type_)
-			_ -> embedEither $ Left ("Parameters to bindings in a `(sl-type ...)` construct should all have exactly one \
+			_ -> embedEither $ fail ("Parameters to bindings in a `(sl-type ...)` construct should all have exactly one \
 				\part.")
 		let name' = R.NameOfMetaObject (TL.unName name)
 		type_' <- compileMetaType scope type_
 		slKind' <- case type_' of
 			R.MTSLType slKind' -> return slKind'
-			_ -> embedEither $ Left "Parameters to bindings in a `(sl-type ...)` construct should all have type \
+			_ -> embedEither $ fail "Parameters to bindings in a `(sl-type ...)` construct should all have type \
 				\`(sl-type ...)`."
 		let subScope' = subScope { metaObjectsInScope = M.insert name (MetaObjectInScopeLocal name' type_') (metaObjectsInScope subScope) }
 		return (subScope', (name', slKind'))
@@ -231,14 +231,14 @@ compileSLTermBindings scope bindings = compileBindings scope
 	(\ subScope (TL.BindingParam parts) -> do
 		(name, type_) <- case parts of
 			[(name, type_)] -> return (name, type_)
-			_ -> embedEither (Left "Parameters to bindings in a `(sl-term ...)` construct should all have exactly one \
+			_ -> embedEither (fail "Parameters to bindings in a `(sl-term ...)` construct should all have exactly one \
 				\part.")
 		let name' = R.NameOfMetaObject (TL.unName name)
 		type_' <- compileMetaType scope type_
 		slKindOrType' <- case type_' of
 			R.MTSLType slKind' -> return (Left slKind')
 			R.MTSLTerm slType' -> return (Right slType')
-			_ -> embedEither $ Left "Parameters to bindings in a `(sl-term ...)` construct should all have type \
+			_ -> embedEither $ fail "Parameters to bindings in a `(sl-term ...)` construct should all have type \
 				\`(sl-type ...)` or `(sl-term ...)`."
 		let subScope' = subScope { metaObjectsInScope =	M.insert name (MetaObjectInScopeLocal name' type_') (metaObjectsInScope subScope) }
 		return (subScope', (name', slKindOrType'))
@@ -249,7 +249,7 @@ compileSLTermBindings scope bindings = compileBindings scope
 			isLeft (Left _) = True
 			isLeft (Right _) = False
 		when (any (isLeft . snd) $ dropWhile (isLeft . snd) params') $
-			embedEither $ Left "In a `(sl-term ...)` construct, all type-parameters must come before all term-parameters."
+			embedEither $ fail "In a `(sl-term ...)` construct, all type-parameters must come before all term-parameters."
 		let typeParams' = [(name, slKind') | (name, Left slKind') <- params']
 		let termParams' = [(name, slType') | (name, Right slType') <- params']
 		value' <- compileMetaObject subScope' value
@@ -271,7 +271,7 @@ compileJSExprBindings scope bindings = compileBindings scope
 	(\ subScope (TL.BindingParam parts) -> do
 		(name1, type1, name2, type2) <- case parts of
 			[(name1, type1), (name2, type2)] -> return (name1, type1, name2, type2)
-			_ -> embedEither (Left "JavaScript expression binding parameters should all have exactly two parts.")
+			_ -> embedEither (fail "JavaScript expression binding parameters should all have exactly two parts.")
 
 		let name1' = R.NameOfMetaObject (TL.unName name1)
 		type1' <- compileMetaType scope type1
@@ -285,7 +285,7 @@ compileJSExprBindings scope bindings = compileBindings scope
 		type2' <- compileMetaType scopeForType2 type2
 		jsType <- case R.reduceMetaType type2' of
 			R.MTJSExpr jsType (R.MOName n _) | n == name1' -> return jsType
-			_ -> embedEither $ Left "Type of second binding parameter should be `js-expr <type> <first binding parameter>`"
+			_ -> embedEither $ fail "Type of second binding parameter should be `js-expr <type> <first binding parameter>`"
 
 		let subScope' = subScope { metaObjectsInScope =
 			M.insert name2 (MetaObjectInScopeLocal name2' type2') $
@@ -307,32 +307,32 @@ compileJSExprBindings scope bindings = compileBindings scope
 checkType :: R.MetaType -> R.MetaType -> Either String ()
 checkType actualType expectedType = if actualType `R.equivalentMetaTypes` expectedType
 	then return ()
-	else Left ("expected type `<not implemented>`, got something else")
+	else fail ("expected type `<not implemented>`, got something else")
 
 checkTypeFun :: R.MetaType -> Either String ((R.NameOfMetaObject, R.MetaType), R.MetaType)
 checkTypeFun actualType = case R.reduceMetaType actualType of
 	R.MTFun (paramName, paramType) returnType -> return ((paramName, paramType), returnType)
-	_ -> Left ("expected type `(fun ... -> ...)`, got something else")
+	_ -> fail ("expected type `(fun ... -> ...)`, got something else")
 
 checkTypeSLType :: R.MetaType -> Either String R.SLKind
 checkTypeSLType actualType = case R.reduceMetaType actualType of
 	R.MTSLType slKind -> return slKind
-	_ -> Left "expected type `(sl-type ...)`, got something else"
+	_ -> fail "expected type `(sl-type ...)`, got something else"
 
 checkTypeSLTerm :: R.MetaType -> Either String R.MetaObject
 checkTypeSLTerm actualType = case R.reduceMetaType actualType of
 	R.MTSLTerm slType -> return slType
-	_ -> Left "expected type `(sl-term ...)`, got something else"
+	_ -> fail "expected type `(sl-term ...)`, got something else"
 
 checkTypeJSExprType :: R.MetaType -> Either String R.MetaObject
 checkTypeJSExprType actualType = case R.reduceMetaType actualType of
 	R.MTJSExprType slType -> return slType
-	_ -> Left "expected type `(js-expr-type ...)`, got something else"
+	_ -> fail "expected type `(js-expr-type ...)`, got something else"
 
 checkTypeJSExpr :: R.MetaType -> Either String (R.MetaObject, R.MetaObject)
 checkTypeJSExpr actualType = case R.reduceMetaType actualType of
 	R.MTJSExpr jsType slTerm -> return (jsType, slTerm)
-	_ -> Left "expected type `(js-expr ...)`, got something else"
+	_ -> fail "expected type `(js-expr ...)`, got something else"
 
 data GlobalResults = GlobalResults {
 	slDefnsOfGlobalResults :: CSL.Defns,
@@ -355,7 +355,7 @@ compileDirectives directives = flip evalStateT S.empty $ do
 			| dir <- directives]
 	sortedDefnDirs <- sequence [case scc of
 		Data.Graph.AcyclicSCC (name, dir) -> return (name, dir)
-		Data.Graph.CyclicSCC _ -> lift $ Left ("mutual recursion detected")
+		Data.Graph.CyclicSCC _ -> lift $ fail ("mutual recursion detected")
 		| scc <- Data.Graph.stronglyConnComp unsortedDefnDirs]
 
 	(tlDefns, loopBreakersFromDefnDirs) <- runWriterT $ do

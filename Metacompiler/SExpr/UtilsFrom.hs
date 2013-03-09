@@ -3,7 +3,7 @@ module Metacompiler.SExpr.UtilsFrom where
 -- This module contains utilities that will be useful when trying to convert from S-expressions to some other format;
 -- hence the somewhat strange name `UtilsFrom`.
 
-import Metacompiler.Range
+import Metacompiler.Error
 import Metacompiler.SExpr.Types
 
 -- `breakOnAtom` is a convenience function for parsers. Given an atom name and
@@ -17,7 +17,7 @@ breakOnAtom :: String -> SExprs -> Either String (SExprs, SExprs)
 breakOnAtom atom block = break' block
 	where
 		break' (Nil p) =
-			Left ("expected \"" ++ atom ++ "\" at " ++ formatRange (rangeOfSExprs block))
+			fail ("expected \"" ++ atom ++ "\" at " ++ formatRange (rangeOfSExprs block))
 		break' (Cons (Atom r a) rest) | a == atom =
 			return (Nil (startOfRange r), rest)
 		break' (Cons x rest) = do
@@ -53,12 +53,12 @@ maybeBreakOnAtom atom block = break' block
 -- sequence to contain exactly one object, which it returns.
 
 takeOne :: String -> SExprs -> Either String (SExpr, SExprs)
-takeOne what (Nil p) = Left ("expected " ++ what ++ " at " ++ formatPoint p)
+takeOne what (Nil p) = fail ("expected " ++ what ++ " at " ++ formatPoint p)
 takeOne _ (Cons a b) = return (a, b)
 
 expectOne :: String -> SExprs -> Either String SExpr
-expectOne what (Nil p) = Left ("expected " ++ what ++ " at " ++ formatPoint p)
+expectOne what (Nil p) = fail ("expected " ++ what ++ " at " ++ formatPoint p)
 expectOne _ (Cons a (Nil _)) = return a
-expectOne what (Cons a b) = Left ("expected nothing after the " ++ what ++ " at " ++ formatRange (rangeOfSExpr a) ++
+expectOne what (Cons a b) = fail ("expected nothing after the " ++ what ++ " at " ++ formatRange (rangeOfSExpr a) ++
 	", but found more at " ++ formatRange (rangeOfSExprs b) ++ ".")
 

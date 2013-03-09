@@ -3,7 +3,7 @@ module Metacompiler.TL.ToSExpr where
 import qualified Data.List
 import qualified Language.ECMAScript3.PrettyPrint as JS
 import qualified Metacompiler.JS as JS
-import Metacompiler.Range
+import Metacompiler.Error
 import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Types
 import Metacompiler.SExpr.UtilsTo

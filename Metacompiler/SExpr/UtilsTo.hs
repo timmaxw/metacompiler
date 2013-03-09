@@ -3,7 +3,7 @@ module Metacompiler.SExpr.UtilsTo where
 -- This module contains utilities that will be useful when trying to convert from some other format to S-expressions;
 -- hence the somewhat strange name `UtilsTo`.
 
-import Metacompiler.Range
+import Metacompiler.Error
 import Metacompiler.SExpr.Types
 
 undefinedPoint :: Point

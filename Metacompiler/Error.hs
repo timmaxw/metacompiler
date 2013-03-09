@@ -1,18 +1,25 @@
 module Metacompiler.Error (
 	module Control.Exception.Base,   -- re-export `assert`
 	assertM,
-	Point(..), formatPoint, Range(..), formatRange, stepPoint, stepPoint', stepNewlinePoint,
-	Backtrace, BacktraceMonad(..), frameBacktrace, getBacktrace,
-	Location(..)
+	errorContext,
+	Point(..), formatPoint, Range(..), formatRange,
+	stepPoint, stepPoint', stepNewlinePoint
 	) where
 
 import Control.Exception.Base (assert)
+import Control.Monad.Trans.Error   -- allows `fail` in `Either String`
 
 -- `assertM` is like `assert`, but meant for use in monadic contexts. If you throw a `assertM condition` into a
 -- do-block, then if the condition fails, the do-block will throw an exception when it reaches that point.
 
 assertM :: Monad m => Bool -> m ()
 assertM condition = assert condition (return ())
+
+-- `errorContext` prepends a note to an error message
+
+errorContext :: String -> Either String a -> Either String a
+errorContext note (Left msg) = Left (note ++ "\n" ++ msg)
+errorContext note (Right x) = Right x
 
 -- `Point` is a location in the source file.
 
@@ -60,42 +67,4 @@ stepPoint' n (Point l c) = (Point l (c+n))
 
 stepNewlinePoint :: Point -> Point
 stepNewlinePoint (Point l c) = (Point (l+1) 1)
-
--- `BacktraceMonad` is a combination of `Reader` and `Either String`. Use `frameBacktrace` to recursively build up a
--- backtrace. If `fail` is called, the backtrace will be prepended to the error message. You can also call
--- `getBacktrace` to get the current backtrace if you need it for something else.
-
-type Backtrace = [String]
-
-data BacktraceMonad a = BacktraceMonad {
-	runBacktraceMonad :: Backtrace -> Either String a
-	}
-
-instance Monad BacktraceMonad where
-	return x = BacktraceMonad (const (Right x))
-	a >>= b = BacktraceMonad $ \ bt ->
-		case runBacktraceMonad a bt of
-			Left err -> Left err
-			Right x -> runBacktraceMonad (b x) bt
-	fail msg = BacktraceMonad $ \ bt ->
-		Left (formatBacktrace bt msg)
-
-frameBacktrace :: String -> BacktraceMonad a -> BacktraceMonad a
-frameBacktrace frame inner = BacktraceMonad $ \ frames ->
-	runErrorMonad inner (frames ++ [frame])
-
-getBacktrace :: BacktraceMonad Backtrace
-getBacktrace = BacktraceMonad $ \ bt -> Right bt
-
--- `Location` is `Range` combined with a backtrace.
-
-data Location = Location {
-	rangeOfLocation :: Range,
-	backtraceOfLocation :: Backtrace
-	}
-
-getLocation :: Range -> BacktraceMonad Location
-getLocation r = do
-	bt <- getBacktrace
-	return (Location r bt)
 

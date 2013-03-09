@@ -17,7 +17,7 @@ summarize s
 -- `parseSExprs` takes a string and interprets it as a sequence of
 -- S-expressions.
 
-parseSExprs :: String -> BacktraceMonad SExprs
+parseSExprs :: String -> Either String SExprs
 parseSExprs string1 = do
 	let (string2, point2) = strip (string1, Point 1 1)
 	(topLevels, (string3, point3)) <- parseMany (string2, point2)
@@ -27,7 +27,7 @@ parseSExprs string1 = do
 	return topLevels
 
 	where
-		parseMany :: (String, Point) -> BacktraceMonad (SExprs, (String, Point))
+		parseMany :: (String, Point) -> Either String (SExprs, (String, Point))
 		parseMany (string1, _) | not (isStripped string1) = error "input wasn't stripped properly"
 		parseMany ("", point) = return (Nil point, ("", point))
 		parseMany (')':string2, point1) = return (Nil point1, (')':string2, point1))
@@ -37,14 +37,12 @@ parseSExprs string1 = do
 			(elems, (string4, point4)) <- parseMany (string3, point3)
 			return (Cons elem elems, (string4, point4))
 
-		parseOne :: (String, Point) -> BacktraceMonad (SExpr, (String, Point))
+		parseOne :: (String, Point) -> Either String (SExpr, (String, Point))
 		parseOne (string1, _) | not (isStripped string1) = error "input wasn't stripped properly"
 		parseOne ('(':string2, point1) = do
 			let point2 = stepPoint point1
 			let (string3, point3) = strip (string2, point2)
-			(elems, (string4, point4)) <-
-				frameBacktrace ("in list " ++ summarize ('(':string1) ++ " starting at " ++ formatPoint point1) $
-				parseMany (string3, point3)
+			(elems, (string4, point4)) <- parseMany (string3, point3)
 			let (string5, point5) = strip (string4, point4)
 			case string5 of
 				[] -> fail ("parentheses at " ++ formatPoint point1 ++ " are never closed")
@@ -73,7 +71,7 @@ parseSExprs string1 = do
 					(rest, (s3, p3)) <- parseString (s2, p2)
 					return (a:rest, (s3, p3))
 			(body, (string3, point3)) <-
-				frameBacktrace ("in string literal " ++ summarize ('"':string2) ++ " starting at " ++ formatPoint point1) $
+				errorContext ("in string literal " ++ summarize ('"':string2) ++ " starting at " ++ formatPoint point1) $
 				parseString (string2, point2)
 			return (Quoted (Range point1 point3) body, (string3, point3))
 		parseOne ('[':string2, point1) = do
@@ -99,7 +97,7 @@ parseSExprs string1 = do
 					(rest, (s3, p3)) <- takeBody (s2, p2)
 					return (a:rest, (s3, p3))
 			(body, (string5, point5)) <-
-				frameBacktrace ("in string literal " ++ summarize ('[':string2) ++ " starting at " ++ formatPoint point1) $
+				errorContext ("in string literal " ++ summarize ('[':string2) ++ " starting at " ++ formatPoint point1) $
 				takeBody (string4, point4)
 			return (Quoted (Range point1 point5) body, (string5, point5))
 		parseOne (a:string2, point1) | validAtomChar a = do

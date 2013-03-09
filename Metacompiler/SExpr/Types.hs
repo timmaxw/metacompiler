@@ -5,9 +5,8 @@ module Metacompiler.SExpr.Types where
 -- for building S-expression-based syntaxes, so it has a lot of convenience
 -- functions for people writing parsers that accept S-expressions.
 
-import Control.Monad.Error
 import Data.List
-import Metacompiler.Range
+import Metacompiler.Error
 
 -- `SExpr` is a S-expression, tagged with line/column information. `SExprs` is
 -- a sequence of S-expressions, tagged with line/column information. Some

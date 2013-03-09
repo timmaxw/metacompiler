@@ -143,7 +143,7 @@ makeSLTypeLiteral (R.MOSLTypeName slName kind) = do
 			return (TL.MOSLTypeLiteral () (SL.TypeName () slName') [])
 makeSLTypeLiteral obj = do
 	(code, typeBindings, []) <- runSLFMonadInTLFMonad' $
-		FSL.formatMetaObjectAsSLType handleMetaObjectEmbeddedInSLType M.empty obj
+		FSL.formatSLTypeAsSL' handleMetaObjectEmbeddedInSLType M.empty obj
 	return (TL.MOSLTypeLiteral () code typeBindings)
 
 makeSLTermLiteral :: R.MetaObject -> TLFMonad (TL.MetaObject ())
@@ -160,7 +160,7 @@ makeSLTermLiteral (R.MOSLTermName slName type_) = do
 			return (TL.MOSLTermLiteral () (SL.TermName () slName' []) [] [])
 makeSLTermLiteral obj = do
 	(code, typeBindings, termBindings) <- runSLFMonadInTLFMonad' $
-		FSL.formatMetaObjectAsSLTerm handleMetaObjectEmbeddedInSLType handleMetaObjectEmbeddedInSLTerm M.empty M.empty obj
+		FSL.formatSLTermAsSL' handleMetaObjectEmbeddedInSLType handleMetaObjectEmbeddedInSLTerm M.empty M.empty obj
 	return (TL.MOSLTermLiteral () code typeBindings termBindings)
 
 handleMetaObjectEmbeddedInSLType :: M.Map R.NameOfSLType R.SLKind

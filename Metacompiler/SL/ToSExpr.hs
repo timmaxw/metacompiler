@@ -1,6 +1,6 @@
 module Metacompiler.SL.ToSExpr where
 
-import Metacompiler.Range
+import Metacompiler.Error
 import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Types
 import Metacompiler.SExpr.UtilsTo
