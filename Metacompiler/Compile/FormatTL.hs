@@ -10,6 +10,7 @@ import qualified Metacompiler.Compile.FormatSL as FSL
 import qualified Metacompiler.Runtime as R
 import qualified Metacompiler.SL.Syntax as SL
 import qualified Metacompiler.TL.Syntax as TL
+import qualified Metacompiler.TL.ToSExpr as TL
 
 formatMetaTypeAsTL :: R.MetaType -> TL.MetaType ()
 formatMetaTypeAsTL type_ =
@@ -17,11 +18,17 @@ formatMetaTypeAsTL type_ =
 		(R.freeAndGlobalNamesInMetaType type_)
 		(formatMetaTypeAsTL' type_)
 
+formatMetaTypeAsString :: R.MetaType -> String
+formatMetaTypeAsString = TL.formatTLMetaTypeAsString . formatMetaTypeAsTL
+
 formatMetaObjectAsTL :: R.MetaObject -> TL.MetaObject ()
 formatMetaObjectAsTL obj =
 	topLevelRunTLFMonad
 		(R.freeAndGlobalNamesInMetaObject obj)
 		(formatMetaObjectAsTL' obj)
+
+formatMetaObjectAsString :: R.MetaObject -> String
+formatMetaObjectAsString = TL.formatTLMetaObjectAsString . formatMetaObjectAsTL
 
 -- `formatMetaTypeAsTL'` and `formatMetaObjectAsTL'` are the heart of the procedure. `TLFMonad` is used for keeping
 -- track of embedded bits of SL; it will be defined later.

@@ -1,11 +1,10 @@
-module Metacompiler.SExpr.Parse (parseSExprs, errorContext) where
+module Metacompiler.SExpr.Parse (parseSExprs) where
 
 -- This module contains facilities for parsing a string into an `SExpr`.
 
 import Control.Monad (unless)
-import Control.Monad.Error
 import Data.List
-import Metacompiler.Range
+import Metacompiler.Error
 import Metacompiler.SExpr.Types
 
 -- `summarize` returns the input in quotes, truncated if it is long.
@@ -15,27 +14,20 @@ summarize s
 	| length s < 10 = show s
 	| otherwise = show (take 10 s ++ "...")
 
--- `errorContext` puts the given message on top of any error messages as they
--- bubble up.
-
-errorContext :: String -> Either String a -> Either String a
-errorContext s (Left m) = Left (s ++ "\n" ++ m)
-errorContext s (Right x) = Right x
-
 -- `parseSExprs` takes a string and interprets it as a sequence of
 -- S-expressions.
 
-parseSExprs :: String -> Either String SExprs
+parseSExprs :: String -> BacktraceMonad SExprs
 parseSExprs string1 = do
 	let (string2, point2) = strip (string1, Point 1 1)
 	(topLevels, (string3, point3)) <- parseMany (string2, point2)
 	let (string4, point4) = strip (string3, point3)
 	unless (null string4) $
-		Left ("unexpected " ++ summarize string4 ++ " at " ++ formatPoint point4)
+		fail ("unexpected " ++ summarize string4 ++ " at " ++ formatPoint point4)
 	return topLevels
 
 	where
-		parseMany :: (String, Point) -> Either String (SExprs, (String, Point))
+		parseMany :: (String, Point) -> BacktraceMonad (SExprs, (String, Point))
 		parseMany (string1, _) | not (isStripped string1) = error "input wasn't stripped properly"
 		parseMany ("", point) = return (Nil point, ("", point))
 		parseMany (')':string2, point1) = return (Nil point1, (')':string2, point1))
@@ -45,17 +37,17 @@ parseSExprs string1 = do
 			(elems, (string4, point4)) <- parseMany (string3, point3)
 			return (Cons elem elems, (string4, point4))
 
-		parseOne :: (String, Point) -> Either String (SExpr, (String, Point))
+		parseOne :: (String, Point) -> BacktraceMonad (SExpr, (String, Point))
 		parseOne (string1, _) | not (isStripped string1) = error "input wasn't stripped properly"
 		parseOne ('(':string2, point1) = do
 			let point2 = stepPoint point1
 			let (string3, point3) = strip (string2, point2)
 			(elems, (string4, point4)) <-
-				errorContext ("in list " ++ summarize ('(':string1) ++ " starting at " ++ formatPoint point1) $
+				frameBacktrace ("in list " ++ summarize ('(':string1) ++ " starting at " ++ formatPoint point1) $
 				parseMany (string3, point3)
 			let (string5, point5) = strip (string4, point4)
 			case string5 of
-				[] -> Left ("parentheses at " ++ formatPoint point1 ++ " are never closed")
+				[] -> fail ("parentheses at " ++ formatPoint point1 ++ " are never closed")
 				')':string6 -> do
 					let point6 = stepPoint point5
 					return (List (Range point1 point6) elems, (string6, point6))
@@ -63,11 +55,11 @@ parseSExprs string1 = do
 		parseOne ('"':string2, point1) = do
 			let point2 = stepPoint point1
 			let parseString (s1, p1) = case s1 of
-				[] -> Left "there is no closing quote"
+				[] -> fail "there is no closing quote"
 				'"':s2 -> do
 					let p2 = stepPoint p1
 					return ("", (s2, p2))
-				'\\':[] -> Left "there is no closing quote"
+				'\\':[] -> fail "there is no closing quote"
 				'\\':a:s2 | a `elem` "nrt\"\'\\" -> do
 					let p2 = stepPoint (stepPoint p1)
 					let a' = case a of {
@@ -75,13 +67,13 @@ parseSExprs string1 = do
 						'\"' -> '\"'; '\'' -> '\''; '\\' -> '\\' }
 					(rest, (s3, p3)) <- parseString (s2, p2)
 					return (a:rest, (s3, p3))
-				'\\':s2 -> Left ("invalid escape sequence " ++ summarize s2 ++ " at " ++ formatPoint p1)
+				'\\':s2 -> fail ("invalid escape sequence " ++ summarize s2 ++ " at " ++ formatPoint p1)
 				a:s2 -> do
 					let p2 = stepPoint p1
 					(rest, (s3, p3)) <- parseString (s2, p2)
 					return (a:rest, (s3, p3))
 			(body, (string3, point3)) <-
-				errorContext ("in string literal " ++ summarize ('"':string2) ++ " starting at " ++ formatPoint point1) $
+				frameBacktrace ("in string literal " ++ summarize ('"':string2) ++ " starting at " ++ formatPoint point1) $
 				parseString (string2, point2)
 			return (Quoted (Range point1 point3) body, (string3, point3))
 		parseOne ('[':string2, point1) = do
@@ -95,19 +87,19 @@ parseSExprs string1 = do
 			(equals, (string3, point3)) <- countEquals (string2, point2)
 			(string4, point4) <- case string3 of
 				'[':s4 -> return (s4, stepPoint point3)
-				_ -> Left ("malformed string literal starting at " ++ formatPoint point1)
+				_ -> fail ("malformed string literal starting at " ++ formatPoint point1)
 			let endDelimiter = "]" ++ replicate equals '=' ++ "]"
 			let takeBody (s1, p1) = case s1 of
 				_ | endDelimiter `Data.List.isPrefixOf` s1 ->
 					return ("", (drop (equals + 2) s1, stepPoint' (equals + 2) p1))
 				[] ->
-					Left ("there is no closing \"" ++ endDelimiter ++ "\"")
+					fail ("there is no closing \"" ++ endDelimiter ++ "\"")
 				a:s2 -> do
 					let p2 = if a /= '\n' then stepPoint p1 else stepNewlinePoint p1
 					(rest, (s3, p3)) <- takeBody (s2, p2)
 					return (a:rest, (s3, p3))
 			(body, (string5, point5)) <-
-				errorContext ("in string literal " ++ summarize ('[':string2) ++ " starting at " ++ formatPoint point1) $
+				frameBacktrace ("in string literal " ++ summarize ('[':string2) ++ " starting at " ++ formatPoint point1) $
 				takeBody (string4, point4)
 			return (Quoted (Range point1 point5) body, (string5, point5))
 		parseOne (a:string2, point1) | validAtomChar a = do
@@ -117,9 +109,9 @@ parseSExprs string1 = do
 			where
 				validAtomChar a = a `elem` "!#$%&\'*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWX\
 					\YZ\\^_`abcdefghijklmnopqrstuvwxyz{|}~"
-		parseOne ('\r':_, point1) = Left ("illegal '\\r' character at " ++ formatPoint point1)
-		parseOne ([], point1) = Left ("expected s-expression, found EOF")
-		parseOne (string1, point1) = Left ("don't know how to handle " ++ summarize string1 ++ " at " ++ formatPoint point1)
+		parseOne ('\r':_, point1) = fail ("illegal '\\r' character at " ++ formatPoint point1)
+		parseOne ([], point1) = fail ("expected s-expression, found EOF")
+		parseOne (string1, point1) = fail ("don't know how to handle " ++ summarize string1 ++ " at " ++ formatPoint point1)
 
 		isStripped :: String -> Bool
 		isStripped (a:_) | a `elem` " \n\t;" = False

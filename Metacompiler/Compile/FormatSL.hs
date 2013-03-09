@@ -5,6 +5,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Metacompiler.Runtime as R
 import qualified Metacompiler.SL.Syntax as SL
+import qualified Metacompiler.SL.ToSExpr as SL
 import qualified Metacompiler.TL.Syntax as TL
 
 formatSLKindAsSL :: R.SLKind -> SL.Kind ()
@@ -15,6 +16,9 @@ formatSLKindAsSL (R.SLKindFun a r) =
 		SL.KindFun () as' r' -> SL.KindFun () (a':as') r'
 		r' -> SL.KindFun () [a'] r'
 	where a' = formatSLKindAsSL a
+
+formatSLKindAsString :: R.SLKind -> String
+formatSLKindAsString = SL.formatSLKindAsString . formatSLKindAsSL
 
 formatMetaObjectAsSLType :: Monad m
                          => (M.Map R.NameOfSLType R.SLKind -> R.MetaObject -> m (SL.Type ()))

@@ -1,91 +1,93 @@
 module Metacompiler.SL.FromSExpr where
 
-import Metacompiler.Range
+import Metacompiler.Error
 import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Types
 import Metacompiler.SExpr.UtilsFrom
 import Metacompiler.SL.Syntax as SL
 
--- `errorContext` puts a line before every error message that occurs within it,
--- to make the error messages more readable.
-
-errorContext :: String -> Either String a -> Either String a
-errorContext s (Left m) = Left (s ++ "\n" ++ m)
-errorContext s (Right x) = Right x
-
 -- `parseSLKindFromSExpr` tries to interpret an S-expression as a `SL.Kind`. If
--- it doesn't work, then it returns `Left <error>`.
+-- it doesn't work, then it fails.
 
-parseSLKindFromSExpr :: SExpr -> Either String (SL.Kind Range)
-parseSLKindFromSExpr (Atom r "*") =
-	return (SL.KindType r)
+parseSLKindFromSExpr :: SExpr -> BacktraceMonad (SL.Kind Location)
+parseSLKindFromSExpr (Atom r "*") = do
+	loc <- getLocation r
+	return (SL.KindType loc)
 parseSLKindFromSExpr (List _ xs) =
 	parseSLKindFromSExprs xs
 parseSLKindFromSExpr other =
-	Left ("invalid kind " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
+	fail ("invalid kind " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseSLKindFromSExpr` tries to interpret a list of S-expressions as a
 -- `SL.Kind`.
 
-parseSLKindFromSExprs :: SExprs -> Either String (SL.Kind Range)
+parseSLKindFromSExprs :: SExprs -> BacktraceMonad (SL.Kind Location)
 parseSLKindFromSExprs (Cons a (Nil _)) =
 	parseSLKindFromSExpr a
 parseSLKindFromSExprs whole@(Cons (Atom _ "fun") rest) = do
 	(args, rest2) <- breakOnAtom "->" rest
 	args' <-
-		errorContext ("in arg-kind of " ++ summarizeSExprs whole ++ " starting at " ++ formatRange (rangeOfSExprs whole)) $
+		frameBacktrace ("in arg-kind of " ++ summarizeSExprs whole ++ " starting at " ++ formatRange (rangeOfSExprs whole)) $
 		mapM parseSLKindFromSExpr (sExprsToList args)
 	res <-
-		errorContext ("in result-kind of " ++ summarizeSExprs whole ++ " starting at " ++ formatRange (rangeOfSExprs whole)) $
+		frameBacktrace ("in result-kind of " ++ summarizeSExprs whole ++ " starting at " ++ formatRange (rangeOfSExprs whole)) $
 		parseSLKindFromSExprs rest2
-	return (KindFun (rangeOfSExprs whole) args' res)
+	loc <- getLocation (rangeOfSExprs whole)
+	return (KindFun loc args' res)
 parseSLKindFromSExprs other =
-	Left ("invalid kind " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
+	fail ("invalid kind " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
 
 -- `parseSLTypeFromSExpr` tries to interpret a S-expression as a `SL.Type`.
 
-parseSLTypeFromSExpr :: SExpr -> Either String (SL.Type Range)
-parseSLTypeFromSExpr (Atom r a) | SL.isValidTypeName a =
-	return (SL.TypeName r (SL.NameOfType a))
+parseSLTypeFromSExpr :: SExpr -> BacktraceMonad (SL.Type Location)
+parseSLTypeFromSExpr (Atom r a) | SL.isValidTypeName a = do
+	l <- getLocation r
+	return (SL.TypeName loc (SL.NameOfType a))
 parseSLTypeFromSExpr (List _ xs) =
 	parseSLTypeFromSExprs xs
 parseSLTypeFromSExpr other =
-	Left ("invalid type " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
+	fail ("invalid type " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseSLTypeFromSExpr` tries to interpret a list of S-expressions as a
 -- `SL.Type`.
 
-parseSLTypeFromSExprs :: SExprs -> Either String (SL.Type Range)
+parseSLTypeFromSExprs :: SExprs -> BacktraceMonad (SL.Type Location)
 parseSLTypeFromSExprs whole@(Cons (Atom _ "fun") rest) = do
 	(args, rest2) <- breakOnAtom "->" rest
 	args' <-
-		errorContext ("in arg-type of " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
+		frameBacktrace ("in arg-type of " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
 		mapM parseSLTypeFromSExpr (sExprsToList args)
 	res <-
-		errorContext ("in result-type of " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
+		frameBacktrace ("in result-type of " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
 		parseSLTypeFromSExprs rest2
-	return (TypeFun (rangeOfSExprs whole) args' res)
+	loc <- getLocation (rangeOfSExprs whole)
+	return (TypeFun loc args' res)
 parseSLTypeFromSExprs whole@(Cons (Atom _ "lazy") rest) = do
 	inner <-
-		errorContext ("in inner type of \"lazy ...\" at " ++ formatRange (rangeOfSExprs whole)) $
+		frameBacktrace ("in inner type of \"lazy ...\" at " ++ formatRange (rangeOfSExprs whole)) $
 		parseSLTypeFromSExprs rest
-	return (TypeLazy (rangeOfSExprs whole) inner)
+	loc <- getLocation (rangeOfSExprs whole)
+	return (TypeLazy loc inner)
 parseSLTypeFromSExprs (Cons a (Nil _)) =
 	parseSLTypeFromSExpr a
 parseSLTypeFromSExprs whole@(Cons first args) = do
 	first' <-
-		errorContext ("in type being specialized in " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
+		frameBacktrace ("in type being specialized in " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
 		parseSLTypeFromSExpr first
 	args' <- sequence [do
 		arg' <-
-			errorContext ("in argument #" ++ show i ++ " in " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
+			frameBacktrace ("in argument #" ++ show i ++ " in " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
 			parseSLTypeFromSExpr arg
 		return (arg', endOfRange (rangeOfSExpr arg))
 		| (arg, i) <- zip (sExprsToList args) [1..]]
 	let startPoint = startOfRange (rangeOfSExpr first)
-	return (foldl (\ f (a, endPoint) -> TypeApp (Range startPoint endPoint) f a) first' args')
+	bt <- getBacktrace
+	return (foldl
+		(\ f (a, endPoint) -> TypeApp (Location (Range startPoint endPoint) bt) f a)
+		first'
+		args')
 parseSLTypeFromSExprs other =
-	Left ("invalid type " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
+	fail ("invalid type " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
 
 -- `parseSLTermFromSExpr` tries to interpret a S-expression as a `SL.Term`.
 
@@ -100,33 +102,36 @@ parseSLTermFromSExpr other =
 -- `parseSLTermFromSExpr` tries to interpret a list of S-expressions as a
 -- `SL.Term`.
 
-parseSLTermFromSExprs :: SExprs -> Either String (SL.Term Range)
+parseSLTermFromSExprs :: SExprs -> BacktraceMonad (SL.Term Location)
 parseSLTermFromSExprs whole@(Cons (Atom _ "\\") rest) = do
 	(args, rest2) <- breakOnAtom "->" rest
 	args' <- sequence [
-		errorContext ("in formal arg #" ++ show i ++ " of " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
+		frameBacktrace ("in formal arg #" ++ show i ++ " of " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
 		case arg of
 			List _ (Cons (Atom _ argName) (Cons (Atom _ "::") argType)) -> do
 				argType' <-
 					errorContext ("in argument's type") $
 					parseSLTypeFromSExprs argType
 				return (SL.NameOfTerm argName, argType')
-			_ -> Left ("malformed formal arg: " ++ summarizeSExpr arg ++ "expected \"(name :: type)\"")
+			_ -> fail ("malformed formal arg: " ++ summarizeSExpr arg ++ "expected \"(name :: type)\"")
 		| (arg, i) <- zip (sExprsToList args) [1..]]
 	body <-
-		errorContext ("in body of " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
+		frameBacktrace ("in body of " ++ summarizeSExprs whole ++ " at " ++ formatRange (rangeOfSExprs whole)) $
 		parseSLTermFromSExprs rest2
-	return (TermAbs (rangeOfSExprs whole) args' body)
+	loc <- getLocation (rangeOfSExprs whole)
+	return (TermAbs loc args' body)
 parseSLTermFromSExprs whole@(Cons (Atom _ "wrap") rest) = do
 	inner <-
-		errorContext ("in inner value of \"wrap ...\" at " ++ formatRange (rangeOfSExprs whole)) $
+		frameBacktrace ("in inner value of \"wrap ...\" at " ++ formatRange (rangeOfSExprs whole)) $
 		parseSLTermFromSExprs rest
-	return (TermWrap (rangeOfSExprs whole) inner)
+	loc <- getLocation (rangeOfSExprs whole)
+	return (TermWrap loc inner)
 parseSLTermFromSExprs whole@(Cons (Atom _ "unwrap") rest) = do
 	inner <-
-		errorContext ("in inner value of \"unwrap ...\" at " ++ formatRange (rangeOfSExprs whole)) $
+		frameBacktrace ("in inner value of \"unwrap ...\" at " ++ formatRange (rangeOfSExprs whole)) $
 		parseSLTermFromSExprs rest
-	return (TermWrap (rangeOfSExprs whole) inner)
+	loc <- getLocation (rangeOfSExprs whole)
+	return (TermWrap loc inner)
 parseSLTermFromSExprs whole@(Cons (Atom _ "case") rest) = case rest of
 	(Cons subject (Cons (Atom _ "of") rest2)) -> do
 		subject' <-
