@@ -13,7 +13,7 @@ import Metacompiler.SExpr.Types
 -- atom, so it returns a list instead of a pair. `maybeBreakOnAtom` expects to
 -- find zero or one occurrance.
 
-breakOnAtom :: String -> SExprs -> Either String (SExprs, SExprs)
+breakOnAtom :: String -> SExprs -> ErrorMonad (SExprs, SExprs)
 breakOnAtom atom block = break' block
 	where
 		break' (Nil p) =
@@ -24,10 +24,10 @@ breakOnAtom atom block = break' block
 			(before, after) <- break' rest
 			return (Cons x before, after)
 
-multiBreakOnAtom :: String -> SExprs -> Either String [SExprs]
+multiBreakOnAtom :: String -> SExprs -> ErrorMonad [SExprs]
 multiBreakOnAtom atom block = break' block
 	where
-		break' :: SExprs -> Either String [SExprs]
+		break' :: SExprs -> ErrorMonad [SExprs]
 		break' (Nil p) = return [Nil p]
 		break' (Cons (Atom r a) rest) | a == atom = do
 			groups <- break' rest
@@ -36,7 +36,7 @@ multiBreakOnAtom atom block = break' block
 			(group:groups) <- break' rest
 			return (Cons x group:groups)
 
-maybeBreakOnAtom :: String -> SExprs -> Either String (SExprs, Maybe SExprs)
+maybeBreakOnAtom :: String -> SExprs -> ErrorMonad (SExprs, Maybe SExprs)
 maybeBreakOnAtom atom block = break' block
 	where
 		break' (Nil p) =
@@ -52,11 +52,11 @@ maybeBreakOnAtom atom block = break' block
 -- and returns it and the rest of the sequence. `expectOne` expects the given
 -- sequence to contain exactly one object, which it returns.
 
-takeOne :: String -> SExprs -> Either String (SExpr, SExprs)
+takeOne :: String -> SExprs -> ErrorMonad (SExpr, SExprs)
 takeOne what (Nil p) = fail ("expected " ++ what ++ " at " ++ formatPoint p)
 takeOne _ (Cons a b) = return (a, b)
 
-expectOne :: String -> SExprs -> Either String SExpr
+expectOne :: String -> SExprs -> ErrorMonad SExpr
 expectOne what (Nil p) = fail ("expected " ++ what ++ " at " ++ formatPoint p)
 expectOne _ (Cons a (Nil _)) = return a
 expectOne what (Cons a b) = fail ("expected nothing after the " ++ what ++ " at " ++ formatRange (rangeOfSExpr a) ++

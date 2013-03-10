@@ -88,7 +88,10 @@ data Binding a name = Binding {
 	valueOfBinding :: MetaObject a
 	} deriving Show
  
-data BindingParam a = BindingParam [(Name, MetaType a)] deriving Show
+data BindingParam a = BindingParam {
+	tagOfBindingParam :: a,
+	partsOfBindingParam :: [(Name, MetaType a)]
+	} deriving Show
 
 -- `Directive` represents a top-level translation language directive.
 
@@ -156,10 +159,10 @@ freeNamesInBinding :: Binding a n -> S.Set Name
 freeNamesInBinding (Binding _ _ params value) = f params
 	where
 		f [] = freeNamesInMetaObject value
-		f (BindingParam []:params) = f params
-		f (BindingParam ((paramName, paramType):paramParts):params) =
+		f (BindingParam _ []:params) = f params
+		f (BindingParam _ ((paramName, paramType):paramParts):params) =
 			freeNamesInMetaType paramType
-			`S.union` S.delete paramName (f (BindingParam paramParts:params))
+			`S.union` S.delete paramName (f (BindingParam undefined paramParts:params))
 
 freeNamesInAbstraction :: [(Name, MetaType a)] -> S.Set Name -> S.Set Name
 freeNamesInAbstraction [] inner = inner

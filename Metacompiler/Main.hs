@@ -6,6 +6,7 @@ import qualified Language.ECMAScript3.PrettyPrint as JS
 import qualified Metacompiler.Compile.CompileSL as CSL
 import qualified Metacompiler.Compile.CompileTL as CTL
 import qualified Metacompiler.Compile.FormatTL as FTL
+import Metacompiler.Error
 import qualified Metacompiler.Runtime as R
 import Metacompiler.SExpr.Parse
 import Metacompiler.SExpr.Types
@@ -26,18 +27,18 @@ main = do
 			sexprs <- parseSExprs contents
 			mapM TL.parseTLDirectiveFromSExpr (sExprsToList sexprs)
 		case maybeDirectives of
-			Left err -> do
+			Failure err -> do
 				hPutStrLn stderr "error:"
 				hPutStrLn stderr err
 				exitFailure
-			Right d -> return d
+			Success d -> return d
 		| filename <- filenames]
 	case CTL.compileDirectives allDirectives of
-		Left err -> do
+		Failure err -> do
 			hPutStrLn stderr "error:"
 			hPutStrLn stderr err
 			exitFailure
-		Right (CTL.GlobalResults (CSL.Defns slDataDefns slCtorDefns slTermDefns) tlDefns emits) -> do
+		Success (CTL.GlobalResults (CSL.Defns slDataDefns slCtorDefns slTermDefns) tlDefns emits) -> do
 			hPutStrLn stderr ("note: found " ++ show (M.size slDataDefns) ++ " SL data definition(s)")
 			forM_ (M.toList slDataDefns) $ \ (name, _) -> do
 				hPutStrLn stderr ("note:     " ++ SL.unNameOfType name)

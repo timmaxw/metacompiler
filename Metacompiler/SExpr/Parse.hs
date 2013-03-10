@@ -17,7 +17,7 @@ summarize s
 -- `parseSExprs` takes a string and interprets it as a sequence of
 -- S-expressions.
 
-parseSExprs :: String -> Either String SExprs
+parseSExprs :: String -> ErrorMonad SExprs
 parseSExprs string1 = do
 	let (string2, point2) = strip (string1, Point 1 1)
 	(topLevels, (string3, point3)) <- parseMany (string2, point2)
@@ -27,7 +27,7 @@ parseSExprs string1 = do
 	return topLevels
 
 	where
-		parseMany :: (String, Point) -> Either String (SExprs, (String, Point))
+		parseMany :: (String, Point) -> ErrorMonad (SExprs, (String, Point))
 		parseMany (string1, _) | not (isStripped string1) = error "input wasn't stripped properly"
 		parseMany ("", point) = return (Nil point, ("", point))
 		parseMany (')':string2, point1) = return (Nil point1, (')':string2, point1))
@@ -37,7 +37,7 @@ parseSExprs string1 = do
 			(elems, (string4, point4)) <- parseMany (string3, point3)
 			return (Cons elem elems, (string4, point4))
 
-		parseOne :: (String, Point) -> Either String (SExpr, (String, Point))
+		parseOne :: (String, Point) -> ErrorMonad (SExpr, (String, Point))
 		parseOne (string1, _) | not (isStripped string1) = error "input wasn't stripped properly"
 		parseOne ('(':string2, point1) = do
 			let point2 = stepPoint point1

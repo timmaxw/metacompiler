@@ -1,13 +1,12 @@
 module Metacompiler.Error (
 	module Control.Exception.Base,   -- re-export `assert`
 	assertM,
-	errorContext,
+	ErrorMonad(..), errorContext,
 	Point(..), formatPoint, Range(..), formatRange,
-	stepPoint, stepPoint', stepNewlinePoint
+	stepPoint, stepPoint', stepNewlinePoint, joinRanges
 	) where
 
 import Control.Exception.Base (assert)
-import Control.Monad.Trans.Error   -- allows `fail` in `Either String`
 
 -- `assertM` is like `assert`, but meant for use in monadic contexts. If you throw a `assertM condition` into a
 -- do-block, then if the condition fails, the do-block will throw an exception when it reaches that point.
@@ -15,11 +14,21 @@ import Control.Monad.Trans.Error   -- allows `fail` in `Either String`
 assertM :: Monad m => Bool -> m ()
 assertM condition = assert condition (return ())
 
+-- `ErrorMonad` is basically like `Either String`, except that it handles `fail` sanely.
+
+data ErrorMonad a = Success a | Failure String
+
+instance Monad ErrorMonad where
+	return = Success
+	Success x >>= b = b x
+	Failure m >>= _ = Failure m
+	fail = Failure
+
 -- `errorContext` prepends a note to an error message
 
-errorContext :: String -> Either String a -> Either String a
-errorContext note (Left msg) = Left (note ++ "\n" ++ msg)
-errorContext note (Right x) = Right x
+errorContext :: String -> ErrorMonad a -> ErrorMonad a
+errorContext note (Failure msg) = Failure (note ++ "\n" ++ msg)
+errorContext note (Success x) = Success x
 
 -- `Point` is a location in the source file.
 
@@ -68,3 +77,6 @@ stepPoint' n (Point l c) = (Point l (c+n))
 stepNewlinePoint :: Point -> Point
 stepNewlinePoint (Point l c) = (Point (l+1) 1)
 
+joinRanges :: Range -> Range -> Range
+joinRanges (Range a b) (Range c d) =
+	assert (b <= c) (Range a d)

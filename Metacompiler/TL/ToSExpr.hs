@@ -95,7 +95,7 @@ formatTLBindingAsSExpr tag nameFun (TL.Binding _ n ps v) =
 		sExprsToList (formatTLMetaObjectAsSExprs v)
 
 formatTLBindingParamAsSExpr :: TL.BindingParam a -> SExpr
-formatTLBindingParamAsSExpr (TL.BindingParam ps) =
+formatTLBindingParamAsSExpr (TL.BindingParam _ ps) =
 	mkList' $ Data.List.intercalate [mkAtom "|"] $ [
 		[mkAtom n, mkAtom "::"] ++
 		sExprsToList (formatTLMetaTypeAsSExprs t)

@@ -19,7 +19,7 @@ import Text.Parsec.String ()   -- So `String` is an instance of `Stream`
 -- `parseTLDirectiveFromSExpr` tries to interpret an S-expression as a
 -- `TL.Directive`. If it doesn't work, then it returns `Left <error>`.
 
-parseTLDirectiveFromSExpr :: SExpr -> Either String (TL.Directive Range)
+parseTLDirectiveFromSExpr :: SExpr -> ErrorMonad (TL.Directive Range)
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") rest)) = do
 	(name, rest2) <- case rest of
@@ -27,8 +27,8 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") rest)) = do
 		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs rest)))
 	(unparsedParamsAndMaybeType, rest3) <- breakOnAtom "=" rest2
 	(unparsedParams, maybeType) <- case breakOnAtom "::" unparsedParamsAndMaybeType of
-		Left e -> return (unparsedParamsAndMaybeType, Nothing)
-		Right (ps, t) -> case t of
+		Failure _ -> return (unparsedParamsAndMaybeType, Nothing)
+		Success (ps, t) -> case t of
 			Cons ty (Nil _) -> do
 				ty' <- parseTLMetaTypeFromSExpr ty
 				return (ps, Just ty')
@@ -94,7 +94,7 @@ parseTLDirectiveFromSExpr other =
 -- It is used in `fun ... -> ...` types, `\ ... -> ...` terms, and at the top
 -- of `let` and `js-expr` directives.
 
-parseTLParameterFromSExpr :: SExpr -> Either String (TL.Name, TL.MetaType Range)
+parseTLParameterFromSExpr :: SExpr -> ErrorMonad (TL.Name, TL.MetaType Range)
 parseTLParameterFromSExpr (List r (Cons (Atom _ name) (Cons (Atom _ "::") ty))) = do
 	ty' <- parseTLMetaTypeFromSExprs ty
 	return (TL.Name name, ty')
@@ -106,7 +106,7 @@ parseTLParameterFromSExpr other =
 -- `(name1 :: type1 | name2 :: type2 | name3 :: type3 | ...)`. It's used in
 -- bindings.
 
-parseTLMultiParameterFromSExpr :: SExpr -> Either String [(TL.Name, TL.MetaType Range)]
+parseTLMultiParameterFromSExpr :: SExpr -> ErrorMonad [(TL.Name, TL.MetaType Range)]
 parseTLMultiParameterFromSExpr (List r l) = do
 	parts <- multiBreakOnAtom "|" l
 	forM parts $ \ part -> case part of
@@ -122,7 +122,7 @@ parseTLMultiParameterFromSExpr (List r l) = do
 -- the keyword to be missing, and the second specifies if it's OK for the
 -- keyword to appear multiple times. The results are returned unparsed.
 
-parseClausesFromSExprs :: [(String, Bool, Bool)] -> SExprs -> Either String (M.Map String [(Range, SExprs)])
+parseClausesFromSExprs :: [(String, Bool, Bool)] -> SExprs -> ErrorMonad (M.Map String [(Range, SExprs)])
 parseClausesFromSExprs spec seq = do
 	clauses <- parseClauses' seq
 	sequence [do
@@ -134,7 +134,7 @@ parseClausesFromSExprs spec seq = do
 		| (name, zeroOk, multiOk) <- spec]
 	return clauses
 	where
-		parseClauses' :: SExprs -> Either String (M.Map String [(Range, SExprs)])
+		parseClauses' :: SExprs -> ErrorMonad (M.Map String [(Range, SExprs)])
 		parseClauses' (Nil _) = return (M.fromList [(name, []) | (name, _, _) <- spec])
 		parseClauses' (Cons c rest) = do
 			(name, value) <- case c of
@@ -148,7 +148,7 @@ parseClausesFromSExprs spec seq = do
 -- `parseTLMetaTypeFromSExpr` tries to interpret an S-expression as a
 -- `TL.MetaType`.
 
-parseTLMetaTypeFromSExpr :: SExpr -> Either String (TL.MetaType Range)
+parseTLMetaTypeFromSExpr :: SExpr -> ErrorMonad (TL.MetaType Range)
 parseTLMetaTypeFromSExpr (List _ stuff) =
 	parseTLMetaTypeFromSExprs stuff
 parseTLMetaTypeFromSExpr other =
@@ -157,7 +157,7 @@ parseTLMetaTypeFromSExpr other =
 -- `parseTLMetaTypeFromSExprs` tries to interpret a list of S-expressions as a
 -- `TL.MetaType`.
 
-parseTLMetaTypeFromSExprs :: SExprs -> Either String (TL.MetaType Range)
+parseTLMetaTypeFromSExprs :: SExprs -> ErrorMonad (TL.MetaType Range)
 parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "sl-type") rest) = do
 	unparsedKind <- expectOne "kind" rest
 	kind <- parseSLKindFromString unparsedKind
@@ -206,7 +206,7 @@ parseTLMetaTypeFromSExprs other =
 -- `parseTLMetaObjectFromSExpr` tries to interpret a list of S-expressions as a
 -- `TL.MetaObject`.
 
-parseTLMetaObjectFromSExpr :: SExpr -> Either String (TL.MetaObject Range)
+parseTLMetaObjectFromSExpr :: SExpr -> ErrorMonad (TL.MetaObject Range)
 parseTLMetaObjectFromSExpr (Atom range x) =
 	return $ TL.MOName {
 		TL.tagOfMetaObject = range,
@@ -218,7 +218,7 @@ parseTLMetaObjectFromSExpr (List _ stuff) =
 -- `parseTLMetaObjectFromSExprs` tries to interpret a list of S-expressions as
 -- a `TL.MetaObject`.
 
-parseTLMetaObjectFromSExprs :: SExprs -> Either String (TL.MetaObject Range)
+parseTLMetaObjectFromSExprs :: SExprs -> ErrorMonad (TL.MetaObject Range)
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "\\") rest) = do
 	(args, rest2) <- breakOnAtom "->" rest
 	args' <- mapM parseTLParameterFromSExpr (sExprsToList args)
@@ -310,14 +310,17 @@ parseTLMetaObjectFromSExprs whole@(Cons first args) = do
 parseTLMetaObjectFromSExprs other =
 	fail ("invalid meta-object " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
 
-parseBindingFromSExprs :: (String -> n) -> Range -> SExprs -> Either String (TL.Binding Range n)
+parseBindingFromSExprs :: (String -> n) -> Range -> SExprs -> ErrorMonad (TL.Binding Range n)
 parseBindingFromSExprs nameMaker range rest1 = do
 	(unparsedName, rest2) <- takeOne "name" rest1
 	name <- case unparsedName of
 		Quoted _ s -> return (nameMaker s)
 		_ -> fail ("at " ++ formatRange (rangeOfSExpr unparsedName) ++ ": name of variable to bind should be quoted")
 	(unparsedParams, unparsedValue) <- breakOnAtom "=" rest2
-	params <- mapM (liftM TL.BindingParam . parseTLMultiParameterFromSExpr) (sExprsToList unparsedParams)
+	params <- sequence [do
+		parts <- parseTLMultiParameterFromSExpr unparsedParam
+		return (TL.BindingParam (rangeOfSExpr unparsedParam) parts)
+		| unparsedParam <- sExprsToList unparsedParams]
 	value <- parseTLMetaObjectFromSExprs unparsedValue
 	return (TL.Binding {
 		TL.tagOfBinding = range,
@@ -329,7 +332,7 @@ parseBindingFromSExprs nameMaker range rest1 = do
 -- `parseJavaScriptExpressionFromString` and `parseJavaScriptStatementsFromString` try to interpret the given string as
 -- a JavaScript expression.
 
-parseJavaScriptExpressionFromString :: SExpr -> Either String (JS.Expression JS.SourcePos)
+parseJavaScriptExpressionFromString :: SExpr -> ErrorMonad (JS.Expression JS.SourcePos)
 parseJavaScriptExpressionFromString (Quoted _ string) =
 	case JS.parse JS.parseExpression "<string>" string' of
 		Left err -> fail (show err)
@@ -339,7 +342,7 @@ parseJavaScriptExpressionFromString (Quoted _ string) =
 parseJavaScriptExpressionFromString other =
 	fail ("expected a quoted string with JavaScript code")
 
-parseJavaScriptStatementsFromString :: SExpr -> Either String [JS.Statement JS.SourcePos]
+parseJavaScriptStatementsFromString :: SExpr -> ErrorMonad [JS.Statement JS.SourcePos]
 parseJavaScriptStatementsFromString (Quoted _ string) =
 	case JS.parse (JS.parseStatement `Text.Parsec.sepBy` Text.Parsec.space) "<string>" string of
 		Left err -> fail (show err)
@@ -352,22 +355,22 @@ parseJavaScriptStatementsFromString other =
 -- `parseSL{Kind,Type,Term,Directives}FromString` try to interpret the given string as a SL object. SL is also
 -- expressed as S-expressions, but it should still appear in quotes for consistency with Javascript.
 
-parseSLKindFromString :: SExpr -> Either String (SL.Kind Range)
+parseSLKindFromString :: SExpr -> ErrorMonad (SL.Kind Range)
 parseSLKindFromString (Quoted _ string) = do
 	sexprs <- parseSExprs string
 	SL.parseSLKindFromSExprs sexprs
 
-parseSLTypeFromString :: SExpr -> Either String (SL.Type Range)
+parseSLTypeFromString :: SExpr -> ErrorMonad (SL.Type Range)
 parseSLTypeFromString (Quoted _ string) = do
 	sexprs <- parseSExprs string
 	SL.parseSLTypeFromSExprs sexprs
 
-parseSLTermFromString :: SExpr -> Either String (SL.Term Range)
+parseSLTermFromString :: SExpr -> ErrorMonad (SL.Term Range)
 parseSLTermFromString (Quoted _ string) = do
 	sexprs <- parseSExprs string
 	SL.parseSLTermFromSExprs sexprs
 
-parseSLDirectivesFromString :: SExpr -> Either String [SL.Dir Range]
+parseSLDirectivesFromString :: SExpr -> ErrorMonad [SL.Dir Range]
 parseSLDirectivesFromString (Quoted _ string) = do
 	sexprs <- parseSExprs string
 	mapM SL.parseSLDirFromSExpr (sExprsToList sexprs)

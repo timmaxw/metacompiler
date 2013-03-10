@@ -9,7 +9,7 @@ import Metacompiler.SL.Syntax as SL
 -- `parseSLKindFromSExpr` tries to interpret an S-expression as a `SL.Kind`. If
 -- it doesn't work, then it returns `Left <error>`.
 
-parseSLKindFromSExpr :: SExpr -> Either String (SL.Kind Range)
+parseSLKindFromSExpr :: SExpr -> ErrorMonad (SL.Kind Range)
 parseSLKindFromSExpr (Atom r "*") =
 	return (SL.KindType r)
 parseSLKindFromSExpr (List _ xs) =
@@ -20,7 +20,7 @@ parseSLKindFromSExpr other =
 -- `parseSLKindFromSExpr` tries to interpret a list of S-expressions as a
 -- `SL.Kind`.
 
-parseSLKindFromSExprs :: SExprs -> Either String (SL.Kind Range)
+parseSLKindFromSExprs :: SExprs -> ErrorMonad (SL.Kind Range)
 parseSLKindFromSExprs (Cons a (Nil _)) =
 	parseSLKindFromSExpr a
 parseSLKindFromSExprs whole@(Cons (Atom _ "fun") rest) = do
@@ -33,7 +33,7 @@ parseSLKindFromSExprs other =
 
 -- `parseSLTypeFromSExpr` tries to interpret a S-expression as a `SL.Type`.
 
-parseSLTypeFromSExpr :: SExpr -> Either String (SL.Type Range)
+parseSLTypeFromSExpr :: SExpr -> ErrorMonad (SL.Type Range)
 parseSLTypeFromSExpr (Atom r a) | SL.isValidTypeName a =
 	return (SL.TypeName r (SL.NameOfType a))
 parseSLTypeFromSExpr (List _ xs) =
@@ -44,7 +44,7 @@ parseSLTypeFromSExpr other =
 -- `parseSLTypeFromSExpr` tries to interpret a list of S-expressions as a
 -- `SL.Type`.
 
-parseSLTypeFromSExprs :: SExprs -> Either String (SL.Type Range)
+parseSLTypeFromSExprs :: SExprs -> ErrorMonad (SL.Type Range)
 parseSLTypeFromSExprs whole@(Cons (Atom _ "fun") rest) = do
 	(args, rest2) <- breakOnAtom "->" rest
 	args' <- mapM parseSLTypeFromSExpr (sExprsToList args)
@@ -68,7 +68,7 @@ parseSLTypeFromSExprs other =
 
 -- `parseSLTermFromSExpr` tries to interpret a S-expression as a `SL.Term`.
 
-parseSLTermFromSExpr :: SExpr -> Either String (SL.Term Range)
+parseSLTermFromSExpr :: SExpr -> ErrorMonad (SL.Term Range)
 parseSLTermFromSExpr (Atom r a) | SL.isValidTermName a =
 	return (SL.TermName r (SL.NameOfTerm a) [])   -- TODO: type parameters
 parseSLTermFromSExpr (List _ xs) =
@@ -79,7 +79,7 @@ parseSLTermFromSExpr other =
 -- `parseSLTermFromSExpr` tries to interpret a list of S-expressions as a
 -- `SL.Term`.
 
-parseSLTermFromSExprs :: SExprs -> Either String (SL.Term Range)
+parseSLTermFromSExprs :: SExprs -> ErrorMonad (SL.Term Range)
 parseSLTermFromSExprs whole@(Cons (Atom _ "\\") rest) = do
 	(args, rest2) <- breakOnAtom "->" rest
 	args' <- sequence [
@@ -143,7 +143,7 @@ parseSLTermFromSExprs other =
 
 -- `parseSLDirFromSExpr` tries to interpret the given S-expression as a `SL.Dir`.
 
-parseSLDirFromSExpr :: SExpr -> Either String (SL.Dir Range)
+parseSLDirFromSExpr :: SExpr -> ErrorMonad (SL.Dir Range)
 parseSLDirFromSExpr (List range (Cons (Atom _ "data") rest)) =
 	case rest of
 		Atom _ name `Cons` Atom _ "=" `Cons` ctors -> do

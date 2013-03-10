@@ -109,7 +109,7 @@ formatMetaObjectAsTL' (R.MOJSExprLiteral e t c bs) = do
 			t1' <- formatMetaObjectAsTL' t1
 			let n2' = TL.Name (R.unNameOfMetaObject n2)
 			t2' <- formatMetaObjectAsTL' t2
-			return (TL.BindingParam [(n1', TL.MTSLTerm () t1'), (n2', TL.MTJSExpr () t2' (TL.MOName () n1'))])
+			return (TL.BindingParam () [(n1', TL.MTSLTerm () t1'), (n2', TL.MTJSExpr () t2' (TL.MOName () n1'))])
 			| R.JSExprBindingParam n1 t1 n2 t2 <- ps]
 		let toForbid = map (TL.Name . R.unNameOfMetaObject) $
 				concat [[n1, n2] | R.JSExprBindingParam n1 _ n2 _ <- ps]
@@ -177,7 +177,7 @@ handleMetaObjectEmbeddedInSLType typeScope obj =
 			| (tlName, (slName, type_)) <- M.toList recordedTerms]
 		let typesToBind = [(tlName, slName, kind)
 			| (tlName, (slName, kind)) <- M.toList recordedTypes, R.NameOfSLType (SL.unNameOfType slName) `M.member` typeScope]
-		let typeParams = [TL.BindingParam [(tlName, TL.MTSLType () kind)] | (tlName, _, kind) <- typesToBind]
+		let typeParams = [TL.BindingParam () [(tlName, TL.MTSLType () kind)] | (tlName, _, kind) <- typesToBind]
 		rootName <- generateTypeNameSLFMonad
 		recordTypeBindingSLFMonad (TL.Binding () rootName typeParams obj')
 		return $ foldl (SL.TypeApp ())
@@ -201,8 +201,8 @@ handleMetaObjectEmbeddedInSLTerm typeScope termScope thing =
 			| (tlName, (slName, kind)) <- M.toList recordedTypes, R.NameOfSLType (SL.unNameOfType slName) `M.member` typeScope]
 		let termsToBind = [(tlName, slName, type_)
 			| (tlName, (slName, type_)) <- M.toList recordedTerms, R.NameOfSLTerm (SL.unNameOfTerm slName) `M.member` termScope]
-		let typeParams = [TL.BindingParam [(tlName, TL.MTSLType () kind)] | (tlName, _, kind) <- typesToBind]
-		let termParams = [TL.BindingParam [(tlName, TL.MTSLTerm () type_)] | (tlName, _, type_) <- termsToBind]
+		let typeParams = [TL.BindingParam () [(tlName, TL.MTSLType () kind)] | (tlName, _, kind) <- typesToBind]
+		let termParams = [TL.BindingParam () [(tlName, TL.MTSLTerm () type_)] | (tlName, _, type_) <- termsToBind]
 		rootName <- generateTermNameSLFMonad
 		recordTermBindingSLFMonad (TL.Binding () rootName (typeParams++termParams) thing')
 		return $ foldl (SL.TermApp ())
