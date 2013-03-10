@@ -9,6 +9,12 @@
 		)
 	)
 
+	(let times (x :: Nat) (y :: Nat) :: Nat =
+		(case x of
+			(Zero) -> Zero
+			(Succ x') -> (plus y (times x' y))
+		)
+	)
 ]])
 
 (js-expr-type NatAsNumber =

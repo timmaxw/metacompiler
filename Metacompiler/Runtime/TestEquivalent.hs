@@ -27,6 +27,10 @@ equivalentMetaTypes' _ (MTSLType k1) (MTSLType k2) =
 	k1 == k2
 equivalentMetaTypes' equivs (MTSLTerm t1) (MTSLTerm t2) =
 	equivalentMetaObjects' equivs t1 t2
+equivalentMetaTypes' equivs (MTJSExprType e1) (MTJSExprType e2) =
+	equivalentMetaObjects' equivs e1 e2
+equivalentMetaTypes' equivs (MTJSExpr t1 e1) (MTJSExpr t2 e2) =
+	equivalentMetaObjects' equivs t1 t2 && equivalentMetaObjects' equivs e1 e2
 equivalentMetaTypes' equivs _ _ =
 	False
 
