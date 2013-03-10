@@ -60,7 +60,7 @@ typeOfMetaObject (MOSLTermUnwrap x) =
 typeOfMetaObject (MOJSExprTypeDefn defn params) =
 	MTJSExprType (slEquivOfJSExprTypeDefn defn params)
 typeOfMetaObject (MOJSExprLiteral equiv type_ _ _ ) =
-	MTJSExpr equiv type_
+	MTJSExpr type_ equiv
 
 slKindOfMetaObject :: MetaObject -> SLKind
 slKindOfMetaObject mo = case typeOfMetaObject mo of

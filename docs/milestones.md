@@ -1,10 +1,6 @@
-1. Finish making TL interpreter support manipulating SL terms and types
+1. Implement `use` and `infer`
 
-2. Add support for JS terms to interpreter (deps: 1)
+2. Support statements instead of just expressions
 
-3. Support including SL files (deps: 1)
-
-4. Implement `use` and `infer` (deps: 2)
-
-5. Automatic verification
+3. Automatic verification
 
