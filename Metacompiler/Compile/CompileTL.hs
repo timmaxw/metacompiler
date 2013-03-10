@@ -446,7 +446,10 @@ compileDirectives directives = flip evalStateT S.empty $ do
 			| dir <- directives]
 	sortedDefnDirs <- sequence [case scc of
 		Data.Graph.AcyclicSCC (name, dir) -> return (name, dir)
-		Data.Graph.CyclicSCC _ -> lift $ fail ("mutual recursion detected")
+		Data.Graph.CyclicSCC things -> fail ("the following top-level directive(s) form an illegal recursive loop: " ++ 
+			Data.List.intercalate ", "
+				["`" ++ TL.unName name ++ "` (at " ++ formatRange (TL.tagOfDirective dir) ++ ")"
+				| (name, dir) <- things] ++ ".")
 		| scc <- Data.Graph.stronglyConnComp unsortedDefnDirs]
 
 	(tlDefns, loopBreakersFromDefnDirs) <- runWriterT $ do

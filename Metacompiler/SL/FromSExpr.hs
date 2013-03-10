@@ -15,7 +15,7 @@ parseSLKindFromSExpr (Atom r "*") =
 parseSLKindFromSExpr (List _ xs) =
 	parseSLKindFromSExprs xs
 parseSLKindFromSExpr other =
-	fail ("invalid kind " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
+	fail ("invalid kind " ++ formatSExprForMessage other ++ " at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseSLKindFromSExpr` tries to interpret a list of S-expressions as a
 -- `SL.Kind`.
@@ -29,7 +29,7 @@ parseSLKindFromSExprs whole@(Cons (Atom _ "fun") rest) = do
 	res <- parseSLKindFromSExprs rest2
 	return (KindFun (rangeOfSExprs whole) args' res)
 parseSLKindFromSExprs other =
-	fail ("invalid kind " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
+	fail ("invalid kind " ++ formatSExprsForMessage other ++ " at " ++ formatRange (rangeOfSExprs other))
 
 -- `parseSLTypeFromSExpr` tries to interpret a S-expression as a `SL.Type`.
 
@@ -39,7 +39,7 @@ parseSLTypeFromSExpr (Atom r a) | SL.isValidTypeName a =
 parseSLTypeFromSExpr (List _ xs) =
 	parseSLTypeFromSExprs xs
 parseSLTypeFromSExpr other =
-	fail ("invalid type " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
+	fail ("invalid type " ++ formatSExprForMessage other ++ " at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseSLTypeFromSExpr` tries to interpret a list of S-expressions as a
 -- `SL.Type`.
@@ -64,7 +64,7 @@ parseSLTypeFromSExprs whole@(Cons first args) = do
 	let startPoint = startOfRange (rangeOfSExpr first)
 	return (foldl (\ f (a, endPoint) -> TypeApp (Range startPoint endPoint) f a) first' args')
 parseSLTypeFromSExprs other =
-	fail ("invalid type " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
+	fail ("invalid type " ++ formatSExprsForMessage other ++ " at " ++ formatRange (rangeOfSExprs other))
 
 -- `parseSLTermFromSExpr` tries to interpret a S-expression as a `SL.Term`.
 
@@ -74,7 +74,7 @@ parseSLTermFromSExpr (Atom r a) | SL.isValidTermName a =
 parseSLTermFromSExpr (List _ xs) =
 	parseSLTermFromSExprs xs
 parseSLTermFromSExpr other =
-	fail ("invalid term " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
+	fail ("invalid term " ++ formatSExprForMessage other ++ " at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseSLTermFromSExpr` tries to interpret a list of S-expressions as a
 -- `SL.Term`.
@@ -87,7 +87,7 @@ parseSLTermFromSExprs whole@(Cons (Atom _ "\\") rest) = do
 			List _ (Cons (Atom _ argName) (Cons (Atom _ "::") argType)) -> do
 				argType' <- parseSLTypeFromSExprs argType
 				return (SL.NameOfTerm argName, argType')
-			_ -> fail ("malformed formal arg: " ++ summarizeSExpr arg ++ "expected \"(name :: type)\"")
+			_ -> fail ("malformed formal arg: " ++ formatSExprForMessage arg ++ "expected \"(name :: type)\"")
 		| (arg, i) <- zip (sExprsToList args) [1..]]
 	body <- parseSLTermFromSExprs rest2
 	return (TermAbs (rangeOfSExprs whole) args' body)
@@ -111,12 +111,12 @@ parseSLTermFromSExprs whole@(Cons (Atom _ "case") rest) = case rest of
 							case var of
 								Atom _ v -> return (SL.NameOfTerm v)
 								_ -> fail ("expected pattern variable, got " ++
-									summarizeSExpr var ++ " at " ++
+									formatSExprForMessage var ++ " at " ++
 									formatRange (rangeOfSExpr var))
 							| var <- sExprsToList vars]
 						return (SL.NameOfTerm name, vars')
 					_ -> fail ("expected pattern, of the form \"ctor\" or \"(ctor var1 var2 \
-						\...)\", instead got " ++ summarizeSExpr pattern ++ " at " ++
+						\...)\", instead got " ++ formatSExprForMessage pattern ++ " at " ++
 						formatRange (rangeOfSExpr pattern))
 				branch' <- parseSLTermFromSExpr branch
 				let clause' = (ctor, [], vars, branch')
@@ -125,7 +125,8 @@ parseSLTermFromSExprs whole@(Cons (Atom _ "case") rest) = case rest of
 			(Nil _) ->
 				return []
 			_ -> fail ("expected clause of the form \"pattern -> expr\", instead got " ++
-				summarizeSExprs clauses ++ " at " ++ formatPoint (startOfRange (rangeOfSExprs clauses)))
+				formatSExprsForMessage clauses ++ " at " ++
+				formatPoint (startOfRange (rangeOfSExprs clauses)))
 		clauses' <- parseClauses rest2
 		return (TermCase (rangeOfSExprs whole) subject' clauses')
 parseSLTermFromSExprs (Cons a (Nil _)) =
@@ -139,7 +140,7 @@ parseSLTermFromSExprs whole@(Cons first args) = do
 	let startPoint = startOfRange (rangeOfSExpr first)
 	return (foldl (\ f (a, endPoint) -> TermApp (Range startPoint endPoint) f a) first' args')
 parseSLTermFromSExprs other =
-	fail ("invalid term " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
+	fail ("invalid term " ++ formatSExprsForMessage other ++ " at " ++ formatRange (rangeOfSExprs other))
 
 -- `parseSLDirFromSExpr` tries to interpret the given S-expression as a `SL.Dir`.
 

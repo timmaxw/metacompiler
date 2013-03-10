@@ -4,7 +4,18 @@ module Metacompiler.SExpr.UtilsFrom where
 -- hence the somewhat strange name `UtilsFrom`.
 
 import Metacompiler.Error
+import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Types
+
+-- `formatSExprForMessage` and `formatSExprsForMessage` are for formatting error messages. They return a textual
+-- representation of the `SExpr` or `SExprs`, with parts replaced with `...` as necessary to keep it from getting too
+-- long.
+
+formatSExprForMessage :: SExpr -> String
+formatSExprForMessage e = "`" ++ formatSExprLimit 2 e ++ "`"
+
+formatSExprsForMessage :: SExprs -> String
+formatSExprsForMessage e = "`" ++ formatSExprsLimit 2 e ++ "`"
 
 -- `breakOnAtom` is a convenience function for parsers. Given an atom name and
 -- an `SExprs`, it breaks the `SExprs` at the first occurrance of that atom. If

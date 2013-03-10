@@ -34,7 +34,7 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") rest)) = do
 				return (ps, Just ty')
 			_ -> fail ("expected single-atom type after \"::\" at " ++
 				formatPoint (startOfRange (rangeOfSExprs t)) ++ " but instead got " ++
-				summarizeSExprs t)
+				formatSExprsForMessage t)
 	params <- mapM parseTLParameterFromSExpr (sExprsToList unparsedParams)
 	value <- parseTLMetaObjectFromSExprs rest3
 	return $ TL.DLet {
@@ -99,7 +99,7 @@ parseTLParameterFromSExpr (List r (Cons (Atom _ name) (Cons (Atom _ "::") ty))) 
 	ty' <- parseTLMetaTypeFromSExprs ty
 	return (TL.Name name, ty')
 parseTLParameterFromSExpr other =
-	fail ("invalid parameter: expected `(name :: type)`, got " ++ summarizeSExpr other ++
+	fail ("invalid parameter: expected `(name :: type)`, got " ++ formatSExprForMessage other ++
 		" at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseTLMultiParameterFromSExpr` expects a `SExpr` that looks like
@@ -113,7 +113,7 @@ parseTLMultiParameterFromSExpr (List r l) = do
 		Cons (Atom _ name) (Cons (Atom _ "::") ty) -> do
 			ty' <- parseTLMetaTypeFromSExprs ty
 			return (TL.Name name, ty')
-		_ -> fail ("invalid parameter: expected `name :: type`, got " ++ summarizeSExprs part ++
+		_ -> fail ("invalid parameter: expected `name :: type`, got " ++ formatSExprsForMessage part ++
 			" at " ++ formatRange (rangeOfSExprs part))
 
 -- `parseClausesFromSExprs` expects a series of clauses of the form
@@ -139,7 +139,7 @@ parseClausesFromSExprs spec seq = do
 		parseClauses' (Cons c rest) = do
 			(name, value) <- case c of
 				List _ (Cons (Atom _ name) value) -> return (name, value)
-				_ -> fail ("invalid clause " ++ summarizeSExpr c ++ " at " ++ formatRange (rangeOfSExpr c))
+				_ -> fail ("invalid clause " ++ formatSExprForMessage c ++ " at " ++ formatRange (rangeOfSExpr c))
 			unless (any (\(name', _, _) -> name == name') spec) $
 				fail ("invalid clause type \"" ++ name ++ "\" at " ++ formatRange (rangeOfSExpr c))
 			rest' <- parseClauses' rest
@@ -152,7 +152,7 @@ parseTLMetaTypeFromSExpr :: SExpr -> ErrorMonad (TL.MetaType Range)
 parseTLMetaTypeFromSExpr (List _ stuff) =
 	parseTLMetaTypeFromSExprs stuff
 parseTLMetaTypeFromSExpr other =
-	fail ("invalid meta-type " ++ summarizeSExpr other ++ " at " ++ formatRange (rangeOfSExpr other))
+	fail ("invalid meta-type " ++ formatSExprForMessage other ++ " at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseTLMetaTypeFromSExprs` tries to interpret a list of S-expressions as a
 -- `TL.MetaType`.
@@ -201,7 +201,7 @@ parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-expr") rest) = do
 parseTLMetaTypeFromSExprs whole@(Cons x (Nil _)) =
 	parseTLMetaTypeFromSExpr x
 parseTLMetaTypeFromSExprs other =
-	fail ("invalid meta-type " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
+	fail ("invalid meta-type " ++ formatSExprsForMessage other ++ " at " ++ formatRange (rangeOfSExprs other))
 
 -- `parseTLMetaObjectFromSExpr` tries to interpret a list of S-expressions as a
 -- `TL.MetaObject`.
@@ -214,6 +214,8 @@ parseTLMetaObjectFromSExpr (Atom range x) =
 		}
 parseTLMetaObjectFromSExpr (List _ stuff) =
 	parseTLMetaObjectFromSExprs stuff
+parseTLMetaObjectFromSExpr other =
+	fail ("invalid meta-object " ++ formatSExprForMessage other ++ " at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseTLMetaObjectFromSExprs` tries to interpret a list of S-expressions as
 -- a `TL.MetaObject`.
@@ -308,7 +310,7 @@ parseTLMetaObjectFromSExprs whole@(Cons first args) = do
 			}
 		) first' args')
 parseTLMetaObjectFromSExprs other =
-	fail ("invalid meta-object " ++ summarizeSExprs other ++ " at " ++ formatRange (rangeOfSExprs other))
+	fail ("invalid meta-object " ++ formatSExprsForMessage other ++ " at " ++ formatRange (rangeOfSExprs other))
 
 parseBindingFromSExprs :: (String -> n) -> Range -> SExprs -> ErrorMonad (TL.Binding Range n)
 parseBindingFromSExprs nameMaker range rest1 = do
