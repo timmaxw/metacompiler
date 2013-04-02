@@ -9,16 +9,16 @@
 
 ]])
 
-(let Factorial (xSL :: sl-term (sl-type "Nat")) (xJS :: js-expr NatAsNumber xSL) = (js-loop-break
-	(equiv (sl-term "factorial x" (term "x" = xSL)))
+(let Factorial (xSL :: sl-term (sl-type "Nat")) (xJS :: js-expr NatAsNumber xSL) = (js-expr-loop-break
+	(spec (sl-term "factorial x" (term "x" = xSL)))
 	(type NatAsNumber)
 	(content
 		(NatAsNumberCase
 			xSL xJS
 			(sl-type "Nat") NatAsNumber
-			(sl-term "Succ Zero") (NatAsNumberSucc NatAsNumberZero)
+			(sl-term "Succ Zero") (NatAsNumberSucc (sl-term "Zero") NatAsNumberZero)
 			(\ (ySL :: sl-term (sl-type "Nat")) ->
-				sl-term "times x (factorial y)"
+				sl-term "times x (factorial y)" (term "x" = xSL) (term "y" = ySL)
 				)
 			(\ (ySL :: sl-term (sl-type "Nat")) (yJS :: js-expr NatAsNumber ySL) ->
 				NatAsNumberTimes
@@ -30,6 +30,18 @@
 	))
 
 (js-emit "the_answer = x;" (expr "x" =
-	(Factorial (NatAsNumberSucc (NatAsNumberSucc (NatAsNumberSucc (NatAsNumberSucc (NatAsNumberSucc NatAsNumberZero))))))
+	(Factorial
+		(sl-term "Succ (Succ (Succ Zero))")
+		(NatAsNumberSucc
+			(sl-term "Succ (Succ Zero)")
+			(NatAsNumberSucc
+				(sl-term "Succ Zero")
+				(NatAsNumberSucc
+					(sl-term "Zero")
+					NatAsNumberZero
+					)
+				)
+			)
+		)
 	))
 

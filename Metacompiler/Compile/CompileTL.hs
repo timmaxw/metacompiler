@@ -14,6 +14,7 @@ import qualified Metacompiler.Compile.FormatSL as FSL
 import qualified Metacompiler.Compile.FormatTL as FTL
 import qualified Metacompiler.Compile.CompileSL as CSL
 import qualified Metacompiler.SL.Syntax as SL
+import qualified Metacompiler.TL.FreeNames as TL
 import qualified Metacompiler.TL.Syntax as TL
 
 data MetaObjectInScope
@@ -32,8 +33,8 @@ newtype LoopBreakerToProcess
 
 type LocalCompileMonad a = WriterT [LoopBreakerToProcess] (StateT (S.Set (JS.Id ())) (ErrorMonad)) a
 
-embedEither :: ErrorMonad a -> LocalCompileMonad a
-embedEither = lift . lift
+embedError :: ErrorMonad a -> LocalCompileMonad a
+embedError = lift . lift
 
 formatMTForMessage :: R.MetaType -> String
 formatMTForMessage t = "`" ++ FTL.formatMetaTypeAsString t ++ "`"
@@ -45,7 +46,7 @@ compileMetaType :: Scope -> TL.MetaType Range -> LocalCompileMonad R.MetaType
 compileMetaType scope (TL.MTFun range params result) =
 	compileAbstraction scope params (\_ scope' -> compileMetaType scope' result) R.MTFun
 compileMetaType scope (TL.MTSLType range slKind) = do
-	slKind' <- embedEither $ CSL.compileSLKind slKind
+	slKind' <- embedError $ CSL.compileSLKind slKind
 	return (R.MTSLType slKind')
 compileMetaType scope (TL.MTSLTerm range slType) = do
 	slType' <- compileMetaObject scope slType
@@ -124,25 +125,21 @@ compileMetaObject scope (TL.MOName range name) = case M.lookup name (metaObjects
 		fail ("at " ++ formatRange range ++ ": name `" ++ TL.unName name ++ "` is not in scope")
 
 compileMetaObject scope (TL.MOSLTypeLiteral range code typeBindings) = do
-	typeBindings' <- compileSLTypeBindings
-		("in `(sl-type ...)` literal at " ++ formatRange range ++ ": ")
-		scope typeBindings
-	embedEither $ CSL.compileSLType
+	let msgPrefix = "in `(sl-type ...)` literal at " ++ formatRange range ++ ": "
+	typeBindings' <- compileSLTypeBindings msgPrefix scope typeBindings
+	embedError $ errorContext msgPrefix $ CSL.compileSLType
 		(M.union typeBindings' (CSL.typesInScope $ slObjectsInScope $ scope))
 		[] code
 
 compileMetaObject scope (TL.MOSLTermLiteral range code typeBindings termBindings) = do
-	typeBindings' <- compileSLTypeBindings
-		("in `(sl-term ...)` literal at " ++ formatRange range ++ ": ")
-		scope typeBindings
-	termBindings' <- compileSLTermBindings
-		("in `(sl-term ...)` literal at " ++ formatRange range ++ ": ")
-		scope termBindings
+	let msgPrefix = "in `(sl-term ...)` literal at " ++ formatRange range ++ ": "
+	typeBindings' <- compileSLTypeBindings msgPrefix scope typeBindings
+	termBindings' <- compileSLTermBindings msgPrefix scope termBindings
 	let slScope' = (slObjectsInScope scope) {
 			CSL.typesInScope = typeBindings' `M.union` (CSL.typesInScope $ slObjectsInScope scope),
 			CSL.termsInScope = termBindings' `M.union` (CSL.termsInScope $ slObjectsInScope scope)
 			} 
-	embedEither $ CSL.compileSLTerm slScope' [] code
+	embedError $ errorContext msgPrefix $ CSL.compileSLTerm slScope' [] code
 
 compileMetaObject scope (TL.MOJSExprLiteral range equiv type_ expr bindings) = do
 	let msgPrefix = "in `(js-expr ...)` literal at " ++ formatRange range ++ ": "
@@ -190,7 +187,7 @@ compileMetaObject scope (TL.MOJSExprLoopBreak range equiv type_ content) = do
 	let params = [(synName, runName, eq, ty)
 		| (synName, MetaObjectInScopeLocal runName (R.MTJSExpr eq ty)) <- M.toList (metaObjectsInScope scope)
 		, synName `S.member` freeNames]
-		where freeNames = TL.freeNamesInMetaObject content
+		where freeNames = TL.freeNamesInMetaObject True content
 
 	let loopBreakerToProcess = LoopBreakerToProcess $ \globalDefns -> do
 
@@ -433,6 +430,7 @@ data GlobalResults = GlobalResults {
 
 compileDirectives :: [TL.Directive Range] -> ErrorMonad GlobalResults
 compileDirectives directives = flip evalStateT S.empty $ do
+
 	let allSLDirs = concat [content | TL.DSLCode _ content <- directives]
 	slDefns <- lift $ CSL.compileSLDirectives allSLDirs
 
@@ -440,8 +438,8 @@ compileDirectives directives = flip evalStateT S.empty $ do
 	-- introduce new names into scope. They also both may refer to names already in scope; this means that they have to
 	-- be top-sorted before processing them.
 	let unsortedDefnDirs = concat [case dir of
-			TL.DLet _ name _ _ _ -> [((name, dir), name, S.toList (TL.freeNamesInDirective dir))]
-			TL.DJSExprType _ name _ _ -> [((name, dir), name, S.toList (TL.freeNamesInDirective dir))]
+			TL.DLet _ name _ _ _ -> [((name, dir), name, S.toList (TL.freeNamesInDirective False dir))]
+			TL.DJSExprType _ name _ _ -> [((name, dir), name, S.toList (TL.freeNamesInDirective False dir))]
 			_ -> []
 			| dir <- directives]
 	sortedDefnDirs <- sequence [case scc of
@@ -490,7 +488,11 @@ compileDirectives directives = flip evalStateT S.empty $ do
 					) R.MOAbs
 
 		foldM (\ tlDefns (name, defnDir) -> do
-			let scope = Scope (M.map MetaObjectInScopeGlobalPresent tlDefns) (CSL.scopeForDefns slDefns)
+			let scope = Scope
+				(M.map MetaObjectInScopeGlobalPresent tlDefns `M.union`
+					M.fromList [(name, MetaObjectInScopeGlobalFuture)
+						| (name, _) <- sortedDefnDirs, name `M.notMember` tlDefns])
+				(CSL.scopeForDefns slDefns)
 			value <- compileDefnDir scope defnDir
 			return $ M.insert name value tlDefns
 			)
