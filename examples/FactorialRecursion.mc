@@ -45,7 +45,7 @@
 		)
 	))
 
-(js-emit "the_answer = x;" (expr "x" =
+(js-emit "the_answer = x();" (expr "x" =
 	(Factorial
 		(sl-term "Succ (Succ (Succ Zero))")
 		(NatAsNumberSucc
