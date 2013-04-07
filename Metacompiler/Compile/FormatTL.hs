@@ -117,6 +117,11 @@ formatMetaObjectAsTL' (R.MOJSExprLiteral e t c bs) = do
 		return (TL.Binding () n ps' v')
 		| (n, R.JSExprBinding ps v) <- M.toList bs]
 	return (TL.MOJSExprLiteral () e' t' c' bs')
+formatMetaObjectAsTL' (R.MOJSExprConvertEquiv outEquiv content) = do
+	outEquiv' <- formatMetaObjectAsTL' outEquiv
+	inEquiv' <- formatMetaObjectAsTL' (case R.typeOfMetaObject content of R.MTJSExpr _ equiv -> equiv)
+	content' <- formatMetaObjectAsTL' content
+	return (TL.MOJSExprConvertEquiv () inEquiv' outEquiv' content')
 
 -- This is the tricky part: decompiling SL type and term literals. The general procedure is as follows:
 --   * When we encounter a SL type or term in the `R.MetaObject` we are traversing, we call `makeSLTypeLiteral` or

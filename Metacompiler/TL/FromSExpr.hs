@@ -293,6 +293,20 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr-loop-break") rest) = do
 		TL.jsTypeOfMOJSExprLoopBreak = type_,
 		TL.slTermOfMOJSExprLoopBreak = spec
 		})
+parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr-convert-spec") rest) = do
+	clauses <- parseClausesFromSExprs [("in-spec", False, False), ("out-spec", False, False), ("content", False, False)] rest
+	inSpec <- let [(_, unparsedSpec)] = (M.!) clauses "in-spec" in
+		parseTLMetaObjectFromSExprs unparsedSpec
+	outSpec <- let [(_, unparsedSpec)] = (M.!) clauses "out-spec" in
+		parseTLMetaObjectFromSExprs unparsedSpec
+	content <- let [(_, unparsedContent)] = (M.!) clauses "content" in
+		parseTLMetaObjectFromSExprs unparsedContent
+	return (TL.MOJSExprConvertEquiv {
+		TL.tagOfMetaObject = rangeOfSExprs whole,
+		TL.contentOfMOJSExprConvertEquiv = content,
+		TL.inEquivOfMOJSExprConvertEquiv = inSpec,
+		TL.outEquivOfMOJSExprConvertEquiv = outSpec
+		})
 parseTLMetaObjectFromSExprs whole@(Cons x (Nil _)) =
 	parseTLMetaObjectFromSExpr x
 parseTLMetaObjectFromSExprs whole@(Cons first args) = do

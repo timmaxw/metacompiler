@@ -44,6 +44,8 @@ traverseMetaObject v t = case t of
 		pure c <*> traverse (traverseBinding v) bs
 	MOJSExprLoopBreak a equiv type_ content -> MOJSExprLoopBreak a <$>
 		visitO equiv <*> visitO type_ <*> visitO content
+	MOJSExprConvertEquiv a inEquiv outEquiv content -> MOJSExprConvertEquiv a <$>
+		visitO inEquiv <*> visitO outEquiv <*> visitO content
 	where
 		visitT = visitMetaType v
 		visitO = visitMetaObject v

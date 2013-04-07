@@ -33,6 +33,11 @@ reduceMetaObject obj@(MOJSExprLiteral { }) = let
 		Nothing -> obj'
 		Just fun -> MOJSExprLiteral equiv type_ (fun M.empty) M.empty
 
+reduceMetaObject (MOJSExprConvertEquiv newEquiv content) = case reduceMetaObject content of
+	MOJSExprLiteral equiv type_ code bindings ->
+		MOJSExprLiteral (reduceMetaObject newEquiv) type_ code bindings
+	other -> MOJSExprConvertEquiv (reduceMetaObject newEquiv) other
+
 reduceMetaObject other = runIdentity (traverseMetaObject reductionVisitor other)
 
 reductionVisitor :: Visitor Identity
@@ -53,6 +58,9 @@ tryReduceMetaObjectToJSExpression promised (MOJSExprLiteral _ _ expr bindings) =
 		return (name, reducedBind)
 		| (name, bind) <- M.toList bindings]
 	return (\valuesOfPromised -> JS.substituteExpression (M.map ($ valuesOfPromised) reducedBindings) expr)
+tryReduceMetaObjectToJSExpression promised (MOJSExprConvertEquiv _ content) =
+	tryReduceMetaObjectToJSExpression promised content
+tryReduceMetaObjectToJSExpression promised _ = Nothing
 
 tryReduceJSExprBindingToJSSubst :: S.Set NameOfMetaObject
                                 -> JSExprBinding
@@ -60,7 +68,7 @@ tryReduceJSExprBindingToJSSubst :: S.Set NameOfMetaObject
 tryReduceJSExprBindingToJSSubst promised (JSExprBinding params value) = do
 	let paramNames = [n | JSExprBindingParam _ _ n _ <- params]
 	let promised' = promised `S.union` S.fromList paramNames
-	valueAsFun <- tryReduceMetaObjectToJSExpression promised' value
+	valueAsFun <- tryReduceMetaObjectToJSExpression promised' (reduceMetaObject value)
 	return (\valuesOfPromised -> let
 		substFun = \ paramValues -> if length paramValues == length paramNames
 			then valueAsFun (M.fromList (zip paramNames paramValues) `M.union` valuesOfPromised)

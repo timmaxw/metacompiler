@@ -63,6 +63,7 @@ traverseMetaObject v t = case t of
 		visitJSExprBindingParam (JSExprBindingParam nameOfSL typeOfSL nameOfJS typeOfJS) =
 			JSExprBindingParam <$> pure nameOfSL <*> visitO typeOfSL <*> pure nameOfJS <*> visitO typeOfJS
 		in MOJSExprLiteral <$> visitO equiv <*> visitO type_ <*> pure expr <*> traverse visitJSExprBinding bindings
+	MOJSExprConvertEquiv newEquiv content -> liftA2 MOJSExprConvertEquiv (visitO newEquiv) (visitO content)
 	where
 		visitT = visitMetaType v
 		visitO = visitMetaObject v

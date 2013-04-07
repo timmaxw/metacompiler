@@ -35,7 +35,7 @@ data MetaType
 	| MTSLType SLKind
 	| MTSLTerm MetaObject
 	| MTJSExprType MetaObject
-	| MTJSExpr MetaObject MetaObject
+	| MTJSExpr MetaObject MetaObject   -- SL type, SL equivalent
 
 data JSExprTypeDefn = JSExprTypeDefn {
 	nameOfJSExprTypeDefn :: NameOfMetaObject,
@@ -65,7 +65,9 @@ data MetaObject
 
 	| MOJSExprTypeDefn JSExprTypeDefn [MetaObject]
 
-	| MOJSExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) JSExprBinding)
+	| MOJSExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) JSExprBinding)   -- equiv, type
+
+	| MOJSExprConvertEquiv MetaObject MetaObject   -- new equivalent, expression to convert
 
 data JSExprBinding = JSExprBinding {
 	paramsOfJSExprBinding :: [JSExprBindingParam],

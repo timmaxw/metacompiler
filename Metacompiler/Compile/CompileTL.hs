@@ -163,7 +163,7 @@ compileMetaObject scope (TL.MOJSExprLiteral range equiv type_ expr bindings) = d
 	return (R.MOJSExprLiteral equiv' type_' (JS.removeAnnotations expr) bindings')
 
 compileMetaObject scope (TL.MOJSExprLoopBreak range equiv type_ content) = do
-	let msgPrefix = "in `(js-loop-break ...)` construct at " ++ formatRange range ++ ": "
+	let msgPrefix = "in `(js-expr-loop-break ...)` construct at " ++ formatRange range ++ ": "
 	equiv' <- compileMetaObject scope equiv
 	slType1 <- case R.reduceMetaType (R.typeOfMetaObject equiv') of
 		R.MTSLTerm ty -> return ty
@@ -235,6 +235,34 @@ compileMetaObject scope (TL.MOJSExprLoopBreak range equiv type_ content) = do
 	let bindings = M.fromList [(jsName, R.JSExprBinding [] (R.MOName runName (R.MTJSExpr eq ty)))
 		| (jsName, (synName, runName, eq, ty)) <- zip paramJSNames params]
 	return $ R.MOJSExprLiteral equiv' type_' expr bindings
+
+compileMetaObject scope (TL.MOJSExprConvertEquiv range inEquiv outEquiv content) = do
+	let msgPrefix = "in `(js-expr-convert-equiv ...)` construct at " ++ formatRange range ++ ": "
+	inEquiv' <- compileMetaObject scope inEquiv
+	slType1 <- case R.reduceMetaType (R.typeOfMetaObject inEquiv') of
+		R.MTSLTerm ty -> return ty
+		otherType -> fail (msgPrefix ++ "the `in-equiv` given at " ++ formatRange (TL.tagOfMetaObject inEquiv) ++
+			" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type `(sl-term ...)`.")
+	outEquiv' <- compileMetaObject scope outEquiv
+	slType2 <- case R.reduceMetaType (R.typeOfMetaObject outEquiv') of
+		R.MTSLTerm ty -> return ty
+		otherType -> fail (msgPrefix ++ "the `out-equiv` given at " ++ formatRange (TL.tagOfMetaObject outEquiv) ++
+			" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type `(sl-term ...)`.")
+	unless (slType1 `R.equivalentMetaObjects` slType2) $
+		fail (msgPrefix ++ "the `in-equiv` given at " ++ formatRange (TL.tagOfMetaObject inEquiv) ++ " has SL \
+			\type " ++ CSL.formatTypeForMessage slType1 ++ ", but the `out-equiv` given at " ++
+			formatRange (TL.tagOfMetaObject outEquiv) ++ " has SL type " ++ CSL.formatTypeForMessage slType2 ++
+			". Because they have different types, they can't possibly be equivalent expressions.")
+	content' <- compileMetaObject scope content
+	case R.reduceMetaType (R.typeOfMetaObject content') of
+		R.MTJSExpr _ equiv ->
+			unless (equiv `R.equivalentMetaObjects` inEquiv') $
+				fail (msgPrefix ++ "the `content` given at " ++ formatRange (TL.tagOfMetaObject content) ++
+					" has SL equivalent " ++ CSL.formatTermForMessage equiv ++ ", but the `in-equiv` given at " ++
+					formatRange (TL.tagOfMetaObject inEquiv) ++ " is " ++ CSL.formatTermForMessage inEquiv' ++ ".")
+		otherType -> fail (msgPrefix ++ "the `content` given at " ++ formatRange (TL.tagOfMetaObject content) ++
+			" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type `(js-expr ...)`.")
+	return $ R.MOJSExprConvertEquiv outEquiv' content'
 
 compileAbstraction :: Scope
                    -> [(TL.Name, TL.MetaType Range)]
@@ -508,7 +536,9 @@ compileDirectives directives = flip evalStateT S.empty $ do
 			let substs = M.map (\binding ->
 				case R.tryReduceJSExprBindingToJSSubst S.empty binding of
 					Just f -> f M.empty
-					Nothing -> error "cannot reduce binding, for no good reason"
+					Nothing -> let
+						R.JSExprBinding _ value = binding
+						in error ("for some reason, cannot reduce binding: " ++ formatMOForMessage value)
 				) bindings'
 			return $ map (JS.substituteStatement substs M.empty . JS.removeAnnotations) code
 			| TL.DJSEmit range code bindings <- directives]

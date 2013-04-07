@@ -73,6 +73,13 @@ formatTLMetaObjectAsSExpr (TL.MOJSExprLoopBreak _ e t c) =
 		mkList' ([mkAtom "type"] ++ sExprsToList (formatTLMetaObjectAsSExprs t)),
 		mkList' ([mkAtom "content"] ++ sExprsToList (formatTLMetaObjectAsSExprs c))
 		]
+formatTLMetaObjectAsSExpr (TL.MOJSExprConvertEquiv _ i o c) =
+	mkList' [
+		mkAtom "js-expr-convert-equiv",
+		mkList' ([mkAtom "in-spec"] ++ sExprsToList (formatTLMetaObjectAsSExprs i)),
+		mkList' ([mkAtom "out-spec"] ++ sExprsToList (formatTLMetaObjectAsSExprs o)),
+		mkList' ([mkAtom "content"] ++ sExprsToList (formatTLMetaObjectAsSExprs c))
+		]
 formatTLMetaObjectAsSExpr other =
 	mkList (formatTLMetaObjectAsSExprs other)
 

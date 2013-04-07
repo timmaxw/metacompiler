@@ -13,17 +13,33 @@
 	(spec (sl-term "factorial x" (term "x" = xSL)))
 	(type NatAsNumber)
 	(content
-		(NatAsNumberCase
-			xSL xJS
-			(sl-type "Nat") NatAsNumber
-			(sl-term "Succ Zero") (NatAsNumberSucc (sl-term "Zero") NatAsNumberZero)
-			(\ (ySL :: sl-term (sl-type "Nat")) ->
-				sl-term "times x (factorial y)" (term "x" = xSL) (term "y" = ySL)
+		(js-expr-convert-spec
+			(in-spec
+				(sl-term
+					"(case x of (Zero) -> (Succ Zero) (Succ y) -> (times x (factorial y)))"
+					(term "x" = xSL)
+					)
 				)
-			(\ (ySL :: sl-term (sl-type "Nat")) (yJS :: js-expr NatAsNumber ySL) ->
-				NatAsNumberTimes
+			(out-spec
+				(sl-term
+					"factorial x"
+					(term "x" = xSL)
+					)
+				)
+			(content
+				(NatAsNumberCase
 					xSL xJS
-					(sl-term "factorial y" (term "y" = ySL)) (Factorial ySL yJS)
+					(sl-type "Nat") NatAsNumber
+					(sl-term "Succ Zero") (NatAsNumberSucc (sl-term "Zero") NatAsNumberZero)
+					(\ (ySL :: sl-term (sl-type "Nat")) ->
+						sl-term "times x (factorial y)" (term "x" = xSL) (term "y" = ySL)
+						)
+					(\ (ySL :: sl-term (sl-type "Nat")) (yJS :: js-expr NatAsNumber ySL) ->
+						NatAsNumberTimes
+							xSL xJS
+							(sl-term "factorial y" (term "y" = ySL)) (Factorial ySL yJS)
+						)
+					)
 				)
 			)
 		)

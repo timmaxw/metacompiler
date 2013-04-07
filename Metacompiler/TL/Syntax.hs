@@ -79,6 +79,12 @@ data MetaObject a
 		jsTypeOfMOJSExprLoopBreak :: MetaObject a,
 		contentOfMOJSExprLoopBreak :: MetaObject a
 	}
+	| MOJSExprConvertEquiv {
+		tagOfMetaObject :: a,
+		inEquivOfMOJSExprConvertEquiv :: MetaObject a,
+		outEquivOfMOJSExprConvertEquiv :: MetaObject a,
+		contentOfMOJSExprConvertEquiv :: MetaObject a
+		}
 	deriving Show
 
 data Binding a name = Binding {
