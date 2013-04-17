@@ -39,6 +39,50 @@
 	(impl "[x()].concat(xs())" (expr "x" = xJS) (expr "xs" = xsJS))
 ))
 
+(let ListAsArrayCase
+		(aSL :: sl-type "*") (aJS :: js-expr-type aSL)
+		(subjectSL :: sl-term (sl-type "List a" (type "a" = aSL)))
+		(subjectJS :: js-expr (ListAsArray aSL aJS) subjectSL)
+		(resTypeSL :: sl-type "*")
+		(resTypeJS :: js-expr-type resTypeSL)
+		(nilClauseSL :: sl-term resTypeSL)
+		(nilClauseJS :: js-expr resTypeJS nilClauseSL)
+		(consClauseSL :: fun
+			(xSL :: sl-term aSL)
+			(xsSL :: sl-term (sl-type "List a" (type "a" = aSL)))
+			-> sl-term resTypeSL)
+		(consClauseJS :: fun
+			(xSL :: sl-term aSL)
+			(xJS :: js-expr aJS xSL)
+			(xsSL :: sl-term (sl-type "List a" (type "a" = aSL)))
+			(xsJS :: js-expr (ListAsArray aSL aJS) xsSL)
+			-> js-expr resTypeJS (consClauseSL xSL xsSL))
+		= (js-expr
+	(type resTypeJS)
+	(spec (sl-term "case subject of (Nil a .) -> (nc .) (Cons a . x xs) -> (cc . x xs)"
+		(term "subject" = subjectSL)
+		(type "a" = aSL)
+		(term "nc" = nilClauseSL)
+		(term "cc" (xSL :: sl-term aSL) (xsSL :: sl-term (sl-type "List a" (type "a" = aSL))) = consClauseSL xSL xsSL)
+	))
+	(impl [[
+		(function(s) {
+			if (s.length == 0) {
+				return nc;
+			} else {
+				return cc(s[0], s.slice(1));
+			}
+		})(subject)
+		]]
+		(expr "subject" = subjectJS)
+		(expr "nc" = nilClauseJS)
+		(expr "cc"
+			(xSL :: sl-term aSL | xJS :: js-expr aJS xSL)
+			(xsSL :: sl-term (sl-type "List a" (type "a" = aSL)) | xsJS :: js-expr (ListAsArray aSL aJS) xsSL)
+			= consClauseJS xSL xJS xsSL xsJS)
+	)
+))
+
 (let ListAsArrayLength
 		(aSL :: sl-type "*") (aJS :: js-expr-type aSL)
 		(xSL :: sl-term (sl-type "List a" (type "a" = aSL))) (xJS :: js-expr (ListAsArray aSL aJS) xSL)
