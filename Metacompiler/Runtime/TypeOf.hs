@@ -20,6 +20,8 @@ typeOfMetaObject (MOName _ type_) =
 	type_
 typeOfMetaObject (MOSLTypeDefn defn) =
 	MTSLType (kindOfSLDataDefn defn)
+typeOfMetaObject (MOSLTypeName _ kind) =
+	MTSLType kind
 typeOfMetaObject (MOSLTypeApp fun _) =
 	case typeOfMetaObject fun of
 		MTSLType (SLKindFun _ retKind) -> MTSLType retKind

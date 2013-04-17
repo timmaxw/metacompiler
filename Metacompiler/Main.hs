@@ -40,20 +40,20 @@ main = do
 			exitFailure
 		Success (CTL.GlobalResults (CSL.Defns slDataDefns slCtorDefns slTermDefns) tlDefns emits) -> do
 			hPutStrLn stderr ("note: found " ++ show (M.size slDataDefns) ++ " SL data definition(s)")
-			forM_ (M.toList slDataDefns) $ \ (name, _) -> do
-				hPutStrLn stderr ("note:     " ++ SL.unNameOfType name)
+			-- forM_ (M.toList slDataDefns) $ \ (name, _) -> do
+			--	hPutStrLn stderr ("note:     " ++ SL.unNameOfType name)
 			hPutStrLn stderr ("note: found " ++ show (M.size slCtorDefns) ++ " SL ctor definition(s)")
-			forM_ (M.toList slCtorDefns) $ \ (name, _) -> do
-				hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)
+			-- forM_ (M.toList slCtorDefns) $ \ (name, _) -> do
+			--	hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)
 			hPutStrLn stderr ("note: found " ++ show (M.size slTermDefns) ++ " SL term definition(s)")
-			forM_ (M.toList slTermDefns) $ \ (name, _) -> do
-				hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)
+			-- forM_ (M.toList slTermDefns) $ \ (name, _) -> do
+			--	hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)
 			hPutStrLn stderr ("note: found " ++ show (M.size tlDefns) ++ " TL meta-object definition(s)")
-			forM_ (M.toList tlDefns) $ \ (name, value) -> do
-				let type1 = R.typeOfMetaObject value
-				let type2 = FTL.formatMetaTypeAsTL type1
-				let type3 = TL.formatTLMetaTypeAsString type2
-				hPutStrLn stderr ("note:     " ++ TL.unName name ++ " :: " ++ type3)
+			-- forM_ (M.toList tlDefns) $ \ (name, value) -> do
+			--	let type1 = R.typeOfMetaObject value
+			--	let type2 = FTL.formatMetaTypeAsTL type1
+			--	let type3 = TL.formatTLMetaTypeAsString type2
+			--	hPutStrLn stderr ("note:     " ++ TL.unName name ++ " :: " ++ type3)
 			when (null emits) $ do
 				hPutStrLn stderr "warning: there is no JS code to emit"
 			putStrLn (JS.renderStatements emits)

@@ -36,6 +36,7 @@ traverseMetaObject v t = case t of
 	MOAbs (paramName, paramType) body -> liftA2 MOAbs (liftA ((,) paramName) (visitT paramType)) (visitO body)
 	MOName name type_ -> liftA (MOName name) (visitT type_)
 	MOSLTypeDefn defn -> pure (MOSLTypeDefn defn)
+	MOSLTypeName name kind -> pure (MOSLTypeName name kind)
 	MOSLTypeApp fun arg -> liftA2 MOSLTypeApp (visitO fun) (visitO arg)
 	MOSLTypeFun argType retType -> liftA2 MOSLTypeFun (visitO argType) (visitO retType)
 	MOSLTypeLazy x -> liftA MOSLTypeLazy (visitO x)

@@ -224,7 +224,7 @@ data CommonState = CommonState {
 
 generateNameCommonState :: CommonState -> (String, CommonState)
 generateNameCommonState state = let
-	candidates = [[c] ++ n | c <- "abcdefghijklmnopqrstuvwxyz", n <- [""] ++ map show [2..]]
+	candidates = [[c] ++ n | n <- [""] ++ map show [2..], c <- "abcdefghijklmnopqrstuvwxyz"]
 	allForbidden = forbiddenNamesInCommonState state
 		`S.union` S.fromList (map TL.unName (tlStackInCommonState state))
 		`S.union` S.fromList (map SL.unNameOfType (slTypeStackInCommonState state))

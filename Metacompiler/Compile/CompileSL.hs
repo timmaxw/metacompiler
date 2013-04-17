@@ -339,7 +339,10 @@ compileSLDirectives directives = do
 					metaObject = R.MOSLTermName (runNameForTermParamName name) termParamType'
 					in (name, TermInScope [] [] (const (const metaObject)))
 					| ((name, _), termParamType') <- zip termParams termParamTypes']
-				scope2 = scope1 { termsInScope = paramTermsInScope `M.union` termsInScope scope1 }
+				scope2 = scope1 {
+					typesInScope = typeScope,
+					termsInScope = paramTermsInScope `M.union` termsInScope scope1
+					}
 
 				valueOrError = compileSLTerm scope2 [] value
 

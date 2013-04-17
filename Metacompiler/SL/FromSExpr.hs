@@ -69,10 +69,10 @@ parseSLTypeFromSExprs other =
 -- `parseSLTermFromSExpr` tries to interpret a S-expression as a `SL.Term`.
 
 parseSLTermFromSExpr :: SExpr -> ErrorMonad (SL.Term Range)
-parseSLTermFromSExpr (Atom r a) | SL.isValidTermName a =
-	return (SL.TermName r (SL.NameOfTerm a) [])   -- TODO: type parameters
 parseSLTermFromSExpr (List _ xs) =
 	parseSLTermFromSExprs xs
+parseSLTermFromSExpr other@(Atom r a) | SL.isValidTermName a =
+	return (SL.TermName r (SL.NameOfTerm a) [])
 parseSLTermFromSExpr other =
 	fail ("invalid term " ++ formatSExprForMessage other ++ " at " ++ formatRange (rangeOfSExpr other))
 
@@ -101,76 +101,101 @@ parseSLTermFromSExprs whole@(Cons (Atom _ "case") rest) = case rest of
 	(Cons subject (Cons (Atom _ "of") rest2)) -> do
 		subject' <- parseSLTermFromSExpr subject
 		let parseClauses clauses = case clauses of
-			(Cons pattern (Cons (Atom _ "->") (Cons branch rest))) -> do
-				let clause = Cons pattern $ Cons (Atom undefined "->") $ Cons branch $ Nil undefined
-				(ctor, vars) <- case pattern of
-					Atom _ name ->
-						return (SL.NameOfTerm name, [])
-					List _ (Cons (Atom _ name) vars) -> do
-						vars' <- sequence [
-							case var of
-								Atom _ v -> return (SL.NameOfTerm v)
-								_ -> fail ("expected pattern variable, got " ++
-									formatSExprForMessage var ++ " at " ++
-									formatRange (rangeOfSExpr var))
-							| var <- sExprsToList vars]
-						return (SL.NameOfTerm name, vars')
-					_ -> fail ("expected pattern, of the form \"ctor\" or \"(ctor var1 var2 \
-						\...)\", instead got " ++ formatSExprForMessage pattern ++ " at " ++
-						formatRange (rangeOfSExpr pattern))
+			(Cons (List _ pattern) (Cons (Atom _ "->") (Cons branch rest))) -> do
+				(ctorAndTypeParams, fields) <- breakOnAtom "." pattern
+				(ctor, typeParams) <- takeOne "constructor name" ctorAndTypeParams
+				ctor' <- case ctor of
+					Atom _ name -> return (SL.NameOfTerm name)
+					_ -> fail ("expected pattern of the form `(ctor types . fields)`, but the `ctor` was " ++
+						formatSExprForMessage ctor ++ " instead of a name.")
+				typeParams' <- sequence [parseSLTypeFromSExpr typeParam | typeParam <- sExprsToList typeParams]
+				fields' <- sequence [
+					case field of
+						Atom _ f -> return (SL.NameOfTerm f)
+						_ -> fail ("expected pattern variable, got " ++ formatSExprForMessage field ++ " at " ++
+							formatRange (rangeOfSExpr field))
+					| field <- sExprsToList fields]
 				branch' <- parseSLTermFromSExpr branch
-				let clause' = (ctor, [], vars, branch')
+				let clause' = (ctor', typeParams', fields', branch')
 				otherClauses <- parseClauses rest
 				return (clause':otherClauses)
 			(Nil _) ->
 				return []
-			_ -> fail ("expected clause of the form \"pattern -> expr\", instead got " ++
+			_ -> fail ("expected clause of the form `(ctor types . fields) -> expr`, instead got " ++
 				formatSExprsForMessage clauses ++ " at " ++
 				formatPoint (startOfRange (rangeOfSExprs clauses)))
 		clauses' <- parseClauses rest2
 		return (TermCase (rangeOfSExprs whole) subject' clauses')
 parseSLTermFromSExprs (Cons a (Nil _)) =
 	parseSLTermFromSExpr a
-parseSLTermFromSExprs whole@(Cons first args) = do
-	first' <- parseSLTermFromSExpr first
+parseSLTermFromSExprs whole = do
+	parts <- maybeBreakOnAtom "." whole
+	(first', args) <- case parts of
+		(Cons first args, Nothing) -> do
+			first' <- parseSLTermFromSExpr first
+			return (first', args)
+		(nameAndTypeArgs@(Cons name typeArgs), Just args) -> do
+			name' <- case name of
+				Atom r a | SL.isValidTermName a -> return (SL.NameOfTerm a)
+				_ -> fail ("at " ++ formatRange (rangeOfSExprs whole) ++ ": found expression with `.` in it, but `" ++
+						formatSExprForMessage name ++ "` is not a valid name.")
+			typeArgs' <- sequence [parseSLTypeFromSExpr typeArg | typeArg <- sExprsToList typeArgs]
+			return (SL.TermName (rangeOfSExprs nameAndTypeArgs) name' typeArgs', args) 
 	args' <- sequence [do
 		arg' <- parseSLTermFromSExpr arg
 		return (arg', endOfRange (rangeOfSExpr arg))
 		| (arg, i) <- zip (sExprsToList args) [1..]]
-	let startPoint = startOfRange (rangeOfSExpr first)
+	let startPoint = startOfRange (rangeOfSExprs whole)
 	return (foldl (\ f (a, endPoint) -> TermApp (Range startPoint endPoint) f a) first' args')
-parseSLTermFromSExprs other =
-	fail ("invalid term " ++ formatSExprsForMessage other ++ " at " ++ formatRange (rangeOfSExprs other))
 
 -- `parseSLDirFromSExpr` tries to interpret the given S-expression as a `SL.Dir`.
 
 parseSLDirFromSExpr :: SExpr -> ErrorMonad (SL.Dir Range)
-parseSLDirFromSExpr (List range (Cons (Atom _ "data") rest)) =
-	case rest of
-		Atom _ name `Cons` Atom _ "=" `Cons` ctors -> do
-			let name' = SL.NameOfType name
-			ctors' <- sequence [
-				case ctor of
-					List range2 (Atom _ ctorName `Cons` fields) -> do
-						let ctorName' = SL.NameOfTerm ctorName
-						fields' <- mapM parseSLTypeFromSExpr (sExprsToList fields)
-						return (ctorName', fields')
-					_ -> fail ("cannot parse constructor at " ++ formatRange (rangeOfSExpr ctor))
-				| ctor <- sExprsToList ctors]
-			return $ SL.DirData {
-				SL.tagOfDir = range,
-				SL.nameOfDirData = name',
-				SL.typeParamsOfDirData = [],
-				SL.ctorsOfDirData = ctors'
-				}
-		_ -> fail ("expected `(data <name> = <ctors>)`")
+parseSLDirFromSExpr (List range (Cons (Atom _ "data") rest)) = do
+	(nameAndParams, ctors) <- breakOnAtom "=" rest
+	(name, params) <- takeOne "name" nameAndParams
+	name' <- case name of
+		Atom _ n -> return (SL.NameOfType n)
+		_ -> fail ("expected `(data <name> <params> = <ctors>)`")
+	params' <- sequence [
+		case thing of
+			List _ (Atom _ paramName `Cons` Atom _ "::" `Cons` kind) -> do
+				let paramName' = SL.NameOfType paramName
+				kind' <- parseSLKindFromSExprs kind
+				return (paramName', kind')
+			_ -> fail ("expected `(<name> :: <kind>)`")
+		| thing <- sExprsToList params]
+	ctors' <- sequence [
+		case ctor of
+			List range2 (Atom _ ctorName `Cons` fields) -> do
+				let ctorName' = SL.NameOfTerm ctorName
+				fields' <- mapM parseSLTypeFromSExpr (sExprsToList fields)
+				return (ctorName', fields')
+			_ -> fail ("cannot parse constructor at " ++ formatRange (rangeOfSExpr ctor))
+		| ctor <- sExprsToList ctors]
+	return $ SL.DirData {
+		SL.tagOfDir = range,
+		SL.nameOfDirData = name',
+		SL.typeParamsOfDirData = params',
+		SL.ctorsOfDirData = ctors'
+		}
 parseSLDirFromSExpr (List range (Cons (Atom _ "let") rest)) = do
-	(nameAndTermParamsAndType, value) <- breakOnAtom "=" rest
-	(nameAndTermParams, type_) <- breakOnAtom "::" nameAndTermParamsAndType
-	(name, termParams) <- takeOne "name" nameAndTermParams
+	let msgPrefix = "in `let` directive at " ++ formatRange range ++ ":"
+	(nameAndAllParamsAndType, value) <- errorContext msgPrefix $ breakOnAtom "=" rest
+	(nameAndAllParams, type_) <- errorContext msgPrefix $ breakOnAtom "::" nameAndAllParamsAndType
+	(nameAndTypeParams, termParams) <- errorContext msgPrefix $ breakOnAtom "." nameAndAllParams
+	(name, typeParams) <- errorContext msgPrefix $ takeOne "name" nameAndTypeParams
 	name' <- case name of
 		Atom _ n -> return (SL.NameOfTerm n)
 		_ -> fail ("expected atom as name")
+	typeParams' <- sequence [
+		case thing of
+			List _ (Atom _ paramName `Cons` Atom _ "::" `Cons` kind) -> do
+				let paramName' = SL.NameOfType paramName
+				kind' <- parseSLKindFromSExprs kind
+				return (paramName', kind')
+			_ -> fail ("expected `(<name> :: <kind>)`")
+		| thing <- sExprsToList typeParams]
 	termParams' <- sequence [
 		case thing of
 			List _ (Atom _ paramName `Cons` Atom _ "::" `Cons` type_) -> do
@@ -184,7 +209,7 @@ parseSLDirFromSExpr (List range (Cons (Atom _ "let") rest)) = do
 	return $ SL.DirLet {
 		SL.tagOfDir = range,
 		SL.nameOfDirLet = name',
-		SL.typeParamsOfDirLet = [],
+		SL.typeParamsOfDirLet = typeParams',
 		SL.termParamsOfDirLet = termParams',
 		SL.typeOfDirLet = type_',
 		SL.valueOfDirLet = value'

@@ -44,10 +44,10 @@ formatSLTypeAsString :: SL.Type a -> String
 formatSLTypeAsString = formatSExpr . formatSLTypeAsSExpr
 
 formatSLTermAsSExpr :: SL.Term a -> SExpr
-formatSLTermAsSExpr (SL.TermName _ (SL.NameOfTerm name) typs) =
+formatSLTermAsSExpr t@(SL.TermName _ (SL.NameOfTerm name) typs) =
 	case typs of
 		[] -> mkAtom name
-		_ -> error "type parameters on SL term names not really supported yet"
+		_ -> mkList (formatSLTermAsSExprs t)
 formatSLTermAsSExpr (SL.TermAbs _ as b) =
 	mkList' $
 		[mkAtom "\\"] ++
@@ -76,6 +76,8 @@ formatSLTermAsSExprs :: SL.Term a -> SExprs
 formatSLTermAsSExprs (SL.TermApp _ f a) = let
 	f' = sExprsToList (formatSLTermAsSExprs f)
 	in sExprsFromList (f' ++ [formatSLTermAsSExpr a])
+formatSLTermAsSExprs (SL.TermName _ (SL.NameOfTerm name) typs) =
+	sExprsFromList $ [mkAtom name] ++ map formatSLTypeAsSExpr typs ++ [mkAtom "."]
 formatSLTermAsSExprs other =
 	sExprsFromList [formatSLTermAsSExpr other]
 

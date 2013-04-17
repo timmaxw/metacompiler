@@ -2,17 +2,17 @@
 
 	(data Nat = (Zero) (Succ Nat))
 
-	(let plus (x :: Nat) (y :: Nat) :: Nat =
+	(let plus . (x :: Nat) (y :: Nat) :: Nat =
 		(case x of
-			(Zero) -> y
-			(Succ x') -> (Succ (plus x' y))
+			(Zero .) -> y
+			(Succ . x') -> (Succ . (plus . x' y))
 		)
 	)
 
-	(let times (x :: Nat) (y :: Nat) :: Nat =
+	(let times . (x :: Nat) (y :: Nat) :: Nat =
 		(case x of
-			(Zero) -> Zero
-			(Succ x') -> (plus y (times x' y))
+			(Zero .) -> (Zero .)
+			(Succ . x') -> (plus . y (times . x' y))
 		)
 	)
 ]])
@@ -33,7 +33,7 @@
 		(xJS :: js-expr NatAsNumber xSL)
 		= (js-expr
 	(type NatAsNumber)
-	(spec (sl-term "Succ x" (term "x" = xSL)))
+	(spec (sl-term "Succ . x" (term "x" = xSL)))
 	(impl "x() + 1" (expr "x" = xJS))
 ))
 
@@ -44,7 +44,7 @@
 		(yJS :: js-expr NatAsNumber ySL)
 		= (js-expr
 	(type NatAsNumber)
-	(spec (sl-term "plus x y" (term "x" = xSL) (term "y" = ySL)))
+	(spec (sl-term "plus . x y" (term "x" = xSL) (term "y" = ySL)))
 	(impl "x() + y()" (expr "x" = xJS) (expr "y" = yJS))
 ))
 
@@ -55,7 +55,7 @@
 		(yJS :: js-expr NatAsNumber ySL)
 		= (js-expr
 	(type NatAsNumber)
-	(spec (sl-term "times x y" (term "x" = xSL) (term "y" = ySL)))
+	(spec (sl-term "times . x y" (term "x" = xSL) (term "y" = ySL)))
 	(impl "x() * y()" (expr "x" = xJS) (expr "y" = yJS))
 ))
 
@@ -70,7 +70,7 @@
 		(succClauseJS :: fun (xSL :: sl-term (sl-type "Nat")) (xJS :: js-expr NatAsNumber xSL) -> js-expr resTypeJS (succClauseSL xSL))
 		= (js-expr
 	(type resTypeJS)
-	(spec (sl-term "(case s of (Zero) -> (zc) (Succ x) -> (sc x))"
+	(spec (sl-term "(case s of (Zero .) -> (zc) (Succ . x) -> (sc . x))"
 		(term "s" = subjectSL)
 		(term "zc" = zeroClauseSL)
 		(term "sc" (xSL :: sl-term (sl-type "Nat")) = succClauseSL xSL)
