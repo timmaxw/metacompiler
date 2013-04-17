@@ -6,7 +6,7 @@ import Metacompiler.Runtime.Substitute
 import Metacompiler.Runtime.Types
 
 kindOfSLDataDefn :: SLDataDefn -> SLKind
-kindOfSLDataDefn defn = foldl SLKindFun SLKindType (typeParamsOfSLDataDefn defn)
+kindOfSLDataDefn defn = foldr SLKindFun SLKindType (typeParamsOfSLDataDefn defn)
 
 typeOfMetaObject :: MetaObject -> MetaType
 typeOfMetaObject (MOApp fun arg) =
