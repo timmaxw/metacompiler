@@ -16,7 +16,7 @@
 
 (let LazyAsFunctionUnwrap
 		(aSL :: sl-type "*") (aJS :: js-expr-type aSL)
-		(xSL :: sl-term (sl-type "lazy a" (type "a" = aSL))) (xJS :: js-expr (LazyAsFunction aJS) xSL)
+		(xSL :: sl-term (sl-type "lazy a" (type "a" = aSL))) (xJS :: js-expr (LazyAsFunction aSL aJS) xSL)
 		= (js-expr
 	(type aJS)
 	(spec (sl-term "unwrap x" (term "x" = xSL)))

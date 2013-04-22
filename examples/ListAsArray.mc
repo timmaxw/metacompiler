@@ -15,6 +15,12 @@
 			(Cons a . x xs) -> (Cons a . x (concat a . xs right))
 		)
 	)
+
+	(let map (a :: *) (b :: *) . (f :: fun a -> b) (l :: List a) :: (List b) =
+		case l of
+		    (Nil a .) -> (Nil b .)
+		    (Cons a . x xs) -> (Cons b . (f . x) (map a b . f xs))
+	)
 ]])
 
 (js-expr-type ListAsArray (aSL :: sl-type "*") (aJS :: js-expr-type aSL) =
@@ -102,3 +108,26 @@
 	(impl "x().concat(y())" (expr "x" = xJS) (expr "y" = yJS))
 ))
 
+(let ListAsArrayMap
+		(aSL :: sl-type "*") (aJS :: js-expr-type aSL)
+		(bSL :: sl-type "*") (bJS :: js-expr-type bSL)
+		(fSL :: sl-term (sl-type "fun a -> b" (type "a" = aSL) (type "b" = bSL)))
+		(fJS :: js-expr (FunctionType aSL aJS bSL bJS) fSL)
+		(lSL :: sl-term (sl-type "List a" (type "a" = aSL)))
+		(lJS :: js-expr (ListAsArray aSL aJS) lSL)
+		= (js-expr
+	(type (ListAsArray bSL bJS))
+	(spec (sl-term "map a b . f l" (type "a" = aSL) (type "b" = bSL) (term "f" = fSL) (term "l" = lSL)))
+	(impl [[
+		(function (f, l) {
+			var l2 = [];
+			for (var x in l) {
+				l2.push(f(x));
+			}
+			return l2;
+		})(fun(), list())
+		]]
+		(expr "fun" = fJS)
+		(expr "list" = lJS)
+	)
+))

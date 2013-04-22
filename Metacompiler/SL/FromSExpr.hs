@@ -96,7 +96,7 @@ parseSLTermFromSExprs whole@(Cons (Atom _ "wrap") rest) = do
 	return (TermWrap (rangeOfSExprs whole) inner)
 parseSLTermFromSExprs whole@(Cons (Atom _ "unwrap") rest) = do
 	inner <- parseSLTermFromSExprs rest
-	return (TermWrap (rangeOfSExprs whole) inner)
+	return (TermUnwrap (rangeOfSExprs whole) inner)
 parseSLTermFromSExprs whole@(Cons (Atom _ "case") rest) = case rest of
 	(Cons subject (Cons (Atom _ "of") rest2)) -> do
 		subject' <- parseSLTermFromSExpr subject
