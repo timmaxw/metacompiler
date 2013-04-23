@@ -1,58 +1,74 @@
 # Spec language (SL)
 
-The "spec language" of `metacompiler`, also called SL, is a lazy pure functional programming language that is equivalent to a subset of Haskell. For ease of implementation, it is expressed as S-expressions.
+The "spec language" of `metacompiler`, also called SL, is a lazy pure functional programming language that is equivalent to a subset of Haskell. Its syntax is expressed in S-expressions; see `s-expressions.md` for a description of those S-expressions.
 
 ## Kinds
 
-Kinds take the following forms:
+Kinds in SL are the same as in Haskell 98, but with slightly different syntax.
 
-```
-'*'
-```
-
-The kind of inhabited types.
+The kind of ordinary types is written as `*`. The kind of a type constructor is written in the following form:
 
 ```
 'fun' (<kind>)+ '->' <kind>
 ```
 
-The kind of types that are parameterized on other types. The parentheses can be omitted if the kind is one word.
+For example, the kind of the type-constructor `Maybe` could be written as `fun * -> *`.
+
+When multiple kinds are specified between `fun` and `->`, this is a syntactic sugar. For example, the kind of the type-constructor `Either` could be equivalently written either as `fun * * -> *` or as `fun * -> (fun * -> *)`.
 
 ## Types
 
-Types take the following forms:
+The type system is also much like Haskell 98's, but with different syntax, fewer built-in types, and a special syntax for laziness.
 
-### Name references
+Named types can (obviously) be referred to by name, and application of type constructors is as in Haskell. For example, `(List Nat)` is the type of lists of natural numbers.
 
-```
-<name>
-```
+Function types are written in the same form as the kinds of type constructors. For example, the type of binary functions on natural numbers is written as `fun Nat Nat -> Nat`. Of course, this is syntactic sugar for `fun Nat -> (fun Nat -> Nat)`. More complicated types are also possible; for example, the type of `map` for two arbitrary types `a` and `b` would be `fun (fun a -> b) (List a) -> List b`.
 
-Refers to a variable or definition in scope.
-
-### Providing parameters
-
-```
-<type> <type>
-```
-
-Provides a value for the parameter of a type.
-
-### Function types
-
-```
-'fun' (<type>)+ '->' <type>
-```
-
-The type of curried functions. The parentheses can be omitted if the type is one word. All functions in SL are strict!
-
-### Lazy value types
+Functions in SL are strict in their parameters. To get a lazy value, use the following special type:
 
 ```
 'lazy' <type>
 ```
 
-The type of lazy values.
+This gives a type which holds an unevaluated value. For example, consider the following Haskell function:
+
+```
+if' :: Bool -> a -> a -> a
+if' True x y = x
+if' False x y = y
+```
+
+This function is much more useful if `x` and `y` can be passed lazily. In SL, its type could be written as:
+
+```
+fun Bool (lazy a) (lazy a) -> a
+```
+
+## User-defined data types
+
+SL supports top-level `data` directives, as in Haskell, to introduce new types into scope. The general form of these is:
+
+```
+('data' <name> (<param-name> '::' <kind>)* '=' (<ctor-name> <type>*)+)
+```
+
+This introduces a new type into scope, with the given name. It takes one or more type parameters, the names and kinds of which must be specified explicitly, unlike in Haskell. It has one or more constructors, each of which has zero or more fields.
+
+For example, the type of natural numbers could be defined as follows:
+
+```
+(data Nat = (Zero) (Succ Nat))
+```
+
+Or, the type `Maybe` can be defined as:
+
+```
+(data Maybe (a :: *) = (Nothing) (Just a))
+```
+
+There are no restrictions on capitalization of the name of the type or its parameters; unlike in Haskell, either can begin with a capital or lower-case letter.
+
+Unlike in Haskell, all fields are strict.
 
 ## Expressions
 
@@ -60,29 +76,35 @@ Expressions take the following forms:
 
 ### Name references
 
-```
-<name> (<type>)*
-```
+Non-polymorphic names can be written as in Haskell.
 
-Refers to a variable or definition in scope. The types are type-parameters for if the name refers to something polymorphic. The parentheses can be omitted if the types are one word.
-
-### Application
+However, SL will not infer the types for polymorphic names; rather, they must be specified explicitly using the following syntax:
 
 ```
-<expr> (<expr>)
+<name> <type>* '.'
 ```
 
-Application. The parentheses can be omitted if the parameter is one word.
+For example, the `Nothing` constructor for the type `Maybe Nat` would be written as `(Nothing Nat .)`. 
 
-### Abstraction
+### Lambdas and function application
+
+Lambdas take the following form:
 
 ```
 '\' (<name> '::' <type>)+ '->' <expr>
 ```
 
-Abstraction.
+For example, the identity function for `Nat` could be written as `(\ (x :: Nat) -> x)`. If multiple parameters are specified, this is a syntactic sugar for nested lambdas, as in Haskell.
 
-### Examining data values
+Function application is also as in Haskell. For example, `((\ (x :: Nat) -> x) Zero)` will evaluate to `Zero`. When calling a polymorphic function, function parameters can be written after the `.`. For example, to fill the `Just` constructor for the type `Maybe Nat` with the value 2, we could write:
+
+```
+(Just Nat . (Succ (Succ Zero)))
+```
+
+### `case` expressions
+
+`case` expressions take the following form:
 
 ```
 'case' (<expr>) 'of' <case>*
@@ -91,50 +113,61 @@ Abstraction.
 where `<case>` is
 
 ```
-(<ctor> <name>*) '->' (<expr>)
+(<ctor> <type>* '.' <name>*) '->' (<expr>)
 ```
 
-Examining a data value. The parentheses around the `<expr>` after `case` can be omitted if it is only one word. The parentheses around `<ctor>` can be omitted if no `<name>`s follow it. The parentheses around the `<expr>` after the `->` can be omitted if it is only one word.
-
-### Making lazy values
+For example, the following function returns true if the given `Maybe Nat` is equal to `Just Nat . (Succ (Succ Zero))`, and false otherwise:
 
 ```
-'wrap' (<expr>)
+(\ (x :: Maybe Nat) -> (case x of
+	(Nothing Nat .) -> False
+	(Just Nat . y) -> (case y of
+		(Zero .) -> False
+		(Succ . z) -> (case z of
+			(Zero .) -> True
+			(Succ . w) -> False
+			)
+		)
+	)
+)
 ```
 
-Makes a value lazily evaluated. The parentheses around the `<expr>` can be omitted if it is only one word.
+### Lazy values
 
-### Using lazy values
-
-```
-'unwrap' (<expr>)
-```
-
-Evaluates a lazy value. The parentheses around the `<expr>` can be omitted if it is only one word.
-
-## `data` directives
-
-A `data` directive introduces a new type and one or more constructors into scope. It looks like this:
+To "wrap" a value in a lazy type for later evaluation, use the following syntax:
 
 ```
-('data' <name> (<name> '::' <kind>)* '=' (<ctor> <type>*)+)
+'wrap' <expr>
 ```
 
-The parentheses around `<ctor>` can be omitted if no types follow it.
+To reverse the process:
 
-It introduces a new type of kind `fun <...> -> *`, where `<...>` is the kinds of the parameters, into scope. It also introduces one or more constructors, of type `fun <...> -> <name>` where `<...>` is the types of the constructor fields and `<name>` is the name of the data type, into scope.
+```
+'unwrap' <expr>
+```
+
+Naturally, `unwrap (wrap x)` is just equivalent to `x`.
+
 
 ## `let` directives
 
 A `let` directive binds a term to a name. It looks like this:
 
 ```
-('let' <name> (<name> '::' <kind>)* (<name> '::' <type>)* '::' <type> '=' <expr>)
+('let' <name> (<param-name> '::' <kind>)* '.' (<param-name> '::' <type>)* '::' <type> '=' <expr>)
 ```
 
 It binds the name `<name>` to a function of zero or more parameters, evaluating to the thing on the right-hand side of the `=`. The type of the thing on the right-hand side of the `=` must evaluate to the `<type>` after the `::`. This is to simplify type inference.
 
-## Notes
-
 `let` and `data` directives can refer to names that were bound later in the file. So, order of directives does not matter.
 
+For example, a function to compute the sum of two natural numbers can be defined as follows:
+
+```
+(let add (x :: Nat) (y :: Nat) :: Nat = 
+	(case x of
+		(Zero) -> y
+		(Succ x') -> (add x' y)
+	)
+)
+```
