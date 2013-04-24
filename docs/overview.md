@@ -1,57 +1,46 @@
 # `metacompiler`
 
-`metacompiler` is an experimental compiler from SL, which is a simple Haskell-like language, to Javascript. It is unusual in that the compiler doesn't have enough built-in knowledge to translate SL into Javascript; instead, the user must provide a "translation" file that specifies how to translate different SL terms into Javascript expressions.
+`metacompiler` is an experimental compiler from SL (a simple Haskell-like language) to Javascript. It is unusual in that the user can customize how different SL constructs are translated into Javascript. The customizations are described using a domain-specific language called TL.
 
-`metacompiler` takes two inputs: SL files, and translation files. The SL files define functions and types but do not specify how to express them as Javascript. The translation files specify ways to translate the functions and types from SL to Javascript. They also specify what should actually be included in the output. The output from `metacompiler` is a Javascript file which defines some functions or values.
+## How `metacompiler` is used
 
-## Table of contents
+The simplest way to use `metacompiler` is just to give it some SL source files, and no TL files. `metacompiler` will output JavaScript translations for the functions in the SL source files.
 
-The documentation is broken up across the following files:
+The JavaScript code produced by the above process may be inefficient. To improve the efficiency, the programmer can also provide one or more TL files as input to `metacompiler`. The TL files give specify a series of SL types or expressions, and their JavaScript equivalents. For example, they might specify that SL integers are to be represented as JavaScript numbers, and SL's `plus` function is to be expressed using JavaScript's `+` operator.
 
- *  `spec-language.md` defines the SL language.
+Often, a TL file will be included with a SL library, to provide JavaScript translations for the library functions. This way, the SL library's author can figure out the best way to represent the SL library in JavaScript once, and then all users of the library can benefit. However, TL files can also be distributed separately from SL files, to offer alternative implementations of existing SL programs; this is similar to how there are [drop-in](http://goog-perftools.sourceforge.net/doc/tcmalloc.html) [replacements](http://dmalloc.com/) available for C's default memory allocator.
 
- *  `translation-language.md` defines the syntax and semantics of the translation files, in detail.
+## The SL language
 
- *  `tutorial.md` is an informal example-based explanation of how to write translation files.
- 
- *  `inference.md` describes the algorithm for inferring translation-language terms from SL terms.
+SL is similar to a subset of Haskell, but a syntax based on S-expressions for ease of prototyping.
 
- *  `future-directions.md` summarizes some improvements that might be implemented at some point.
-
-## S-expressions
-
-Both SL and the syntax of the translation files are based on S-expressions. The S-expressions used by `metacompiler` consist only of lists, atoms, and string literals.
-
-Lists are, of course, delimited by `(` and `)`.
-
-Atoms may contain any printable non-whitespace character except for `"()[];`.
-
-There are two kinds of string literals. One kind is delimited by `"` and supports the string escapes `\n`, `\r`, `\t`, `\'`, `\"`, and `\\`. The other kind begins with a `[`, followed by zero or more `=`s, then a `[`, and ends with `]`, followed by the same number of `=` that started it, followed by `]`. It can span multiple lines. There are no escape sequences; everything is interpreted literally except for the end-delimiter.
-
-Comments begin with semicolons and run until the end of the line.
-
-Carriage-return (`\r`) and tab (`\t`) characters are illegal except within `[[...]]`-style string literals.
-
-## Notational conventions
-
-When describing the syntax that is built on top of the S-expressions, the following conventions will be used:
-
- *  Parentheses mean an actual list.
-
- *  `{` and `}` surround groups.
-
- *  A `?`, `*` or `+` after something means "repeat this (up to one / zero or more / one or more) times"
-
- *  Something enclosed in `<` and `>` means "something gets inserted here"
-
- *  `''` indicates a specific atom. This is so that atoms that contain `*`, `+`, and other meaningful characterss can be distinguished from those special characters themselves.
-
- *  `""` indicate a S-expression string.
-
-For example,
+Here's a simple example of how to define Peano numbers in SL:
 
 ```
-('blah' '=' "<phone-number>" {',' "<phone-number>"}*)
+(data Nat = (Zero) (Succ Nat))
+
+(let plus . (x :: Nat) (y :: Nat) :: Nat =
+	(case x of
+		(Zero .) -> y
+		(Succ . x') -> (Succ . (plus . x' y))
+	)
+)
+
+(let times . (x :: Nat) (y :: Nat) :: Nat =
+	(case x of
+		(Zero .) -> (Zero .)
+		(Succ . x') -> (plus . y (times . x' y))
+	)
+)
 ```
 
-means a list consisting of the atom `blah`, the atom `=`, and the one or more strings which represent phone numbers, separated by commas.
+For a detailed description of SL syntax, see the file `sl.md`.
+
+## TL translation for `Nat`, `plus`, and `times`
+
+TODO: Actually write this section.
+
+## Current status, and future directions
+
+Most of the features described above do not work; `metacompiler` is still in an early stage of development. See `milestones.md` for a description of what's missing from the features above. See `future-directions.md` for things that might be implemented at some later date.
+

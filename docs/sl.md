@@ -148,7 +148,6 @@ To reverse the process:
 
 Naturally, `unwrap (wrap x)` is just equivalent to `x`.
 
-
 ## `let` directives
 
 A `let` directive binds a term to a name. It looks like this:
