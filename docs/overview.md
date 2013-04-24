@@ -2,7 +2,9 @@
 
 `metacompiler` is an experimental compiler from SL (a simple Haskell-like language) to Javascript. It is unusual in that the user can customize how different SL constructs are translated into Javascript. The customizations are described using a domain-specific language called TL.
 
-## How `metacompiler` is used
+## The big idea
+
+`metacompiler` is still a work in progress; what follows is a description of how it should work when it's done, not how it currently works right now.
 
 The simplest way to use `metacompiler` is just to give it some SL source files, and no TL files. `metacompiler` will output JavaScript translations for the functions in the SL source files.
 
