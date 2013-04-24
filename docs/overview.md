@@ -31,7 +31,7 @@ Here's a simple example of how to define Peano numbers in SL:
 
 For a detailed description of SL syntax, see the file `sl.md`.
 
-## TL translation for `Nat`, `plus`, and `times`
+## How to express `Nat` and `plus` nicely in JavaScript
 
 Sorry, this section isn't written yet. Look at the `examples/` directory and `tl.md` for some idea of what's going on. This section will be written after the JavaScript inference mechanism is implemented, because it doesn't make sense before then.
 
