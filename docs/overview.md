@@ -27,13 +27,6 @@ Here's a simple example of how to define Peano numbers in SL:
 		(Succ . x') -> (Succ . (plus . x' y))
 	)
 )
-
-(let times . (x :: Nat) (y :: Nat) :: Nat =
-	(case x of
-		(Zero .) -> (Zero .)
-		(Succ . x') -> (plus . y (times . x' y))
-	)
-)
 ```
 
 For a detailed description of SL syntax, see the file `sl.md`.
