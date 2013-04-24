@@ -165,7 +165,7 @@ It binds the name `<name>` to a function of zero or more parameters, evaluating 
 For example, a function to compute the sum of two natural numbers can be defined as follows:
 
 ```
-(let add (x :: Nat) (y :: Nat) :: Nat = 
+(let add . (x :: Nat) (y :: Nat) :: Nat = 
 	(case x of
 		(Zero) -> y
 		(Succ x') -> (add x' y)
