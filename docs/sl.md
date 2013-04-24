@@ -1,6 +1,8 @@
-# Spec language (SL)
+# SL
 
-The "spec language" of `metacompiler`, also called SL, is a lazy pure functional programming language that is equivalent to a subset of Haskell. Its syntax is expressed in S-expressions; see `s-expressions.md` for a description of those S-expressions.
+SL is a lazy pure functional programming language that is equivalent to a subset of Haskell. Its syntax is expressed in S-expressions; see `s-expressions.md` for a description of those S-expressions.
+
+"SL" is short for "specification language", because it is used to specify the semantics of the program.
 
 ## Kinds
 
