@@ -79,7 +79,7 @@
 		[[
 			(function(s) {
 				if (s == 0) { return zc(); }
-				else { return sc(s); }
+				else { return sc(s-1); }
 			})(subj())
 		]]
 		(expr "subj" = subjectJS)
