@@ -21,13 +21,18 @@ import Text.Parsec.String ()   -- So `String` is an instance of `Stream`
 
 parseTLDirectiveFromSExpr :: SExpr -> ErrorMonad (TL.Directive Range)
 
-parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") rest)) = do
-	(name, rest2) <- case rest of
-		Cons (Atom _ n) r -> return (n, r)
-		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs rest)))
-	(unparsedParamsAndMaybeType, rest3) <- breakOnAtom "=" rest2
-	(unparsedParams, maybeType) <- case breakOnAtom "::" unparsedParamsAndMaybeType of
-		Failure _ -> return (unparsedParamsAndMaybeType, Nothing)
+parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") exprs1to7)) = do
+    {- sample input:
+    (let name (arg :: type) :: type = value )
+        ^    ^             ^  ^    ^ ^     ^
+        1    2             3  4    5 6     7
+    -}
+	(name, exprs2to7) <- case exprs1to7 of
+		Cons (Atom _ n) r -> return (TL.Name n, r)
+		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to7)))
+	(exprs2to5, exprs6to7) <- breakOnAtom "=" exprs2to7
+	(exprs2to3, maybeType) <- case breakOnAtom "::" exprs2to5 of
+		Failure _ -> return (exprs2to5, Nothing)
 		Success (ps, t) -> case t of
 			Cons ty (Nil _) -> do
 				ty' <- parseTLMetaTypeFromSExpr ty
@@ -35,56 +40,108 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") rest)) = do
 			_ -> fail ("expected single-atom type after \"::\" at " ++
 				formatPoint (startOfRange (rangeOfSExprs t)) ++ " but instead got " ++
 				formatSExprsForMessage t)
-	params <- mapM parseTLParameterFromSExpr (sExprsToList unparsedParams)
-	value <- parseTLMetaObjectFromSExprs rest3
+	params <- mapM parseTLParameterFromSExpr (sExprsToList exprs2to3)
+	value <- parseTLMetaObjectFromSExprs exprs6to7
 	return $ TL.DLet {
 		TL.tagOfDirective = range,
-		TL.nameOfDLet = TL.Name name,
+		TL.nameOfDLet = name,
 		TL.paramsOfDLet = params,
 		TL.typeOfDLet = maybeType,
 		TL.valueOfDLet = value
 		}
 
-parseTLDirectiveFromSExpr (List range (Cons (Atom _ "sl-code") rest)) = do
-	rest2 <- case rest of
+parseTLDirectiveFromSExpr (List range (Cons (Atom _ "sl-code") exprs1to2)) = do
+    {- sample input:
+    (sl-code "foo" )
+            ^     ^
+            1     2
+    -}
+	expr1to2 <- case exprs1to2 of
 		Cons something (Nil _) -> return something
 		_ -> fail ("expected `(sl-code \"<string>\")`")
-	content <- parseSLDirectivesFromString rest2
+	content <- parseSLDirectivesFromString expr1to2
 	return $ TL.DSLCode {
 		TL.tagOfDirective = range,
 		TL.contentOfDSLCode = content
 		}
 
-parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-type") rest)) = do
-	(name, rest2) <- case rest of
-		Cons (Atom _ n) r -> return (n, r)
-		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs rest)))
-	(unparsedParams, rest3) <- breakOnAtom "=" rest2
-	params <- mapM parseTLParameterFromSExpr (sExprsToList unparsedParams)
-	clauses <- parseClausesFromSExprs [("spec", False, False)] rest3
-	slEquiv <- let [(range, slEquiv)] = (M.!) clauses "spec" in
-		parseTLMetaObjectFromSExprs slEquiv
+parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-type") exprs1to7)) = do
+    {- sample input:
+    (js-expr-type name (arg :: type) = (spec blah ) )
+                 ^    ^             ^ ^     ^    ^ ^
+                 1    2             3 4     5    6 7
+    -}
+	(name, exprs2to7) <- case exprs1to7 of
+		Cons (Atom _ n) r -> return (TL.Name n, r)
+		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to7)))
+	(exprs2to3, exprs4to7) <- breakOnAtom "=" exprs2to7
+	params <- mapM parseTLParameterFromSExpr (sExprsToList exprs2to3)
+	clauses <- parseClausesFromSExprs [("spec", False, False)] exprs4to7
+	slEquiv <- let [(range4to7, exprs5to6)] = (M.!) clauses "spec" in
+		parseTLMetaObjectFromSExprs exprs5to6
 	return $ TL.DJSExprType {
 		TL.tagOfDirective = range,
-		TL.nameOfDJSExprType = TL.Name name,
+		TL.nameOfDJSExprType = name,
 		TL.paramsOfDJSExprType = params,
 		TL.slEquivOfDJSExprType = slEquiv
 		}
 
-parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-emit") rest)) = do
-	(code1, bindings1) <- takeOne "code" rest
-	code2 <- parseJavaScriptStatementsFromString code1
-	bindings2 <- parseClausesFromSExprs [("expr", True, True)] bindings1
-	bindings3 <- forM ((M.!) bindings2 "expr") $ \ (range, body) ->
-		parseBindingFromSExprs (JS.Id ()) range body
-	return $ TL.DJSEmit {
+parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-global") exprs1to14)) = do
+    {- sample input:
+    (js-expr-global name (arg :: type) = (args blah ) (type blah ) (spec blah ) (body blah )  )
+                   ^    ^             ^ ^     ^    ^ ^     ^    ^       ^    ^       ^    ^  ^
+                   1    2             3 4     5    6 7     8    9       10   11      12   13 14
+    -}
+	(name, exprs2to14) <- case exprs1to14 of
+		Cons (Atom _ n) r -> return (TL.Name n, r)
+		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to14)))
+	(exprs2to3, exprs4to14) <- breakOnAtom "=" exprs2to14
+	params <- mapM parseTLParameterFromSExpr (sExprsToList exprs2to3)
+	clauses <- parseClausesFromSExprs
+		[("args", True, True), ("type", False, False), ("spec", False, False), ("body", False, False)]
+		exprs4to14
+	runtimeArgs <- liftM concat $ sequence [
+		sequence [case expr5to6 of
+			Atom _ n -> return (TL.Name n)
+			_ -> fail ("everything after the `args` in an `(args ...)` clause should be the name of a parameter, but \
+				\at " ++ formatRange (rangeOfSExpr expr5to6) ++ " there is something that is not an atom.")
+			| expr5to6 <- sExprsToList exprs5to6]
+		| (range4to7, exprs5to6) <- (M.!) clauses "args"]
+	type_ <- let [(_, exprs8to9)] = (M.!) clauses "type" in
+		parseTLMetaObjectFromSExprs exprs8to9
+	spec <- let [(_, exprs10to11)] = (M.!) clauses "spec" in
+		parseTLMetaObjectFromSExprs exprs10to11
+	body <- let [(_, exprs12to13)] = (M.!) clauses "body" in
+		parseTLMetaObjectFromSExprs exprs12to13
+	return $ TL.DJSExprGlobal {
 		TL.tagOfDirective = range,
-		TL.codeOfDJSEmit = code2,
-		TL.bindingsOfDJSEmit = bindings3
+		TL.nameOfDJSExprGlobal = name,
+		TL.paramsOfDJSExprGlobal = params,
+		TL.runtimeArgsOfDJSExprGlobal = runtimeArgs,
+		TL.typeOfDJSExprGlobal = type_,
+		TL.specOfDJSExprGlobal = spec,
+		TL.bodyOfDJSExprGlobal = body
 		}
 
-parseTLDirectiveFromSExpr (List range (Cons (Atom r name) rest)) =
-	fail ("invalid directive type \"" ++ name ++ "\" at " ++ formatRange r)
+parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-emit") exprs1to5)) = do
+	{- sample input:
+	(js-emit "code" (expr name = value ) )
+	        ^      ^     ^            ^ ^
+	        1      2     3            4 5
+	-}
+	(expr1to2, exprs2to5) <- takeOne "code" exprs1to5
+	code <- parseJavaScriptStatementsFromString expr1to2
+	clauses <- parseClausesFromSExprs [("expr", True, True)] exprs2to5
+	bindings <- forM ((M.!) clauses "expr") $ \ (range2to5, exprs3to4) ->
+		parseBindingFromSExprs (JS.Id ()) range2to5 exprs3to4
+	return $ TL.DJSEmit {
+		TL.tagOfDirective = range,
+		TL.codeOfDJSEmit = code,
+		TL.bindingsOfDJSEmit = bindings
+		}
+
+parseTLDirectiveFromSExpr (List range (Cons (Atom r name) _)) =
+	fail ("directive at " ++ formatRange range ++ " has invalid directive type \"" ++ name ++ "\"")
 
 parseTLDirectiveFromSExpr other =
 	fail ("invalid directive at top level at " ++ formatRange (rangeOfSExpr other))
@@ -158,41 +215,66 @@ parseTLMetaTypeFromSExpr other =
 -- `TL.MetaType`.
 
 parseTLMetaTypeFromSExprs :: SExprs -> ErrorMonad (TL.MetaType Range)
-parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "sl-type") rest) = do
-	unparsedKind <- expectOne "kind" rest
-	kind <- parseSLKindFromString unparsedKind
+parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "sl-type") exprs1to2) = do
+    {- sample input:
+    (sl-type "kind" )
+            ^      ^
+            1      2
+    -}
+	expr1to2 <- expectOne "kind" exprs1to2
+	kind <- parseSLKindFromString expr1to2
 	return $ TL.MTSLType {
 		TL.tagOfMetaType = rangeOfSExprs whole,
 		TL.slKindOfMTSLType = kind
 		}
-parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "sl-term") rest) = do
-	unparsedType <- expectOne "type" rest
-	type_ <- parseTLMetaObjectFromSExpr unparsedType
+parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "sl-term") exprs1to2) = do
+	{- sample input:
+    (sl-term type )
+            ^    ^
+            1    2
+    -}
+	expr1to2 <- expectOne "type" exprs1to2
+	type_ <- parseTLMetaObjectFromSExpr expr1to2
 	return $ TL.MTSLTerm {
 		TL.tagOfMetaType = rangeOfSExprs whole,
 		TL.slTypeOfMTSLTerm = type_
 		}
-parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "fun") rest) = do
-	(unparsedParams, unparsedBody) <- breakOnAtom "->" rest
-	params <- mapM parseTLParameterFromSExpr (sExprsToList unparsedParams)
-	body <- parseTLMetaTypeFromSExprs unparsedBody
+parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "fun") exprs1to4) = do
+	{- sample input:
+	(fun (param :: type) -> type )
+	    ^               ^  ^    ^
+	    1               2  3    4
+	-}     
+	(exprs1to2, exprs3to4) <- breakOnAtom "->" exprs1to4
+	params <- mapM parseTLParameterFromSExpr (sExprsToList exprs1to2)
+	body <- parseTLMetaTypeFromSExprs exprs3to4
 	return $ TL.MTFun {
 		TL.tagOfMetaType = rangeOfSExprs whole,
 		TL.paramsOfMTFun = params,
 		TL.resultOfMTFun = body
 		}
-parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-expr-type") rest) = do
-	unparsedEquiv <- expectOne "type" rest
-	equiv <- parseTLMetaObjectFromSExpr unparsedEquiv
+parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-expr-type") exprs1to2) = do
+	{- sample input:
+	(js-expr-type type )
+	             ^    ^
+	             1    2
+	-}
+	expr1to2 <- expectOne "type" exprs1to2
+	equiv <- parseTLMetaObjectFromSExpr expr1to2
 	return $ TL.MTJSExprType {
 		TL.tagOfMetaType = rangeOfSExprs whole,
 		TL.slTypeOfMTJSExprType = equiv
 		}
-parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-expr") rest) = do
-	(unparsedType, rest2) <- takeOne "type" rest
-	unparsedEquiv <- expectOne "equivalent" rest2
-	type_ <- parseTLMetaObjectFromSExpr unparsedType
-	equiv <- parseTLMetaObjectFromSExpr unparsedEquiv
+parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-expr") exprs1to3) = do
+    {- sample input:
+    (js-expr type equiv )
+            ^    ^     ^
+            1    2     3
+    -}
+	(expr1to2, exprs2to3) <- takeOne "type" exprs1to3
+	expr2to3 <- expectOne "equivalent" exprs2to3
+	type_ <- parseTLMetaObjectFromSExpr expr1to2
+	equiv <- parseTLMetaObjectFromSExpr expr2to3
 	return $ TL.MTJSExpr {
 		TL.tagOfMetaType = rangeOfSExprs whole,
 		TL.jsTypeOfMTJSExpr = type_,
@@ -221,57 +303,77 @@ parseTLMetaObjectFromSExpr other =
 -- a `TL.MetaObject`.
 
 parseTLMetaObjectFromSExprs :: SExprs -> ErrorMonad (TL.MetaObject Range)
-parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "\\") rest) = do
-	(args, rest2) <- breakOnAtom "->" rest
-	args' <- mapM parseTLParameterFromSExpr (sExprsToList args)
-	body <- parseTLMetaObjectFromSExprs rest2
+parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "\\") exprs1to4) = do
+	{- sample input:
+	(\ (arg :: type) -> body )
+	  ^             ^  ^    ^
+	  1             2  3    4
+	-}
+	(exprs1to2, exprs3to4) <- breakOnAtom "->" exprs1to4
+	args <- mapM parseTLParameterFromSExpr (sExprsToList exprs1to2)
+	body <- parseTLMetaObjectFromSExprs exprs3to4
 	return $ TL.MOAbs {
 		TL.tagOfMetaObject = rangeOfSExprs whole,
-		TL.paramsOfMOAbs = args',
+		TL.paramsOfMOAbs = args,
 		TL.resultOfMOAbs = body
 		}
-parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "sl-type") rest) = do
-	(code, bindings1) <- case rest of
+parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "sl-type") exprs1to5) = do
+    {- sample input:
+    (sl-type "type" (type "name" (arg :: type) = value ) )
+            ^      ^     ^                            ^ ^
+            1      2     3                            4 5
+    -}
+	(expr1to2, exprs2to5) <- case exprs1to5 of
 		Nil p -> fail ("expected a SL type at " ++ formatPoint p)
-		Cons code bindings1 -> return (code, bindings1)
-	code' <- parseSLTypeFromString code
-	bindings2 <- parseClausesFromSExprs [("type", True, True)] bindings1
-	bindings3 <- forM ((M.!) bindings2 "type") $ \ (range, body) ->
-		parseBindingFromSExprs SL.NameOfType range body
+		Cons expr1to2 exprs2to5 -> return (expr1to2, exprs2to5)
+	code <- parseSLTypeFromString expr1to2
+	clauses <- parseClausesFromSExprs [("type", True, True)] exprs2to5
+	bindings <- forM ((M.!) clauses "type") $ \ (range2to5, exprs3to4) ->
+		parseBindingFromSExprs SL.NameOfType range2to5 exprs3to4
 	return $ TL.MOSLTypeLiteral {
 		TL.tagOfMetaObject = rangeOfSExprs whole,
-		TL.codeOfMOSLTypeLiteral = code',
-		TL.typeBindingsOfMOSLTypeLiteral = bindings3
+		TL.codeOfMOSLTypeLiteral = code,
+		TL.typeBindingsOfMOSLTypeLiteral = bindings
 		}
-parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "sl-term") rest) = do
-	(code, bindings1) <- case rest of
+parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "sl-term") exprs1to8) = do
+	{- sample input:
+    (sl-type "term" (type "name" (arg :: type) = value ) (term "name" (arg :: type) = value ) )
+            ^      ^     ^                            ^ ^     ^                            ^ ^
+            1      2     3                            4 5     6                            7 8
+    -}
+	(expr1to2, exprs2to8) <- case exprs1to8 of
 		Nil p -> fail ("expected a SL term at " ++ formatPoint p)
-		Cons code bindings1 -> return (code, bindings1)
-	code' <- parseSLTermFromString code
-	bindings2 <- parseClausesFromSExprs [("type", True, True), ("term", True, True)] bindings1
-	typeBindings3 <- forM ((M.!) bindings2 "type") $ \ (range, body) ->
-		parseBindingFromSExprs SL.NameOfType range body
-	termBindings3 <- forM ((M.!) bindings2 "term") $ \ (range, body) ->
-		parseBindingFromSExprs SL.NameOfTerm range body
+		Cons expr1to2 exprs2to8 -> return (expr1to2, exprs2to8)
+	code <- parseSLTermFromString expr1to2
+	clauses <- parseClausesFromSExprs [("type", True, True), ("term", True, True)] exprs2to8
+	typeBindings <- forM ((M.!) clauses "type") $ \ (range2to5, exprs3to4) ->
+		parseBindingFromSExprs SL.NameOfType range2to5 exprs3to4
+	termBindings <- forM ((M.!) clauses "term") $ \ (range5to8, exprs6to7) ->
+		parseBindingFromSExprs SL.NameOfTerm range5to8 exprs6to7
 	return $ TL.MOSLTermLiteral {
 		TL.tagOfMetaObject = rangeOfSExprs whole,
-		TL.codeOfMOSLTermLiteral = code',
-		TL.typeBindingsOfMOSLTermLiteral = typeBindings3,
-		TL.termBindingsOfMOSLTermLiteral = termBindings3
+		TL.codeOfMOSLTermLiteral = code,
+		TL.typeBindingsOfMOSLTermLiteral = typeBindings,
+		TL.termBindingsOfMOSLTermLiteral = termBindings
 		}
-parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) = do
-	clauses <- parseClausesFromSExprs [("type", False, False), ("spec", False, False), ("impl", False, False)] rest
-	type_ <- let [(_, unparsedType)] = (M.!) clauses "type" in
-		parseTLMetaObjectFromSExprs unparsedType
-	spec <- let [(_, unparsedSpec)] = (M.!) clauses "spec" in
-		parseTLMetaObjectFromSExprs unparsedSpec
-	(code, bindings) <- let [(_, unparsedCodeAndBindings)] = (M.!) clauses "impl" in do
-		(code1, bindings1) <- takeOne "code" unparsedCodeAndBindings
-		code2 <- parseJavaScriptExpressionFromString code1 
-		bindings2 <- parseClausesFromSExprs [("expr", True, True)] bindings1
-		bindings3 <- forM ((M.!) bindings2 "expr") $ \ (range, body) ->
-			parseBindingFromSExprs (JS.Id ()) range body
-		return (code2, bindings3)
+parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") exprs1to11) = do
+	{- sample input:
+	(js-expr (type blah ) (spec blah ) (impl "code" (expr "name" (x :: type | y :: type) = value ) )  )
+	        ^     ^    ^       ^    ^       ^      ^     ^                                      ^ ^  ^
+	        1     2    3       4    5       6      7     8                                      9 10 11
+	-}
+	clauses <- parseClausesFromSExprs [("type", False, False), ("spec", False, False), ("impl", False, False)] exprs1to11
+	type_ <- let [(_, exprs2to3)] = (M.!) clauses "type" in
+		parseTLMetaObjectFromSExprs exprs2to3
+	spec <- let [(_, exprs4to5)] = (M.!) clauses "spec" in
+		parseTLMetaObjectFromSExprs exprs4to5
+	(code, bindings) <- let [(_, exprs6to10)] = (M.!) clauses "impl" in do
+		(expr6to7, exprs7to10) <- takeOne "code" exprs6to10
+		code <- parseJavaScriptExpressionFromString expr6to7
+		clauses' <- parseClausesFromSExprs [("expr", True, True)] exprs7to10
+		bindings <- forM ((M.!) clauses' "expr") $ \ (range7to10, exprs8to9) ->
+			parseBindingFromSExprs (JS.Id ()) range7to10 exprs8to9
+		return (code, bindings)
 	return $ TL.MOJSExprLiteral {
 		TL.tagOfMetaObject = rangeOfSExprs whole,
 		TL.slTermOfMOJSExprLiteral = spec,
@@ -279,28 +381,19 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") rest) = do
 		TL.codeOfMOJSExprLiteral = code,
 		TL.bindingsOfMOJSExprLiteral = bindings
 		}
-parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr-loop-break") rest) = do
-	clauses <- parseClausesFromSExprs [("type", False, False), ("spec", False, False), ("content", False, False)] rest
-	type_ <- let [(_, unparsedType)] = (M.!) clauses "type" in
-		parseTLMetaObjectFromSExprs unparsedType
-	spec <- let [(_, unparsedSpec)] = (M.!) clauses "spec" in
-		parseTLMetaObjectFromSExprs unparsedSpec
-	content <- let [(_, unparsedContent)] = (M.!) clauses "content" in
-		parseTLMetaObjectFromSExprs unparsedContent
-	return (TL.MOJSExprLoopBreak {
-		TL.tagOfMetaObject = rangeOfSExprs whole,
-		TL.contentOfMOJSExprLoopBreak = content,
-		TL.jsTypeOfMOJSExprLoopBreak = type_,
-		TL.slTermOfMOJSExprLoopBreak = spec
-		})
-parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr-convert-spec") rest) = do
-	clauses <- parseClausesFromSExprs [("in-spec", False, False), ("out-spec", False, False), ("content", False, False)] rest
-	inSpec <- let [(_, unparsedSpec)] = (M.!) clauses "in-spec" in
-		parseTLMetaObjectFromSExprs unparsedSpec
-	outSpec <- let [(_, unparsedSpec)] = (M.!) clauses "out-spec" in
-		parseTLMetaObjectFromSExprs unparsedSpec
-	content <- let [(_, unparsedContent)] = (M.!) clauses "content" in
-		parseTLMetaObjectFromSExprs unparsedContent
+parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr-convert-spec") exprs1to8) = do
+	{- sample input:
+	(js-expr-convert-spec (in-spec blah ) (out-spec blah ) (content blah ) )
+	                     ^        ^    ^           ^    ^          ^    ^ ^
+	                     1        2    3           4    5          6    7 8
+	-}
+	clauses <- parseClausesFromSExprs [("in-spec", False, False), ("out-spec", False, False), ("content", False, False)] exprs1to8
+	inSpec <- let [(_, exprs2to3)] = (M.!) clauses "in-spec" in
+		parseTLMetaObjectFromSExprs exprs2to3
+	outSpec <- let [(_, exprs4to5)] = (M.!) clauses "out-spec" in
+		parseTLMetaObjectFromSExprs exprs4to5
+	content <- let [(_, exprs6to7)] = (M.!) clauses "content" in
+		parseTLMetaObjectFromSExprs exprs6to7
 	return (TL.MOJSExprConvertEquiv {
 		TL.tagOfMetaObject = rangeOfSExprs whole,
 		TL.contentOfMOJSExprConvertEquiv = content,
@@ -327,17 +420,22 @@ parseTLMetaObjectFromSExprs other =
 	fail ("invalid meta-object " ++ formatSExprsForMessage other ++ " at " ++ formatRange (rangeOfSExprs other))
 
 parseBindingFromSExprs :: (String -> n) -> Range -> SExprs -> ErrorMonad (TL.Binding Range n)
-parseBindingFromSExprs nameMaker range rest1 = do
-	(unparsedName, rest2) <- takeOne "name" rest1
-	name <- case unparsedName of
+parseBindingFromSExprs nameMaker range exprs1to5 = do
+	{- sample input:
+	 "name" (arg :: type) = value
+	^      ^             ^ ^     ^
+	1      2             3 4     5
+	-}
+	(expr1to2, exprs2to5) <- takeOne "name" exprs1to5
+	name <- case expr1to2 of
 		Quoted _ s -> return (nameMaker s)
-		_ -> fail ("at " ++ formatRange (rangeOfSExpr unparsedName) ++ ": name of variable to bind should be quoted")
-	(unparsedParams, unparsedValue) <- breakOnAtom "=" rest2
+		_ -> fail ("at " ++ formatRange (rangeOfSExpr expr1to2) ++ ": name of variable to bind should be quoted")
+	(exprs2to3, exprs4to5) <- breakOnAtom "=" exprs2to5
 	params <- sequence [do
-		parts <- parseTLMultiParameterFromSExpr unparsedParam
-		return (TL.BindingParam (rangeOfSExpr unparsedParam) parts)
-		| unparsedParam <- sExprsToList unparsedParams]
-	value <- parseTLMetaObjectFromSExprs unparsedValue
+		parts <- parseTLMultiParameterFromSExpr exprs2to3'
+		return (TL.BindingParam (rangeOfSExpr exprs2to3') parts)
+		| exprs2to3' <- sExprsToList exprs2to3]
+	value <- parseTLMetaObjectFromSExprs exprs4to5
 	return (TL.Binding {
 		TL.tagOfBinding = range,
 		TL.nameOfBinding = name,

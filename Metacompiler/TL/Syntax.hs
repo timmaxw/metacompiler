@@ -73,12 +73,6 @@ data MetaObject a
 		codeOfMOJSExprLiteral :: JS.Expression JS.SourcePos,
 		bindingsOfMOJSExprLiteral :: [Binding a (JS.Id ())]
 	}
-	| MOJSExprLoopBreak {
-		tagOfMetaObject :: a,
-		slTermOfMOJSExprLoopBreak :: MetaObject a,
-		jsTypeOfMOJSExprLoopBreak :: MetaObject a,
-		contentOfMOJSExprLoopBreak :: MetaObject a
-	}
 	| MOJSExprConvertEquiv {
 		tagOfMetaObject :: a,
 		inEquivOfMOJSExprConvertEquiv :: MetaObject a,
@@ -119,6 +113,15 @@ data Directive a
 		paramsOfDJSExprType :: [(Name, MetaType a)],
 		slEquivOfDJSExprType :: MetaObject a
 	}
+	| DJSExprGlobal {
+		tagOfDirective :: a,
+		nameOfDJSExprGlobal :: Name,
+		paramsOfDJSExprGlobal :: [(Name, MetaType a)],
+		runtimeArgsOfDJSExprGlobal :: [Name],
+		typeOfDJSExprGlobal :: MetaObject a,
+		specOfDJSExprGlobal :: MetaObject a,
+		bodyOfDJSExprGlobal :: MetaObject a
+		}
 	| DJSEmit {
 		tagOfDirective :: a,
 		codeOfDJSEmit :: [JS.Statement JS.SourcePos],

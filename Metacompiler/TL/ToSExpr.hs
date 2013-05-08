@@ -66,13 +66,6 @@ formatTLMetaObjectAsSExpr (TL.MOJSExprLiteral _ e t c bs) =
 			map (formatTLBindingAsSExpr "expr" JS.unId) bs
 			)
 		]
-formatTLMetaObjectAsSExpr (TL.MOJSExprLoopBreak _ e t c) =
-	mkList' [
-		mkAtom "js-expr-loop-break",
-		mkList' ([mkAtom "spec"] ++ sExprsToList (formatTLMetaObjectAsSExprs e)),
-		mkList' ([mkAtom "type"] ++ sExprsToList (formatTLMetaObjectAsSExprs t)),
-		mkList' ([mkAtom "content"] ++ sExprsToList (formatTLMetaObjectAsSExprs c))
-		]
 formatTLMetaObjectAsSExpr (TL.MOJSExprConvertEquiv _ i o c) =
 	mkList' [
 		mkAtom "js-expr-convert-equiv",

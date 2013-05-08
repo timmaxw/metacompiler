@@ -42,8 +42,6 @@ traverseMetaObject v t = case t of
 	MOJSExprLiteral a equiv type_ c bs -> MOJSExprLiteral a <$>
 		visitO equiv <*> visitO type_ <*>
 		pure c <*> traverse (traverseBinding v) bs
-	MOJSExprLoopBreak a equiv type_ content -> MOJSExprLoopBreak a <$>
-		visitO equiv <*> visitO type_ <*> visitO content
 	MOJSExprConvertEquiv a inEquiv outEquiv content -> MOJSExprConvertEquiv a <$>
 		visitO inEquiv <*> visitO outEquiv <*> visitO content
 	where
@@ -68,6 +66,12 @@ traverseDirective v d = case d of
 	DJSExprType a name ps equiv -> DJSExprType a name <$>
 		sequenceA [(,) pn <$> visitT pt | (pn, pt) <- ps] <*>
 		visitO equiv
+	DJSExprGlobal a name ps args type_ spec body -> DJSExprGlobal a name <$>
+		sequenceA [(,) pn <$> visitT pt | (pn, pt) <- ps] <*>
+		pure args <*>
+		visitO type_ <*>
+		visitO spec <*>
+		visitO body
 	DJSEmit a c bs -> DJSEmit a c <$>
 		traverse (traverseBinding v) bs
 	where

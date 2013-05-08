@@ -17,24 +17,10 @@ import qualified Metacompiler.SL.Syntax as SL
 import qualified Metacompiler.TL.FreeNames as TL
 import qualified Metacompiler.TL.Syntax as TL
 
-data MetaObjectInScope
-	= MetaObjectInScopeGlobalPresent R.MetaObject
-	| MetaObjectInScopeGlobalFuture
-	| MetaObjectInScopeLocal R.NameOfMetaObject R.MetaType
-	| MetaObjectInScopeCantTransfer R.MetaType Range
-
 data Scope = Scope {
-	metaObjectsInScope :: M.Map TL.Name MetaObjectInScope,
+	metaObjectsInScope :: M.Map TL.Name R.MetaObject,
 	slObjectsInScope :: CSL.Scope
 	}
-
-newtype LoopBreakerToProcess
-	= LoopBreakerToProcess (M.Map TL.Name R.MetaObject -> StateT (S.Set (JS.Id ())) (ErrorMonad) [JS.Statement ()])
-
-type LocalCompileMonad a = WriterT [LoopBreakerToProcess] (StateT (S.Set (JS.Id ())) (ErrorMonad)) a
-
-embedError :: ErrorMonad a -> LocalCompileMonad a
-embedError = lift . lift
 
 formatMTForMessage :: R.MetaType -> String
 formatMTForMessage t = "`" ++ FTL.formatMetaTypeAsString t ++ "`"
@@ -42,11 +28,11 @@ formatMTForMessage t = "`" ++ FTL.formatMetaTypeAsString t ++ "`"
 formatMOForMessage :: R.MetaObject -> String
 formatMOForMessage o = "`" ++ FTL.formatMetaObjectAsString o ++ "`"
 
-compileMetaType :: Scope -> TL.MetaType Range -> LocalCompileMonad R.MetaType
+compileMetaType :: Scope -> TL.MetaType Range -> ErrorMonad R.MetaType
 compileMetaType scope (TL.MTFun range params result) =
 	compileAbstraction scope params (\_ scope' -> compileMetaType scope' result) R.MTFun
 compileMetaType scope (TL.MTSLType range slKind) = do
-	slKind' <- embedError $ CSL.compileSLKind slKind
+	slKind' <- CSL.compileSLKind slKind
 	return (R.MTSLType slKind')
 compileMetaType scope (TL.MTSLTerm range slType) = do
 	slType' <- compileMetaObject scope slType
@@ -89,7 +75,7 @@ compileMetaType scope (TL.MTJSExpr range jsType slTerm) = do
 			\same as the SL type of the SL equivalent term.")
 	return (R.MTJSExpr jsType' slTerm')
 
-compileMetaObject :: Scope -> TL.MetaObject Range -> LocalCompileMonad R.MetaObject
+compileMetaObject :: Scope -> TL.MetaObject Range -> ErrorMonad R.MetaObject
 
 compileMetaObject scope (TL.MOApp range fun arg) = do
 	let msgPrefix = "in application of function at " ++ formatRange (TL.tagOfMetaObject fun) ++ " to argument at " ++
@@ -109,25 +95,13 @@ compileMetaObject scope (TL.MOAbs range params result) =
 	compileAbstraction scope params (\_ scope' -> compileMetaObject scope' result) R.MOAbs
 
 compileMetaObject scope (TL.MOName range name) = case M.lookup name (metaObjectsInScope scope) of
-	Just (MetaObjectInScopeGlobalPresent x) ->
-		return x
-	Just (MetaObjectInScopeGlobalFuture) ->
-		error "top-sort should have prevented this"
-	Just (MetaObjectInScopeLocal name' type_) ->
-		return (R.MOName name' type_)
-	Just (MetaObjectInScopeCantTransfer type_ loopBreakerRange) ->
-		fail ("variable `" ++ TL.unName name ++ "` was defined outside of the `(js-loop-breaker ...)` construct at " ++
-			formatRange loopBreakerRange ++ ", so it's illegal to use it at " ++ formatRange range ++", because it \
-			\has type " ++ formatMTForMessage type_ ++ ". Only variables of type `(sl-type ...)`, `(sl-term ...)`, \
-			\`(js-type ...)`, or `(js-term ...)` can be transferred from outside of a `(js-loop-breaker ...)` to \
-			\inside.")
-	Nothing ->
-		fail ("at " ++ formatRange range ++ ": name `" ++ TL.unName name ++ "` is not in scope")
+	Just x -> return x
+	Nothing -> fail ("at " ++ formatRange range ++ ": name `" ++ TL.unName name ++ "` is not in scope")
 
 compileMetaObject scope (TL.MOSLTypeLiteral range code typeBindings) = do
 	let msgPrefix = "in `(sl-type ...)` literal at " ++ formatRange range ++ ": "
 	typeBindings' <- compileSLTypeBindings msgPrefix scope typeBindings
-	embedError $ errorContext msgPrefix $ CSL.compileSLType
+	errorContext msgPrefix $ CSL.compileSLType
 		(M.union typeBindings' (CSL.typesInScope $ slObjectsInScope $ scope))
 		[] code
 
@@ -139,7 +113,7 @@ compileMetaObject scope (TL.MOSLTermLiteral range code typeBindings termBindings
 			CSL.typesInScope = typeBindings' `M.union` (CSL.typesInScope $ slObjectsInScope scope),
 			CSL.termsInScope = termBindings' `M.union` (CSL.termsInScope $ slObjectsInScope scope)
 			} 
-	embedError $ errorContext msgPrefix $ CSL.compileSLTerm slScope' [] code
+	errorContext msgPrefix $ CSL.compileSLTerm slScope' [] code
 
 compileMetaObject scope (TL.MOJSExprLiteral range equiv type_ expr bindings) = do
 	let msgPrefix = "in `(js-expr ...)` literal at " ++ formatRange range ++ ": "
@@ -150,91 +124,17 @@ compileMetaObject scope (TL.MOJSExprLiteral range equiv type_ expr bindings) = d
 			" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type `(sl-term ...)`.")
 	type_' <- compileMetaObject scope type_
 	slType2 <- case R.reduceMetaType (R.typeOfMetaObject type_') of
-		R.MTJSExprType equiv -> return equiv
-		otherType -> fail (msgPrefix ++ "the JavaScript type given at " ++ formatRange (TL.tagOfMetaObject equiv) ++
+		R.MTJSExprType ty -> return ty
+		otherType -> fail (msgPrefix ++ "the JavaScript type given at " ++ formatRange (TL.tagOfMetaObject type_) ++
 			" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type \
 			\`(js-expr-type ...)`.")
 	unless (slType1 `R.equivalentMetaObjects` slType2) $
 		fail (msgPrefix ++ "the SL equivalent given at " ++ formatRange (TL.tagOfMetaObject equiv) ++ " has SL \
 			\type " ++ CSL.formatTypeForMessage slType1 ++ ", but the JavaScript type given at " ++
-			formatRange (TL.tagOfMetaObject equiv) ++ " has SL equivalent type " ++
+			formatRange (TL.tagOfMetaObject type_) ++ " has SL equivalent type " ++
 			CSL.formatTypeForMessage slType2 ++ ". Those are supposed to be the same, but they aren't.")
 	bindings' <- compileJSExprBindings msgPrefix scope bindings
 	return (R.MOJSExprLiteral equiv' type_' (JS.removeAnnotations expr) bindings')
-
-compileMetaObject scope (TL.MOJSExprLoopBreak range equiv type_ content) = do
-	let msgPrefix = "in `(js-expr-loop-break ...)` construct at " ++ formatRange range ++ ": "
-	equiv' <- compileMetaObject scope equiv
-	slType1 <- case R.reduceMetaType (R.typeOfMetaObject equiv') of
-		R.MTSLTerm ty -> return ty
-		otherType -> fail (msgPrefix ++ "the SL equivalent given at " ++ formatRange (TL.tagOfMetaObject equiv) ++
-			" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type `(sl-term ...)`.")
-	type_' <- compileMetaObject scope type_
-	slType2 <- case R.reduceMetaType (R.typeOfMetaObject type_') of
-		R.MTJSExprType equiv -> return equiv
-		otherType -> fail (msgPrefix ++ "the JavaScript type given at " ++ formatRange (TL.tagOfMetaObject equiv) ++
-			" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type \
-			\`(js-expr-type ...)`.")
-	unless (slType1 `R.equivalentMetaObjects` slType2) $
-		fail (msgPrefix ++ "the SL equivalent given at " ++ formatRange (TL.tagOfMetaObject equiv) ++ " has SL \
-			\type " ++ CSL.formatTypeForMessage slType1 ++ ", but the JavaScript type given at " ++
-			formatRange (TL.tagOfMetaObject equiv) ++ " has SL equivalent type " ++
-			CSL.formatTypeForMessage slType2 ++ ". Those are supposed to be the same, but they aren't.")
-	oldGlobalNamesInUse <- lift get
-	let Just globalName = find (`S.notMember` oldGlobalNamesInUse) [JS.Id () ("g" ++ show i) | i <- [1..]]
-	lift (put (S.insert globalName oldGlobalNamesInUse))
-
-	let params = [(synName, runName, eq, ty)
-		| (synName, MetaObjectInScopeLocal runName (R.MTJSExpr eq ty)) <- M.toList (metaObjectsInScope scope)
-		, synName `S.member` freeNames]
-		where freeNames = TL.freeNamesInMetaObject True content
-
-	let loopBreakerToProcess = LoopBreakerToProcess $ \globalDefns -> do
-
-		let
-			processVar :: TL.Name -> MetaObjectInScope -> MetaObjectInScope
-			processVar name (MetaObjectInScopeGlobalPresent x) = MetaObjectInScopeGlobalPresent x
-			processVar name MetaObjectInScopeGlobalFuture = case M.lookup name globalDefns of
-				Just x -> MetaObjectInScopeGlobalPresent x
-				Nothing -> error "promised global definition never found"
-			processVar name (MetaObjectInScopeLocal runName runType) = case runType of
-				R.MTFun _ _ -> MetaObjectInScopeCantTransfer runType range
-				_ -> MetaObjectInScopeLocal runName runType
-			processVar name (MetaObjectInScopeCantTransfer runType loopBreakerRange) =
-				MetaObjectInScopeCantTransfer runType loopBreakerRange
-			scope' = scope { metaObjectsInScope = M.mapWithKey processVar (metaObjectsInScope scope) }
-
-		(content', subLoopBreakers) <- runWriterT $ compileMetaObject scope' content
-		unless (R.typeOfMetaObject content' `R.equivalentMetaTypes` R.MTJSExpr type_' equiv') $
-			fail (msgPrefix ++ "content at " ++ formatRange (TL.tagOfMetaObject content) ++ " has meta-type " ++
-				formatMTForMessage (R.typeOfMetaObject content') ++ ", but it's supposed to have meta-type " ++
-				formatMTForMessage (R.MTJSExpr type_' equiv') ++ ".")
-
-		let
-			-- TODO: This is susceptible to name collisions.
-			convertName :: TL.Name -> JS.Id ()
-			convertName (TL.Name n) = JS.Id () n
-
-			subs = M.fromList [(runName, R.MOJSExprLiteral eq ty (JS.VarRef () (convertName synName)) M.empty)
-				| (synName, runName, eq, ty) <- params]
-			content'' = R.substituteMetaObject (R.Substitutions subs M.empty M.empty) content'
-			content''' = R.reduceMetaObject content''
-			contentAsJS = case content''' of
-				R.MOJSExprLiteral _ _ expr subs | M.null subs -> expr
-				_ -> error "reduction of loop breaker didn't work completely"
-
-			emit = JS.FunctionStmt () globalName [convertName n | (n, _, _, _) <- params] [JS.ReturnStmt () (Just contentAsJS)]
-
-		subEmits <- liftM concat $ sequence [f globalDefns | LoopBreakerToProcess f <- subLoopBreakers]
-
-		return (subEmits ++ [emit])
-	tell [loopBreakerToProcess]
-
-	let paramJSNames = [JS.Id () n | (TL.Name n, _, _, _) <- params]
-	let expr = JS.CallExpr () (JS.VarRef () globalName) [JS.CallExpr () (JS.VarRef () p) [] | p <- paramJSNames]
-	let bindings = M.fromList [(jsName, R.JSExprBinding [] (R.MOName runName (R.MTJSExpr eq ty)))
-		| (jsName, (synName, runName, eq, ty)) <- zip paramJSNames params]
-	return $ R.MOJSExprLiteral equiv' type_' expr bindings
 
 compileMetaObject scope (TL.MOJSExprConvertEquiv range inEquiv outEquiv content) = do
 	let msgPrefix = "in `(js-expr-convert-equiv ...)` construct at " ++ formatRange range ++ ": "
@@ -266,24 +166,24 @@ compileMetaObject scope (TL.MOJSExprConvertEquiv range inEquiv outEquiv content)
 
 compileAbstraction :: Scope
                    -> [(TL.Name, TL.MetaType Range)]
-                   -> ([(R.NameOfMetaObject, R.MetaType)] -> Scope -> LocalCompileMonad a)
+                   -> ([(R.NameOfMetaObject, R.MetaType)] -> Scope -> ErrorMonad a)
                    -> ((R.NameOfMetaObject, R.MetaType) -> a -> a)
-                   -> LocalCompileMonad a
+                   -> ErrorMonad a
 compileAbstraction scope [] base fun = base [] scope
 compileAbstraction scope ((paramName, paramType):params) base fun = do
 	let paramName' = R.NameOfMetaObject (TL.unName paramName)
 	paramType' <- compileMetaType scope paramType
-	let scope' = scope { metaObjectsInScope = M.insert paramName (MetaObjectInScopeLocal paramName' paramType') (metaObjectsInScope scope) }
+	let scope' = scope { metaObjectsInScope = M.insert paramName (R.MOName paramName' paramType') (metaObjectsInScope scope) }
 	let base' = base . ((paramName', paramType'):)
 	rest <- compileAbstraction scope' params base' fun
 	return (fun (paramName', paramType') rest)
 
 compileBindings :: Ord n
                 => Scope
-                -> (Scope -> TL.Binding Range n -> TL.BindingParam Range -> LocalCompileMonad (Scope, p))
-                -> (Scope -> TL.Binding Range n -> [p] -> TL.MetaObject Range -> LocalCompileMonad a)
+                -> (Scope -> TL.Binding Range n -> TL.BindingParam Range -> ErrorMonad (Scope, p))
+                -> (Scope -> TL.Binding Range n -> [p] -> TL.MetaObject Range -> ErrorMonad a)
                 -> [TL.Binding Range n]
-                -> LocalCompileMonad (M.Map n a)
+                -> ErrorMonad (M.Map n a)
 compileBindings scope paramFun valueFun bindings = do
 	bindings' <- sequence [do
 		let
@@ -301,7 +201,7 @@ compileBindings scope paramFun valueFun bindings = do
 compileSLTypeBindings :: String
                       -> Scope
                       -> [TL.Binding Range SL.NameOfType]
-                      -> LocalCompileMonad (M.Map SL.NameOfType CSL.TypeInScope)
+                      -> ErrorMonad (M.Map SL.NameOfType CSL.TypeInScope)
 compileSLTypeBindings msgPrefix1 scope bindings = compileBindings scope
 	(\ subScope binding (TL.BindingParam paramRange parts) -> do
 		let msgPrefix2 = msgPrefix1 ++ "in binding of name `" ++ SL.unNameOfType (TL.nameOfBinding binding) ++
@@ -318,7 +218,7 @@ compileSLTypeBindings msgPrefix1 scope bindings = compileBindings scope
 				\meta-type " ++ formatMTForMessage type_' ++ " (at " ++ formatRange (TL.tagOfMetaType type_) ++ "), \
 				\but all parameters in a `(sl-type ...)` literal should have meta-type `(sl-type ...)`.")
 		let subScope' = subScope {
-			metaObjectsInScope = M.insert name (MetaObjectInScopeLocal name' type_') (metaObjectsInScope subScope)
+			metaObjectsInScope = M.insert name (R.MOName name' type_') (metaObjectsInScope subScope)
 			}
 		return (subScope', (name', slKind'))
 		)
@@ -342,7 +242,7 @@ compileSLTypeBindings msgPrefix1 scope bindings = compileBindings scope
 compileSLTermBindings :: String
                       -> Scope
                       -> [TL.Binding Range SL.NameOfTerm]
-                      -> LocalCompileMonad (M.Map SL.NameOfTerm CSL.TermInScope)
+                      -> ErrorMonad (M.Map SL.NameOfTerm CSL.TermInScope)
 compileSLTermBindings msgPrefix1 scope bindings = compileBindings scope
 	(\ subScope binding (TL.BindingParam paramRange parts) -> do
 		let msgPrefix2 = msgPrefix1 ++ "in binding of name `" ++ SL.unNameOfTerm (TL.nameOfBinding binding) ++
@@ -360,7 +260,7 @@ compileSLTermBindings msgPrefix1 scope bindings = compileBindings scope
 				") has meta-type " ++ formatMTForMessage type_' ++ ", but all parameters in a `(sl-term ...)` literal \
 				\are supposed to have meta-type `(sl-type ...)` or `(sl-term ...)`.")
 		let subScope' = subScope {
-			metaObjectsInScope =	M.insert name (MetaObjectInScopeLocal name' type_') (metaObjectsInScope subScope)
+			metaObjectsInScope =	M.insert name (R.MOName name' type_') (metaObjectsInScope subScope)
 			}
 		return (subScope', (name', slKindOrType'))
 		)
@@ -393,7 +293,7 @@ compileSLTermBindings msgPrefix1 scope bindings = compileBindings scope
 compileJSExprBindings :: String
                       -> Scope
                       -> [TL.Binding Range (JS.Id ())]
-                      -> LocalCompileMonad (M.Map (JS.Id ()) R.JSExprBinding)
+                      -> ErrorMonad (M.Map (JS.Id ()) R.JSExprBinding)
 compileJSExprBindings msgPrefix1 scope bindings = compileBindings scope
 	(\ subScope binding (TL.BindingParam paramRange parts) -> do
 		let msgPrefix2 = msgPrefix1 ++ "in binding of name `" ++ JS.unId (TL.nameOfBinding binding) ++ "` (at " ++
@@ -416,7 +316,7 @@ compileJSExprBindings msgPrefix1 scope bindings = compileBindings scope
 				"), but it is supposed to be something of the form `(sl-term ...)`.")
 
 		let scopeForType2 = scope { metaObjectsInScope =
-			M.insert name1 (MetaObjectInScopeLocal name1' type1') $
+			M.insert name1 (R.MOName name1' type1') $
 			metaObjectsInScope scope
 			}
 		let name2' = R.NameOfMetaObject (TL.unName name2)
@@ -428,8 +328,8 @@ compileJSExprBindings msgPrefix1 scope bindings = compileBindings scope
 				"), but it is supposed to be something of the form `(js-expr ... " ++ TL.unName name1 ++ ")`.")
 
 		let subScope' = subScope { metaObjectsInScope =
-			M.insert name2 (MetaObjectInScopeLocal name2' type2') $
-			M.insert name1 (MetaObjectInScopeLocal name1' type1') $
+			M.insert name2 (R.MOName name2' type2') $
+			M.insert name1 (R.MOName name1' type1') $
 			metaObjectsInScope subScope
 			}
 
@@ -457,17 +357,26 @@ data GlobalResults = GlobalResults {
 	}
 
 compileDirectives :: [TL.Directive Range] -> ErrorMonad GlobalResults
-compileDirectives directives = flip evalStateT S.empty $ do
+compileDirectives directives = do
 
 	let allSLDirs = concat [content | TL.DSLCode _ content <- directives]
-	slDefns <- lift $ CSL.compileSLDirectives allSLDirs
+	slDefns <- CSL.compileSLDirectives allSLDirs
 
-	-- `let` and `js-expr-type` directives are collectively referred to as "definition directives" because they
-	-- introduce new names into scope. They also both may refer to names already in scope; this means that they have to
-	-- be top-sorted before processing them.
+	-- `let`, `js-expr-type`, and `js-expr-global` directives are collectively referred to as "definition directives"
+	-- because they introduce new names into scope. They also both may refer to names already in scope; this means that
+	-- they have to be top-sorted before processing them.
 	let unsortedDefnDirs = concat [case dir of
-			TL.DLet _ name _ _ _ -> [((name, dir), name, S.toList (TL.freeNamesInDirective False dir))]
-			TL.DJSExprType _ name _ _ -> [((name, dir), name, S.toList (TL.freeNamesInDirective False dir))]
+			TL.DLet _ name params type_ value -> [((name, dir), name, S.toList freeNames)]
+				where freeNames = TL.freeNamesInAbstraction params $
+						maybe S.empty TL.freeNamesInMetaType type_
+						`S.union` TL.freeNamesInMetaObject value
+			TL.DJSExprType _ name params spec -> [((name, dir), name, S.toList freeNames)]
+				where freeNames = TL.freeNamesInAbstraction params $
+						TL.freeNamesInMetaObject spec
+			TL.DJSExprGlobal _ name params _ type_ spec _ -> [((name, dir), name, S.toList freeNames)]
+				where freeNames = TL.freeNamesInAbstraction params $
+						TL.freeNamesInMetaObject type_
+						`S.union` TL.freeNamesInMetaObject spec
 			_ -> []
 			| dir <- directives]
 	sortedDefnDirs <- sequence [case scc of
@@ -478,78 +387,165 @@ compileDirectives directives = flip evalStateT S.empty $ do
 				| (name, dir) <- things] ++ ".")
 		| scc <- Data.Graph.stronglyConnComp unsortedDefnDirs]
 
-	(tlDefns, loopBreakersFromDefnDirs) <- runWriterT $ do
+	let
+		compileDefnDir :: Scope
+		               -> TL.Directive Range
+		               -> ErrorMonad (R.MetaObject, [Scope -> ErrorMonad [JS.Statement ()]])
 
-		let
-			compileDefnDir :: Scope -> TL.Directive Range -> LocalCompileMonad R.MetaObject
-			compileDefnDir scope (TL.DLet range _ params maybeType value) =
-				compileAbstraction scope params (\_ scope' -> do
-					value' <- compileMetaObject scope' value
-					case maybeType of
-						Nothing -> return ()
-						Just type_ -> do
-							type_' <- compileMetaType scope' type_
-							unless (R.typeOfMetaObject value' `R.equivalentMetaTypes` type_') $
-								fail ("in `(let ...)` directive at " ++ formatRange range ++ ": the type signature \
-									\given at " ++ formatRange (TL.tagOfMetaType type_) ++ " says the type should \
-									\be " ++ formatMTForMessage type_' ++ ", but the actual value at " ++
-									formatRange (TL.tagOfMetaObject value) ++ " has type " ++
-									formatMTForMessage (R.typeOfMetaObject value') ++ ".")
-					return value'
-					) R.MOAbs
-			compileDefnDir scope (TL.DJSExprType range name params slEquiv) =
-				compileAbstraction scope params (\params' scope' -> do
-					slEquiv' <- compileMetaObject scope' slEquiv
-					case R.typeOfMetaObject slEquiv' of
-						R.MTSLType R.SLKindType -> return ()
-						otherType -> fail ("in `(js-expr-type ...)` directive at " ++ formatRange range ++ ": the SL \
-							\equivalent given at " ++ formatRange (TL.tagOfMetaObject slEquiv) ++ " has meta-type " ++
-							formatMTForMessage otherType ++ ", but it's supposed to have meta-type `(sl-type ...)`.")
-					let defn = R.JSExprTypeDefn {
-						R.nameOfJSExprTypeDefn = R.NameOfMetaObject (TL.unName name),
-						R.paramsOfJSExprTypeDefn = map snd params',
-						R.slEquivOfJSExprTypeDefn = \paramValues -> let
-							subs = M.fromList $ zip (map fst params') paramValues
-							in R.substituteMetaObject (R.Substitutions subs M.empty M.empty) slEquiv'
+		compileDefnDir scope (TL.DLet range _ params maybeType value) = do
+			value <- compileAbstraction scope params (\_ scope' -> do
+				value' <- compileMetaObject scope' value
+				case maybeType of
+					Nothing -> return ()
+					Just type_ -> do
+						type_' <- compileMetaType scope' type_
+						unless (R.typeOfMetaObject value' `R.equivalentMetaTypes` type_') $
+							fail ("in `(let ...)` directive at " ++ formatRange range ++ ": the type signature \
+								\given at " ++ formatRange (TL.tagOfMetaType type_) ++ " says the type should \
+								\be " ++ formatMTForMessage type_' ++ ", but the actual value at " ++
+								formatRange (TL.tagOfMetaObject value) ++ " has type " ++
+								formatMTForMessage (R.typeOfMetaObject value') ++ ".")
+				return value'
+				) R.MOAbs
+			return (value, [])
+
+		compileDefnDir scope (TL.DJSExprType range name params slEquiv) = do
+			value <- compileAbstraction scope params (\params' scope' -> do
+				slEquiv' <- compileMetaObject scope' slEquiv
+				case R.typeOfMetaObject slEquiv' of
+					R.MTSLType R.SLKindType -> return ()
+					otherType -> fail ("in `(js-expr-type ...)` directive at " ++ formatRange range ++ ": the SL \
+						\equivalent given at " ++ formatRange (TL.tagOfMetaObject slEquiv) ++ " has meta-type " ++
+						formatMTForMessage otherType ++ ", but it's supposed to have meta-type `(sl-type ...)`.")
+				let defn = R.JSExprTypeDefn {
+					R.nameOfJSExprTypeDefn = R.NameOfMetaObject (TL.unName name),
+					R.paramsOfJSExprTypeDefn = map snd params',
+					R.slEquivOfJSExprTypeDefn = \paramValues -> let
+						subs = M.fromList $ zip (map fst params') paramValues
+						in R.substituteMetaObject (R.Substitutions subs M.empty M.empty) slEquiv'
+					}
+				return (R.MOJSExprTypeDefn defn [R.MOName paramName paramType | (paramName, paramType) <- params'])
+				) R.MOAbs
+			return (value, [])
+
+		compileDefnDir scope dir@(TL.DJSExprGlobal range globalName params runtimeArgs type_ equiv body) = do
+			let msgPrefix = "in `(js-expr-global ...)` directive named `" ++ TL.unName globalName ++ "` at " ++
+					formatRange range ++ ": "
+			compileAbstraction scope params (\params' scope' -> do
+				equiv' <- compileMetaObject scope' equiv
+				slType1 <- case R.reduceMetaType (R.typeOfMetaObject equiv') of
+					R.MTSLTerm ty -> return ty
+					otherType -> fail (msgPrefix ++ "the SL equivalent given at " ++ formatRange (TL.tagOfMetaObject equiv) ++
+						" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type `(sl-term ...)`.")
+				type_' <- compileMetaObject scope' type_
+				slType2 <- case R.reduceMetaType (R.typeOfMetaObject type_') of
+					R.MTJSExprType equiv -> return equiv
+					otherType -> fail (msgPrefix ++ "the JavaScript type given at " ++ formatRange (TL.tagOfMetaObject type_) ++
+						" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type \
+						\`(js-expr-type ...)`.")
+				unless (slType1 `R.equivalentMetaObjects` slType2) $
+					fail (msgPrefix ++ "the SL equivalent given at " ++ formatRange (TL.tagOfMetaObject equiv) ++ " has SL \
+						\type " ++ CSL.formatTypeForMessage slType1 ++ ", but the JavaScript type given at " ++
+						formatRange (TL.tagOfMetaObject type_) ++ " has SL equivalent type " ++
+						CSL.formatTypeForMessage slType2 ++ ". Those are supposed to be the same, but they aren't.")
+				let paramTypesMap = M.fromList [(name, type_) | ((name, _), (_, type_)) <- zip params params']
+				let paramNamesMap = M.fromList [(name, name') | ((name, _), (name', _)) <- zip params params']
+				runtimeArgsTypesAndEquivs <- sequence [
+					case M.lookup argName paramTypesMap of
+						Nothing -> fail ("the name `" ++ TL.unName argName ++ "` appears in the `(args ...)` clause, \
+							\but it is not the name of a parameter.")
+						Just (R.MTJSExpr t e) -> return (t, e)
+						Just otherType -> fail  ("the name `" ++ TL.unName argName ++ "` appears in the `(args ...)` \
+							\clause, but that parameter has type " ++ formatMTForMessage otherType ++ ", and only \
+							\JavaScript expressions can be passed to JavaScript functions.")
+					| argName <- runtimeArgs]
+				let runtimeArgsJSNames = [JS.Id () ("arg_" ++ show i ++ "_" ++ TL.unName name)
+						| (name, i) <- zip runtimeArgs [1..]]
+				unless (runtimeArgs == nub runtimeArgs) $
+					fail (msgPrefix ++ "the following name(s) appear more than once in the `(args ...)` clause: " ++
+						intercalate ", " (map TL.unName (nub ((Data.List.\\) runtimeArgs (nub runtimeArgs)))))
+				let globalJSName = JS.Id () ("global_" ++ TL.unName globalName)
+				let jsEquiv = JS.CallExpr ()
+						(JS.VarRef () globalJSName)
+						[JS.CallExpr () (JS.VarRef () jsName) [] | jsName <- runtimeArgsJSNames]
+				let value = R.MOJSExprLiteral
+					equiv' type_'
+					jsEquiv
+					(M.fromList [
+						(jsName, R.JSExprBinding [] (R.MOName ((M.!) paramNamesMap name) ((M.!) paramTypesMap name)))
+						| (name, jsName) <- zip runtimeArgs runtimeArgsJSNames
+						])
+				let globalFunctions = [\ scope'' -> do
+					let scope''' = scope'' {
+						metaObjectsInScope = M.fromList [
+								(name, R.MOName ((M.!) paramNamesMap name) ((M.!) paramTypesMap name))
+								| (name, _) <- params]
+								`M.union` (metaObjectsInScope scope'')
 						}
-					return (R.MOJSExprTypeDefn defn [R.MOName paramName paramType | (paramName, paramType) <- params'])
-					) R.MOAbs
+					body' <- compileMetaObject scope''' body
+					unless (R.typeOfMetaObject body' `R.equivalentMetaTypes` R.MTJSExpr type_' equiv') $
+						fail (msgPrefix ++ "the body has type " ++ formatMTForMessage (R.typeOfMetaObject body') ++
+							" but the `(spec ...)` and `(type ...)` clauses specify that the type of the body should \
+							\be " ++ formatMTForMessage (R.MTJSExpr type_' equiv') ++ ".")
+					let runtimeArgsJSNames = [JS.Id () ("arg_" ++ show i ++ "_" ++ TL.unName name)
+							| (name, i) <- zip runtimeArgs [1..]]
+					let runtimeArgsMetaObjects = [R.MOJSExprLiteral e t (JS.VarRef () n) M.empty
+							| ((e, t), n) <- zip runtimeArgsTypesAndEquivs runtimeArgsJSNames]
+					let body'' = R.substituteMetaObject
+							(R.Substitutions
+								(M.fromList (zip
+									[(M.!) paramNamesMap name | name <- runtimeArgs]
+									runtimeArgsMetaObjects
+									))
+								M.empty M.empty)
+							body'
+					body''' <- case R.reduceMetaObject body'' of
+						R.MOJSExprLiteral _ _ expr subs | M.null subs -> return expr
+						_ -> fail (msgPrefix ++ "the body depends in an illegal way on a parameter that is not in \
+							\`(args ...)` clause.")
+					return [JS.FunctionStmt () globalJSName runtimeArgsJSNames [JS.ReturnStmt () (Just body''')]]
+					]
+				return (value, globalFunctions)
+				)
+				(\ (paramName, paramType) (value, globalFunctions) ->
+					(R.MOAbs (paramName, paramType) value, globalFunctions)
+					)
 
-		foldM (\ tlDefns (name, defnDir) -> do
-			let scope = Scope
-				(M.map MetaObjectInScopeGlobalPresent tlDefns `M.union`
-					M.fromList [(name, MetaObjectInScopeGlobalFuture)
-						| (name, _) <- sortedDefnDirs, name `M.notMember` tlDefns])
-				(CSL.scopeForDefns slDefns)
-			value <- compileDefnDir scope defnDir
-			return $ M.insert name value tlDefns
-			)
-			M.empty
-			sortedDefnDirs
+	(tlDefns, globalFunctions) <- foldM (\ (tlDefns, globalFunctions) (name, defnDir) -> do
+		let scope = Scope
+			(tlDefns `M.union`
+				M.fromList [(name, error "loop, not caught by top-sort")
+				| (name, _) <- sortedDefnDirs, name `M.notMember` tlDefns])
+			(CSL.scopeForDefns slDefns)
+		(value, newGlobalFunctions) <- compileDefnDir scope defnDir
+		let tlDefns' = M.insert name value tlDefns
+		let globalFunctions' = globalFunctions ++ newGlobalFunctions
+		return (tlDefns', globalFunctions')
+		)
+		(M.empty, [])
+		sortedDefnDirs
 
-	(emitsFromEmitDirs, loopBreakersFromEmitDirs) <- runWriterT $
-		liftM concat $ sequence [do
-			let scope = Scope (M.map MetaObjectInScopeGlobalPresent tlDefns) (CSL.scopeForDefns slDefns)
-			bindings' <- compileJSExprBindings
-				("in `(js-emit ...)` directive at " ++ formatRange range ++ ": ")
-				scope bindings
-			let substs = M.map (\binding ->
-				case R.tryReduceJSExprBindingToJSSubst S.empty binding of
-					Just f -> f M.empty
-					Nothing -> let
-						R.JSExprBinding _ value = binding
-						in error ("for some reason, cannot reduce binding: " ++ formatMOForMessage value)
-				) bindings'
-			return $ map (JS.substituteStatement substs M.empty . JS.removeAnnotations) code
-			| TL.DJSEmit range code bindings <- directives]
+	let scope = Scope tlDefns (CSL.scopeForDefns slDefns)
 
-	let allLoopBreakers = loopBreakersFromDefnDirs ++ loopBreakersFromEmitDirs
-	emitsFromLoopBreakers <- liftM concat $
-		sequence [fun tlDefns | LoopBreakerToProcess fun <- allLoopBreakers]
+	emitsFromJSExprGlobalDirs <- liftM concat $ mapM ($ scope) globalFunctions
 
-	-- Emits from loop breakers must go before emits from `emit` directives so that user-supplied statements can access
-	-- automatically-generated global definitions
-	let allEmits = emitsFromLoopBreakers ++ emitsFromEmitDirs 
+	emitsFromJSEmitDirs <- liftM concat $ sequence [do
+		bindings' <- compileJSExprBindings
+			("in `(js-emit ...)` directive at " ++ formatRange range ++ ": ")
+			scope bindings
+		let substs = M.map (\binding ->
+			case R.tryReduceJSExprBindingToJSSubst S.empty binding of
+				Just f -> f M.empty
+				Nothing -> let
+					R.JSExprBinding _ value = binding
+					in error ("for some reason, cannot reduce binding: " ++ formatMOForMessage value)
+			) bindings'
+		return $ map (JS.substituteStatement substs M.empty . JS.removeAnnotations) code
+		| TL.DJSEmit range code bindings <- directives]
+
+	-- Emits from `js-expr-global` directives must go before emits from `js-emit` directives so that user-supplied
+	-- statements can access automatically-generated global definitions
+	let allEmits = emitsFromJSExprGlobalDirs ++ emitsFromJSEmitDirs 
 
 	return $ GlobalResults {
 		slDefnsOfGlobalResults = slDefns,

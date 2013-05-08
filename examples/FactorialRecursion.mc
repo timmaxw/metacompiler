@@ -9,10 +9,11 @@
 
 ]])
 
-(let Factorial (xSL :: sl-term (sl-type "Nat")) (xJS :: js-expr NatAsNumber xSL) = (js-expr-loop-break
+(js-expr-global Factorial (xSL :: sl-term (sl-type "Nat")) (xJS :: js-expr NatAsNumber xSL) =
+	(args xJS)
 	(spec (sl-term "factorial . x" (term "x" = xSL)))
 	(type NatAsNumber)
-	(content
+	(body
 		(js-expr-convert-spec
 			(in-spec
 				(sl-term
@@ -43,7 +44,7 @@
 				)
 			)
 		)
-	))
+	)
 
 (js-emit "the_answer = x();" (expr "x" =
 	(Factorial
