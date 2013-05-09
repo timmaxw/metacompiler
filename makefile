@@ -1,6 +1,10 @@
 build/metacompiler: Metacompiler/*.hs Metacompiler/*/*.hs
 	ghc --make Metacompiler/Main.hs -o $@ -main-is Metacompiler.Main.main -outputdir build/objs
 
+clean:
+	rm -f build/metacompiler
+	rm -rf build/objs/*
+
 run_examples: build/metacompiler examples/*.mc
 	@echo ============================================================
 	build/metacompiler examples/NatAsNumber.mc
