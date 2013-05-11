@@ -123,6 +123,51 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-global") exprs1to14
 		TL.bodyOfDJSExprGlobal = body
 		}
 
+parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-use") exprs1to6)) = do
+    {- sample input:
+    (js-expr-use (params (arg :: type) ) (value blah ) )
+                ^       ^             ^        ^    ^ ^
+                1       2             3        4    5 6
+    -}
+    clauses <- parseClausesFromSExprs
+		[("params", False, False), ("value", False, False)]
+		exprs1to6
+	params <- let [(_, exprs2to3)] = (M.!) clauses "params" in
+		mapM parseTLParameterFromSExpr (sExprsToList exprs2to3)
+	value <- let [(_, exprs4to5)] = (M.!) clauses "value" in
+		parseTLMetaObjectFromSExprs exprs4to5
+	return $ TL.DJSExprUse {
+		TL.tagOfDirective = range,
+		TL.paramsOfDJSExprUse = params,
+		TL.valueOfDJSExprUse = value
+		}
+
+parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-infer") exprs1to9)) = do
+    {- sample input:
+    (js-expr-infer name = (type blah ) (spec blah ) )
+                  ^    ^ ^     ^    ^ ^     ^    ^ ^
+                  1    2 3     4    5 6     7    8 9
+    -}
+	(name, exprs2to9) <- case exprs1to9 of
+		Cons (Atom _ n) r -> return (TL.Name n, r)
+		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to9)))
+	exprs3to9 <- case exprs2to9 of
+		Cons (Atom _ "=") r -> return r
+		_ -> fail ("missing `=` at " ++ formatPoint (startOfRange (rangeOfSExprs exprs2to9)))
+	clauses <- parseClausesFromSExprs
+		[("type", False, False), ("spec", False, False)]
+		exprs3to9
+	type_ <- let [(_, exprs4to5)] = (M.!) clauses "type" in
+		parseTLMetaObjectFromSExprs exprs4to5
+	spec <- let [(_, exprs7to8)] = (M.!) clauses "spec" in
+		parseTLMetaObjectFromSExprs exprs7to8
+	return $ TL.DJSExprInfer {
+		TL.tagOfDirective = range,
+		TL.nameOfDJSExprInfer = name,
+		TL.typeOfDJSExprInfer = type_,
+		TL.specOfDJSExprInfer = spec
+		}
+
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-emit") exprs1to5)) = do
 	{- sample input:
 	(js-emit "code" (expr name = value ) )

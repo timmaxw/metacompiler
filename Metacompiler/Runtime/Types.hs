@@ -49,16 +49,14 @@ data MetaObject
 	| MOName NameOfMetaObject MetaType
 
 	| MOSLTypeDefn SLDataDefn
-	| MOSLTypeName NameOfSLType SLKind
 	| MOSLTypeApp MetaObject MetaObject
 	| MOSLTypeFun MetaObject MetaObject
 	| MOSLTypeLazy MetaObject
 
 	| MOSLTermDefn SLTermDefn [MetaObject]
-	| MOSLTermName NameOfSLTerm MetaObject
 	| MOSLTermApp MetaObject MetaObject
-	| MOSLTermAbs (NameOfSLTerm, MetaObject) MetaObject
-	| MOSLTermCase MetaObject [(SLCtorDefn, [MetaObject], [NameOfSLTerm], MetaObject)]
+	| MOSLTermAbs (NameOfMetaObject, MetaObject) MetaObject
+	| MOSLTermCase MetaObject [(SLCtorDefn, [MetaObject], [NameOfMetaObject], MetaObject)]
 	| MOSLTermData SLCtorDefn [MetaObject] [MetaObject]
 	| MOSLTermWrap MetaObject
 	| MOSLTermUnwrap MetaObject

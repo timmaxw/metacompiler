@@ -122,6 +122,17 @@ data Directive a
 		specOfDJSExprGlobal :: MetaObject a,
 		bodyOfDJSExprGlobal :: MetaObject a
 		}
+	| DJSExprUse {
+		tagOfDirective :: a,
+		paramsOfDJSExprUse :: [(Name, MetaType a)],
+		bodyOfDJSExprUse :: MetaObject a
+		}
+	| DJSExprInfer {
+		tagOfDirective :: a,
+		nameOfDJSExprInfer :: Name,
+		typeOfDJSExprInfer :: MetaObject a,
+		specOfDJSExprInfer :: MetaObject a
+		}
 	| DJSEmit {
 		tagOfDirective :: a,
 		codeOfDJSEmit :: [JS.Statement JS.SourcePos],
