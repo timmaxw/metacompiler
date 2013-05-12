@@ -133,6 +133,148 @@ reduceSLTypeBindings globalsInOuterObject freeVarsInOuterObject bindings = let
 	(processedBindings, subs) = mconcat processedBindings
 	in (processedBindings, subs)
 
+data BindingReductionParameters nameType literalType bindingType paramType substType = BRP {
+	makeNameBRP :: String -> nameType,
+	unmakeNameBRP :: nameType -> String,
+	makeBindingBRP :: ([paramType], MetaObject) -> bindingType,
+	unmakeBindingBRP :: bindingType -> ([paramType], MetaObject),
+	isMetaObjectALiteralBRP :: MetaObject -> Maybe (literalType, M.Map nameType bindingType),
+	paramNamesBRP :: paramType -> S.Set NameOfMetaObject,
+	makeSubstBRP :: Int -> ? -> ([literalType] -> literalType) -> substType,
+	applySubstsBRP :: M.Map nameType substType -> literalType -> literalType,
+	makeLiteralInvokingSubstBRP :: nameType -> [literalType] -> literalType
+	}
+
+reduceBindings :: Ord nameType
+               => BindingReductionParameters nameType literalType bindingType paramType substType
+               -> S.Set nameType
+               -> S.Set nameType
+               -> M.Map nameType bindingType
+               -> (M.Map nameType bindingType, M.Map nameType substType)
+reduceBindings brp globalNames freeNamesInOuterLiteral bindings = let
+
+	-- `filterByFlags` takes a list of objects and a list of bools saying whether to keep each one.
+	filterByFlags :: [Bool] -> [a] -> [a]
+	filterByFlags [] [] = []
+	filterByFlags (True:flags) (a:objs) = a : filterByFlags flags objs
+	filterByFlags (False:flags) (_:objs) = filterByFlags flags objs
+
+	-- The `StateT` monad is used to keep track of which names are safe to use. `uniqify` changes a name if necessary
+	-- to make it unique, then records the new name so nothing else uses it, and returns the new name.
+	-- uniqify :: nameType -> State (S.Set nameType) nameType
+	uniqify name = do
+		takenNames <- get
+		let candidates = [(makeNameBRP brp) ((unMakeNameBRP brp) n ++ replicate i '\'') | i <- [0..]]
+		let Just name' = find (`S.notMember` takenNames) candidates
+		put (S.insert name' takenNames)
+		return name'
+
+	-- processedBindingsAndSubs :: [(M.Map nameType bindingType, M.Map nameType substType)]
+	processedBindingsAndSubs = flip evalState globalNames $ sequence [
+		case isMetaObjectALiteralBRP brp outerBindingValue of
+
+			-- This binding isn't used at all. We can just throw it away.
+			_ | outerBindingName `S.notMember` freeNamesInOuterObject ->
+				return (M.empty, M.empty)
+
+			-- This binding is used, but even after being reduced it isn't a literal of the appropriate type. We can't
+			-- fold it into the outer literal, but we might have to rename it, and we can still prune its parameters.
+			Nothing -> do
+				-- Rename the binding to avoid conflicts
+				outerBindingName' <- uniqify outerBindingName
+
+				-- It might be that the binding doesn't use all of its parameters. This list has `True` for every one
+				-- that is used and `False` for every one that is no longer needed.
+				let
+					outerBindingParamsKeepFlags :: [Bool]
+					outerBindingParamsKeepFlags = [
+						or [
+							-- This condition tests that the parameter's name appears in the expression.
+							name `M.member` freeVarsInMetaObject outerBindingValue
+							-- This condition tests that the parameter isn't being shadowed by another parameter.
+							&& n `S.notMember` S.unions (map paramNamesBRP rest)
+							| name <- S.toList (paramNamesBRP brp param)]
+						| param:rest <- tails outerBindingParams]
+
+				let outerBindingParams' = filterByFlags outerBindingParamsKeepFlags outerBindingParams
+				
+				let subst = makeSubstBRP brp
+					(length outerBindingParams)
+					(...)
+					(\ outerBindingParamsValues -> makeLiteralInvokingSubstBRP brp
+						outerBindingName'
+						(filterByFlags outerBindingParamsKeepFlags outerBindingParamsValues))
+
+				return (
+					M.singleton outerBindingName' (makeBindingBRP outerBindingParams' outerBindingValue),
+					M.singleton outerBindingName subs
+					)
+
+			-- This binding is used, and it reduces to a literal, so we can fold it into the outer literal.
+			Just (innerLiteral, innerBindings) -> do
+
+				-- newOuterBindings :: M.Map nameType bindingType
+				-- subsForInnerLiteral :: [literalType] -> M.Map nameType substType
+				(newOuterBindings, subsForInnerLiteral) <- liftM mconcat $ sequence [do
+				
+					newOuterBindingName <- uniqify innerBindingName
+
+					-- It might be that not all of the outer binding parameters are used in this inner binding. This
+					-- list has `True` for every one that is used and `False` for every one that is no longer needed.
+					let
+						outerBindingParamsKeepFlags :: [Bool]
+						outerBindingParamsKeepFlags = [
+							or [
+								-- This condition tests that the parameter's name appears in the expression.
+								name `M.member` freeVarsInMetaObject innerBindingValue
+								-- This condition tests that the parameter isn't being shadowed by another parameter.
+								&& n `S.notMember` S.unions (map paramNamesBRP rest)
+								| name <- S.toList (paramNamesBRP brp param)]
+							| param:rest <- tails outerBindingParams]
+
+					let outerBindingParamsKept = filterByFlags outerBindingParamsKeepFlags outerBindingParams
+					let newOuterBindingParams = outerBindingParamsKept ++ innerBindingParams
+
+					let subsForInnerLiteral outerBindingParamValues =
+							M.singleton innerBindingName $ makeSubstBRP brp
+								(length newOuterBindingParams)
+								(...)
+								(\ innerBindingParamValues -> let
+									newOuterBindingParamValues =
+										filterByFlags outerBindingParamsKeepFlags outerBindingParamValues
+										++ innerBindingParamValues
+									in makeLiteralInvokingSubstBRP brp newOuterBindingName newOuterBindingParamValues
+									)
+
+					return (
+						M.singleton newOuterBindingName (makeBindingBRP brp (newOuterBindingParams, innerBindingValue)),
+						subsForInnerLiteral
+						)
+
+					| (innerBindingName, innerBinding) <- M.toList innerBindings,
+					  let (innerBindingParams, innerBindingValue) = unmakeBindingBRP brp innerBinding]
+
+				let subst = makeSubstBRP brp
+						(length outerBindingParams)
+						(...)
+						(\ outerBindingParamsValues ->
+							applySubstsBRP brp
+								(subsForInnerLiteral outerBindingParamsValues)
+								innerLiteral)
+
+				return (
+					newOuterBindings,
+					M.singleton outerBindingName subst
+					)
+
+		| (outerBindingName, outerBinding) <- M.toList bindings,
+		  let (outerBindingParams, outerBindingValue) = unmakeBindingBRP brp outerBinding]
+
+	-- `processedBindings` is the newly reduced bindings. `subs` is the substitutions to apply to the outer object.
+	(processedBindings, subs) = mconcat processedBindingsAndSubs
+
+	in (processedBindings, subs)
+
 reduceSLTermBindings :: S.Set NameOfSLTerm
                      -> M.Map NameOfSLTerm SLType
                      -> M.Map NameOfSLTerm SLTermBinding
