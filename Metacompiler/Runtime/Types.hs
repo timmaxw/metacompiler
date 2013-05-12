@@ -4,30 +4,11 @@ import qualified Data.Map as M
 import qualified Metacompiler.JS as JS
 
 newtype NameOfMetaObject = NameOfMetaObject { unNameOfMetaObject :: String } deriving (Ord, Show, Eq)
-newtype NameOfSLType = NameOfSLType { unNameOfSLType :: String } deriving (Eq, Show, Ord)
-newtype NameOfSLTerm = NameOfSLTerm { unNameOfSLTerm :: String } deriving (Eq, Show, Ord)
 
-data SLKind
-	= SLKindType
-	| SLKindFun SLKind SLKind
-	deriving (Show, Eq)
-
-data SLDataDefn = SLDataDefn {
-	nameOfSLDataDefn :: NameOfSLType,
-	typeParamsOfSLDataDefn :: [SLKind]
-	}
-
-data SLCtorDefn = SLCtorDefn {
-	nameOfSLCtorDefn :: NameOfSLTerm,
-	parentDataOfSLCtorDefn :: SLDataDefn,
-	fieldTypesOfSLCtorDefn :: [[MetaObject] -> MetaObject]
-	}
-
-data SLTermDefn = SLTermDefn {
-	nameOfSLTermDefn :: NameOfSLTerm,
-	typeParamsOfSLTermDefn :: [SLKind],
-	typeOfSLTermDefn :: [MetaObject] -> MetaObject,
-	valueOfSLTermDefn :: [MetaObject] -> MetaObject
+data JSExprTypeDefn = JSExprTypeDefn {
+	nameOfJSExprTypeDefn :: NameOfMetaObject,
+	paramsOfJSExprTypeDefn :: [MetaType],
+	slEquivOfJSExprTypeDefn :: [MetaObject] -> MetaObject
 	}
 
 data MetaType
@@ -37,35 +18,24 @@ data MetaType
 	| MTJSExprType MetaObject
 	| MTJSExpr MetaObject MetaObject   -- SL type, SL equivalent
 
-data JSExprTypeDefn = JSExprTypeDefn {
-	nameOfJSExprTypeDefn :: NameOfMetaObject,
-	paramsOfJSExprTypeDefn :: [MetaType],
-	slEquivOfJSExprTypeDefn :: [MetaObject] -> MetaObject
-	}
-
 data MetaObject
 	= MOApp MetaObject MetaObject
 	| MOAbs (NameOfMetaObject, MetaType) MetaObject
 	| MOName NameOfMetaObject MetaType
-
-	| MOSLTypeDefn SLDataDefn
-	| MOSLTypeApp MetaObject MetaObject
-	| MOSLTypeFun MetaObject MetaObject
-	| MOSLTypeLazy MetaObject
-
-	| MOSLTermDefn SLTermDefn [MetaObject]
-	| MOSLTermApp MetaObject MetaObject
-	| MOSLTermAbs (NameOfMetaObject, MetaObject) MetaObject
-	| MOSLTermCase MetaObject [(SLCtorDefn, [MetaObject], [NameOfMetaObject], MetaObject)]
-	| MOSLTermData SLCtorDefn [MetaObject] [MetaObject]
-	| MOSLTermWrap MetaObject
-	| MOSLTermUnwrap MetaObject
-
+	| MOSLType SLType (M.Map NameOfSLType SLTypeBinding)
+	| MOSLTerm SLTerm (M.Map NameOfSLType SLTypeBinding) (M.Map NameOfSLTerm SLTermBinding)
 	| MOJSExprTypeDefn JSExprTypeDefn [MetaObject]
-
 	| MOJSExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) JSExprBinding)   -- equiv, type
-
 	| MOJSExprConvertEquiv MetaObject MetaObject   -- new equivalent, expression to convert
+
+data SLTypeBinding = SLTypeBinding {
+	valueOfSLTypeBinding :: MetaObject
+	}
+
+data SLTermBinding = SLTermBinding {
+	paramsOfSLTermBinding :: [(NameOfMetaObject, MetaObject)],
+	valueOfSLTermBinding :: MetaObject
+	}
 
 data JSExprBinding = JSExprBinding {
 	paramsOfJSExprBinding :: [JSExprBindingParam],
