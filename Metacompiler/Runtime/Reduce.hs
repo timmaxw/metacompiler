@@ -26,32 +26,31 @@ reduceMetaObject (MOApp fun arg) = let
 			substituteMetaObject (Substitutions (M.singleton paramName arg') M.empty M.empty) body
 		_ -> MOApp fun' arg'
 
-reduceMetaObject obj@(MOSLType { }) = let
-	-- This is a convenient way to reduce `bindings`
-	MOSLType type_ bindings = runIdentity (traverseMetaObject reductionVisitor obj)
-	(bindings', subs) = 
+-- TODO: Handle things like `(sl-term "x" (term "x" = ...))`. Also take into account the case where `x` takes
+-- parameters, and make it work for all of `sl-term`, `sl-type`, and `js-expr`.
 
-reduceMetaObject obj@(MOSLTerm { }) = let
-	-- This is a convenient way to reduce `bindings`
-	MOSLTerm term bindings = runIdentity (traverseMetaObject reductionVisitor obj)
-	(bindings', subs) = mconcat $ (flip evalState) (S.fromList (M.keys bindings)) $ sequence [
-		case value of
-			MOSLTerm innerTerm innerBindings -> do
-				 innerBindings' <- sequence [
-				 	innerName' <- uniqifyName  innerName
-				 	
-				 	| (innerName, innerBinding) <- innerBindings]
-			_ -> if ({- name appears in term -})
-				then return (M.singleton name (SLTermBinding params value), M.empty)
-				else return (M.empty, M.empty)
-		| (name, SLTermBinding params value) <- M.toList bindings]
+reduceMetaObject (MOSLType type_ bindings) = let
+	type_' = Left type_
+	bindings' = M.mapKeys Left (M.map Left bindings)
+	(type_'', bindings'') = reduceBindings bindingReductionParametersForSL (type_', bindings')
+	Left type_''' = type_''
+	bindings''' = M.mapKeys (\ (Left x) -> x) (M.map (\ (Left x) -> x) bindings'')
+	in MOSLType type_''' bindings'''
 
-reduceMetaObject obj@(MOJSExprLiteral { }) = let
-	-- This is a convenient way to reduce `equiv`, `type_`, and `bindings`
-	obj'@(MOJSExprLiteral equiv type_ expr bindings) = runIdentity (traverseMetaObject reductionVisitor obj)
-	in case tryReduceMetaObjectToJSExpression S.empty obj' of
-		Nothing -> obj'
-		Just fun -> MOJSExprLiteral equiv type_ (fun M.empty) M.empty
+reduceMetaObject (MOSLTerm term typeBindings termBindings) = let
+	term' = Left term
+	bindings' = M.mapKeys Left (M.map Left typeBindings) `M.union` M.mapKeys Right (M.map Right termBindings)
+	(type_'', bindings'') = reduceBindings bindingReductionParametersForSL (type_', bindings')
+	Right type_''' = type_''
+	typeBindings''' = M.fromList [(n, v) | (Left n, Left v) <- M.toList bindings'']
+	termBindings''' = M.fromList [(n, v) | (Right n, Right v) <- M.toList bindings'']
+	in MOSLTerm type_''' typeBindings''' termBindings'''
+
+reduceMetaObject (MOJSExprLiteral equiv type_ expr bindings) = let
+	equiv' = reduceMetaObject equiv
+	type_' = reduceMetaObject type_
+	(expr', bindings') = reduceBindings bindingReductionParametersForJS (expr, bindings)
+	in MOJSExprLiteral equiv' type_' expr' bindings'
 
 reduceMetaObject (MOJSExprConvertEquiv newEquiv content) = case reduceMetaObject content of
 	MOJSExprLiteral equiv type_ code bindings ->
@@ -72,12 +71,141 @@ bindingReductionParametersForSL :: BindingReductionParameters
 		(Either SLKind SLType)
 		(Either SLTypeBinding SLTermBinding)
 		(NameOfMetaObject, MetaObject)
-		(Either SL.TypeSub SL.TermSub)
 
 bindingReductionParametersForSL = BRP {
+	generateUniqueNameBRP = (\ name taken -> let
+		unwrap :: Either NameOfSLType NameOfSLTerm -> String
+		unwrap (Left (NameOfSLType n)) = n
+		unwrap (Right (NameOfSLTerm n)) = n
+		takenStrings = S.map unwrap taken
+		candidateStrings = [unwrap name ++ replicate i '\'' | i <- [0..]]
+		Just newNameString = find (`S.notMember` takenStrings) candidateStrings
+		in case name of
+			Left _ -> Left (NameOfSLType newNameString)
+			Right _ -> Right (NameOfSLTerm newNameString)
+		),
+	makeBindingBRP = (\ params value -> case typeOfMetaObject value of
+		MTSLType _ -> assert (null params) $ Left (SLTypeBinding value)
+		MTSLTerm _ -> Right (SLTermBinding params value)
+		),
+	unmakeBindingBRP = (\ binding -> case binding of
+		Left (SLTypeBinding value) -> ([], value)
+		Right (SLTermBinding params value) -> (params, value)
+		),
+	isMetaObjectALiteralBRP = (\ obj -> case obj of
+		MOSLType type_ bindings -> Just (
+			Left type_,
+			M.mapKeys Left (M.map Left bindings)
+			)
+		MOSLTerm term typeBindings termBindings -> Just (
+			Right term,
+			M.mapKeys Left (M.map Left typeBindings) `M.union` M.mapKeys Right (M.map Right termBindings)
+			)
+		_ -> Nothing
+		),
+	primaryParamNameBRP = (\ (name, _) -> name),
+	allParamNamesBRP = (\ (name, _) -> S.singleton name),
+	reduceParamBRP = (\ (name, type_) -> (name, reduceMetaObject type_)),
+	applySubstBRP = (\ typeOrTermName numParams newNames substFun typeOrTerm -> let
+		(typeSubs, termSubs) = case typeOrTermName of
+			Left typeName | numParams == 0 -> (
+				M.singleton typeName (TypeSub
+					(\ params -> let
+						Left value = substFun []
+						in Identity (foldl SL.TypeApp value params))
+					),
+				M.empty
+				)
+			Right termName -> (
+				M.empty,
+				M.singleton termName (TermSub
+					(S.fromList [name | Right name <- S.toList newNames])
+					(\ params -> assert (length params >= numParams) $ let
+						Right value = substFun (take numParams params)
+						in Identity (foldl SL.TermApp value (drop numParams params)))
+					)
+				)
+		in case typeOrTerm of
+			Left type_ -> Left (runIdentity (substituteSLType typeSubs type_))
+			Right term_ -> Right (runIdentity (substituteSLTerm typeSubs termSubs term))
+		),
+	typeOfSubstInTermBRP = (\ typeOrTerm typeOrTermName binding -> let
+		(kindsOfTypes, typesOfTerms) = case typeOrTerm of
+			Left type_ -> (freeVarsInSLType type_, M.empty)
+			Right term -> freeVarsInSLTerm term
+		stripType :: Int -> SLType -> SLType
+		stripType 0 t = t
+		stripType i (SLTypeFun _ r) = stripType (i - 1) r
+		in case (typeOrTermName, binding) of
+			(Left typeName, Left (SLTypeBinding _)) ->
+				Left (kindsOfTypes M.! typeName)
+			(Right termName, Right (SLTermBinding params _)) ->
+				Right (stripType (length params) (typesOfTerms M.! termName))
+		),
+	freeVarsAndGlobalsOfTermBRP = (\ typeOrTerm -> case typeOrTerm of
+		Left type_ -> S.map Left (freeVarsAndGlobalsOfSLType type_)
+		Right term -> let
+			(typeVars, termVars) = freeVarsAndGlobalsOfSLTerm term
+			in S.map Left typeVars `S.union` S.map Right termVars
+		),
+	freeVarsAndGlobalsOfTypeBRP = (\ kindOrType -> case kindOrType of
+		Left _ -> S.empty
+		Right type_ -> S.map Left (freeVarsAndGlobalsOfSLType type_)
+		),
+	makeTermInvokingSubstBRP = (\ typeOrTermName kindOrType typeOrTermArgs -> case (name, kindOrType) of
+		(Left name, Left kind) -> let
+			args = [t | t' <- typeOrTermArgs, let Left t = t']
+			kind' = foldr SLKindFun kind (map kindOfSLType args)
+			in foldl SLTypeApp (SLTypeName name kind') args
+		(Right name, Right type_) -> let
+			args = [t | t <- typeOrTermArgs, let Right t = t']
+			type_' = foldr SLTypeFun type_ (map typeOfSLTerm args)
+			in foldl SLTermApp (SLTermName name type_') args
+		)
 	}
 
-data BindingReductionParameters nameType termType typeType bindingType paramType substType = BRP {
+bindingReductionParametersForJS :: BindingReductionParameters
+		(JS.Id ())
+		(JS.Expression ())
+		()
+		JSExprBinding
+		JSExprBindingParam
+
+bindingReductionParametersForJS = BRP {
+	generateUniqueNameBRP = (\ name taken -> let
+		candidates = [JS.unId name ++ replicate i "_" | i <- [0..]]
+		Just name' = find (`S.notMember` taken) candidates
+		in name'
+		),
+	makeBindingBRP = (\ (params, value) -> JSExprBinding params value),
+	unmakeBindingBRP = (\ (JSExprBinding params value) -> (params, value)),
+	isMetaObjectALiteralBRP = (\ obj -> case obj of
+		MOJSExprLiteral _ _ expr bindings -> Just (expr, bindings)
+		_ -> Nothing
+		),
+	primaryParamNameBRP = (\ (JSExprBindingParam _ _ n _) -> n),
+	allParamNamesBRP = (\ (JSExprBindingParam n1 _ n2 _) -> S.fromList [n1, n2]),
+	reduceParamBRP = (\ (JSExprBindingParam n1 t1 n2 t2) ->
+		JSExprBindingParam n1 (reduceMetaObject t1) n2 (reduceMetaObject t2)),
+	applySubstBRP = (\ name numParams namesIntroduced substFun expr ->
+		JS.substituteExpression
+			(M.singleton name
+				(JS.SubstFun (\ params ->
+					if length params == numParams
+						then substFun params
+						else error "wrong number of parameters to JS substitution"
+				) namesIntroduced))
+			expr
+		),
+	typeOfSubstInTermBRP = (\ _ _ _ -> ()),
+	freeVarsAndGlobalsOfTermBRP = JS.freeNamesInExpression,
+	freeVarsAndGlobalsOfTypeBRP = const S.empty,
+	makeTermInvokingSubstBRP = (\ name () args ->
+		JS.CallExpr () (JS.VarRef () name) args
+		)
+	}
+
+data BindingReductionParameters nameType termType typeType bindingType paramType = BRP {
 	generateUniqueNameBRP :: nameType -> S.Set nameType -> nameType,
 
 	makeBindingBRP :: ([paramType], MetaObject) -> bindingType,
@@ -89,8 +217,7 @@ data BindingReductionParameters nameType termType typeType bindingType paramType
 	allParamNamesBRP :: paramType -> S.Set NameOfMetaObject,
 	reduceParamBRP :: paramType -> paramType,
 	
-	makeSubstBRP :: Int -> S.Set nameType -> ([termType] -> termType) -> substType,
-	applySubstsBRP :: M.Map nameType substType -> termType -> termType,
+	applySubstBRP :: nameType -> Int -> S.Set nameType -> ([termType] -> termType) -> termType -> termType,
 	typeOfSubstInTermBRP :: termType -> nameType -> bindingType -> typeType,
 	freeVarsAndGlobalsOfTermBRP :: termType -> S.Set nameType,
 	freeVarsAndGlobalsOfTypeBRP :: typeType -> S.Set nameType,
@@ -137,7 +264,7 @@ This ought to be reduced to:
 -}
 
 reduceBindings :: Ord nameType
-               => BindingReductionParameters nameType termType typeType bindingType paramType substType
+               => BindingReductionParameters nameType termType typeType bindingType paramType
                -> (termType, M.Map nameType bindingType)
                -> (termType, M.Map nameType bindingType)
 reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
@@ -227,16 +354,17 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 			(MOName name _, _) | name `M.member` paramPrimaryNames =
 				-- The binding is simply the name of one of its parameters, so we can easily reduce it.
 
-				-- In our example, the `subC` binding will be handled by this code path.
+				-- In our example, the `subC` binding will be handled by this code path. `numberOfTheParam` will be
+				-- `0`, because `param` is the first parameter to `subC`.
 
 				let numberOfTheParam = paramPrimaryNames M.! name
 
-				let subst = makeSubstBRP brp
+				let outerTerm' = applySubstBRP brp
+						outerBindingName'
 						(length outerBindingParams)
 						S.empty
 						(!! numberOfTheParam)
-
-				let outerTerm' = applySubstsBRP (M.singleton outerBindingName' subst) outerTerm
+						outerTerm
 
 				processOuterBindings (outerTerm', remainingOuterBindings)
 
@@ -273,17 +401,17 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 				-- In our example for `subB`, `bindingType` would be `Nat`.
 				let bindingType = typeOfSubstInTermBRP outerTerm outerBindingName outerBinding
 
-				let subst = makeSubstBRP brp
+				-- In our example, `outerTerm'` would be the same as `outerTerm` except that `subB global5 global6` is
+				-- replaced with `subB global5`.
+				let outerTerm' = applySubstBRP brp
+					outerBindingName
 					(length outerBindingParams)
 					(S.singleton outerBindingName' `S.union` freeVarsAndGlobalsInTypeBRP brp bindingType)
 					(\ outerBindingParamsValues -> makeTermInvokingSubstBRP brp
 						outerBindingName'
 						bindingType
 						(filterByFlags outerBindingParamsKeepFlags outerBindingParamsValues))
-
-				-- In our example, `outerTerm'` would be the same as `outerTerm` except that `subB global5 global6` is
-				-- replaced with `subB global5`.
-				let outerTerm' = applySubstsBRP (M.singleton outerBindingName' subst) outerTerm
+					outerTerm
 
 				(finishedOuterTerm, remainingOuterBindings') <-
 					processOuterBindings (outerTerm', remainingOuterBindings)
@@ -338,11 +466,12 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 									innerTermFun' outerBindingParamValues = let
 										innerTerm = innerTermFun outerBindingParamValues
 										valueOfTheParam = outerBindingParamValues !! numberOfTheParam
-										subst = makeSubstBRP brp
+										in applySubstBRP brp
+											innerTermName
 											(length innerBindingParams)
 											(freeAndGlobalVarsOfTermBRP brp valueOfTheParam)
 											(const valueOfTheParam)
-										in applySubstsBRP (M.singleton innerTermName subst) innerTerm
+											innerTerm
 
 								processInnerBindings remainingInnerBindings innerTermFun'
 
@@ -383,7 +512,8 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 										innerTerm = innerTermFun outerBindingParamValues
 										prunedParamValues = filterByFlags outerBindingParamsKeepFlags outerBindingParamValues
 										bindingType = typeOfSubstInTermBRP innerTerm innerBindingName innerBinding
-										subst = makeSubstBRP brp
+										in applySubstBRP brp
+											innerTermName
 											(length innerBindingParams)
 											(S.singleton newOuterBindingName
 												`S.union` freeAndGlobalVarsOfTypeBRP brp bindingType
@@ -393,7 +523,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 												bindingType
 												(prunedParamValues ++ innerBindingParamValues)
 												)
-										in applySubstsBRP (M.singleton innerTermName subst) innerTerm
+											innerTerm
 
 								(finalInnerTermFun, outerBindingsFromRemainingInnerBindings) <-
 									processInnerBindings remainingInnerBindings innerTermFun'
@@ -424,12 +554,12 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 						(freeAndGlobalVarsOfTermBRP brp originalInnerTerm
 							S.\\ S.fromList (M.keys originalInnerBindings))
 						`S.union` S.fromList (M.keys finalOuterBindings)
-				let subst = makeSubstBRP brp
+				let outerTerm' = applySubstBRP brp
+						outerBindingName
 						(length outerBindingParams)
 						newVarsIntroduced
 						innerTermFun
-
-				let outerTerm' = applySubstsBRP (M.singleton outerBindingName subst) outerTerm
+						outerTerm
 
 				(finishedOuterTerm, remainingOuterBindings') <-
 					processOuterBindings (outerTerm', remainingOuterBindings)
@@ -439,8 +569,8 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 				return (finishedOuterTerm, finishedOuterBindings)
 
 	-- In our example, `finalOuterTerm` would be:
-	--     globalFun (add . global1 (y . global2)) (add . global3 (y . global4)) (subB . global5 global6)
-	-- and `finalOuterBindings` would have two bindings, named `subB` and `y`.
+	--     globalFun (add . g1 (y . g2)) (add . g3 (y . g4)) (subB . g5) g7
+	-- and `finalOuterBindings` would be a list of two bindings, named `subB` and `y`.
 
 	-- finalOuterTerm :: termType
 	-- finalOuterBindings :: [(nameType, bindingType)]
