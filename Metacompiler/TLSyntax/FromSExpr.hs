@@ -1,25 +1,24 @@
-module Metacompiler.TL.FromSExpr where
+module Metacompiler.TLSyntax.FromSExpr where
 
 import Control.Monad
 import Data.Char (isSpace)
 import qualified Data.Map as M
-import qualified Language.ECMAScript3.Parser as JS
-import qualified Metacompiler.JS as JS
+import qualified Metacompiler.JS.JS as JS
 import Metacompiler.Error
 import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Parse
 import Metacompiler.SExpr.Types
 import Metacompiler.SExpr.UtilsFrom
-import qualified Metacompiler.SL.FromSExpr as SL
-import qualified Metacompiler.SL.Syntax as SL
-import qualified Metacompiler.TL.Syntax as TL
+import qualified Metacompiler.SLSyntax.FromSExpr as SLS
+import qualified Metacompiler.SLSyntax.Types as SLS
+import qualified Metacompiler.TLSyntax.Types as TLS
 import qualified Text.Parsec
 import Text.Parsec.String ()   -- So `String` is an instance of `Stream`
 
 -- `parseTLDirectiveFromSExpr` tries to interpret an S-expression as a
--- `TL.Directive`. If it doesn't work, then it returns `Left <error>`.
+-- `TLS.Directive`. If it doesn't work, then it returns `Left <error>`.
 
-parseTLDirectiveFromSExpr :: SExpr -> ErrorMonad (TL.Directive Range)
+parseTLDirectiveFromSExpr :: SExpr -> ErrorMonad (TLS.Directive Range)
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") exprs1to7)) = do
     {- sample input:
@@ -28,7 +27,7 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") exprs1to7)) = do
         1    2             3  4    5 6     7
     -}
 	(name, exprs2to7) <- case exprs1to7 of
-		Cons (Atom _ n) r -> return (TL.Name n, r)
+		Cons (Atom _ n) r -> return (TLS.Name n, r)
 		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to7)))
 	(exprs2to5, exprs6to7) <- breakOnAtom "=" exprs2to7
 	(exprs2to3, maybeType) <- case breakOnAtom "::" exprs2to5 of
@@ -42,12 +41,12 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") exprs1to7)) = do
 				formatSExprsForMessage t)
 	params <- mapM parseTLParameterFromSExpr (sExprsToList exprs2to3)
 	value <- parseTLMetaObjectFromSExprs exprs6to7
-	return $ TL.DLet {
-		TL.tagOfDirective = range,
-		TL.nameOfDLet = name,
-		TL.paramsOfDLet = params,
-		TL.typeOfDLet = maybeType,
-		TL.valueOfDLet = value
+	return $ TLS.DLet {
+		TLS.tagOfDirective = range,
+		TLS.nameOfDLet = name,
+		TLS.paramsOfDLet = params,
+		TLS.typeOfDLet = maybeType,
+		TLS.valueOfDLet = value
 		}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "sl-code") exprs1to2)) = do
@@ -60,9 +59,9 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "sl-code") exprs1to2)) = do
 		Cons something (Nil _) -> return something
 		_ -> fail ("expected `(sl-code \"<string>\")`")
 	content <- parseSLDirectivesFromString expr1to2
-	return $ TL.DSLCode {
-		TL.tagOfDirective = range,
-		TL.contentOfDSLCode = content
+	return $ TLS.DSLCode {
+		TLS.tagOfDirective = range,
+		TLS.contentOfDSLCode = content
 		}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-type") exprs1to7)) = do
@@ -72,18 +71,18 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-type") exprs1to7)) 
                  1    2             3 4     5    6 7
     -}
 	(name, exprs2to7) <- case exprs1to7 of
-		Cons (Atom _ n) r -> return (TL.Name n, r)
+		Cons (Atom _ n) r -> return (TLS.Name n, r)
 		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to7)))
 	(exprs2to3, exprs4to7) <- breakOnAtom "=" exprs2to7
 	params <- mapM parseTLParameterFromSExpr (sExprsToList exprs2to3)
 	clauses <- parseClausesFromSExprs [("spec", False, False)] exprs4to7
 	slEquiv <- let [(range4to7, exprs5to6)] = (M.!) clauses "spec" in
 		parseTLMetaObjectFromSExprs exprs5to6
-	return $ TL.DJSExprType {
-		TL.tagOfDirective = range,
-		TL.nameOfDJSExprType = name,
-		TL.paramsOfDJSExprType = params,
-		TL.slEquivOfDJSExprType = slEquiv
+	return $ TLS.DJSExprType {
+		TLS.tagOfDirective = range,
+		TLS.nameOfDJSExprType = name,
+		TLS.paramsOfDJSExprType = params,
+		TLS.slEquivOfDJSExprType = slEquiv
 		}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-global") exprs1to14)) = do
@@ -93,7 +92,7 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-global") exprs1to14
                    1    2             3 4     5    6 7     8    9       10   11      12   13 14
     -}
 	(name, exprs2to14) <- case exprs1to14 of
-		Cons (Atom _ n) r -> return (TL.Name n, r)
+		Cons (Atom _ n) r -> return (TLS.Name n, r)
 		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to14)))
 	(exprs2to3, exprs4to14) <- breakOnAtom "=" exprs2to14
 	params <- mapM parseTLParameterFromSExpr (sExprsToList exprs2to3)
@@ -102,7 +101,7 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-global") exprs1to14
 		exprs4to14
 	runtimeArgs <- liftM concat $ sequence [
 		sequence [case expr5to6 of
-			Atom _ n -> return (TL.Name n)
+			Atom _ n -> return (TLS.Name n)
 			_ -> fail ("everything after the `args` in an `(args ...)` clause should be the name of a parameter, but \
 				\at " ++ formatRange (rangeOfSExpr expr5to6) ++ " there is something that is not an atom.")
 			| expr5to6 <- sExprsToList exprs5to6]
@@ -113,14 +112,14 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-global") exprs1to14
 		parseTLMetaObjectFromSExprs exprs10to11
 	body <- let [(_, exprs12to13)] = (M.!) clauses "body" in
 		parseTLMetaObjectFromSExprs exprs12to13
-	return $ TL.DJSExprGlobal {
-		TL.tagOfDirective = range,
-		TL.nameOfDJSExprGlobal = name,
-		TL.paramsOfDJSExprGlobal = params,
-		TL.runtimeArgsOfDJSExprGlobal = runtimeArgs,
-		TL.typeOfDJSExprGlobal = type_,
-		TL.specOfDJSExprGlobal = spec,
-		TL.bodyOfDJSExprGlobal = body
+	return $ TLS.DJSExprGlobal {
+		TLS.tagOfDirective = range,
+		TLS.nameOfDJSExprGlobal = name,
+		TLS.paramsOfDJSExprGlobal = params,
+		TLS.runtimeArgsOfDJSExprGlobal = runtimeArgs,
+		TLS.typeOfDJSExprGlobal = type_,
+		TLS.specOfDJSExprGlobal = spec,
+		TLS.bodyOfDJSExprGlobal = body
 		}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-use") exprs1to6)) = do
@@ -136,10 +135,10 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-use") exprs1to6)) =
 		mapM parseTLParameterFromSExpr (sExprsToList exprs2to3)
 	value <- let [(_, exprs4to5)] = (M.!) clauses "value" in
 		parseTLMetaObjectFromSExprs exprs4to5
-	return $ TL.DJSExprUse {
-		TL.tagOfDirective = range,
-		TL.paramsOfDJSExprUse = params,
-		TL.valueOfDJSExprUse = value
+	return $ TLS.DJSExprUse {
+		TLS.tagOfDirective = range,
+		TLS.paramsOfDJSExprUse = params,
+		TLS.valueOfDJSExprUse = value
 		}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-infer") exprs1to9)) = do
@@ -149,7 +148,7 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-infer") exprs1to9))
                   1    2 3     4    5 6     7    8 9
     -}
 	(name, exprs2to9) <- case exprs1to9 of
-		Cons (Atom _ n) r -> return (TL.Name n, r)
+		Cons (Atom _ n) r -> return (TLS.Name n, r)
 		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to9)))
 	exprs3to9 <- case exprs2to9 of
 		Cons (Atom _ "=") r -> return r
@@ -161,11 +160,11 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-infer") exprs1to9))
 		parseTLMetaObjectFromSExprs exprs4to5
 	spec <- let [(_, exprs7to8)] = (M.!) clauses "spec" in
 		parseTLMetaObjectFromSExprs exprs7to8
-	return $ TL.DJSExprInfer {
-		TL.tagOfDirective = range,
-		TL.nameOfDJSExprInfer = name,
-		TL.typeOfDJSExprInfer = type_,
-		TL.specOfDJSExprInfer = spec
+	return $ TLS.DJSExprInfer {
+		TLS.tagOfDirective = range,
+		TLS.nameOfDJSExprInfer = name,
+		TLS.typeOfDJSExprInfer = type_,
+		TLS.specOfDJSExprInfer = spec
 		}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-emit") exprs1to5)) = do
@@ -179,10 +178,10 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-emit") exprs1to5)) = do
 	clauses <- parseClausesFromSExprs [("expr", True, True)] exprs2to5
 	bindings <- forM ((M.!) clauses "expr") $ \ (range2to5, exprs3to4) ->
 		parseBindingFromSExprs (JS.Id ()) range2to5 exprs3to4
-	return $ TL.DJSEmit {
-		TL.tagOfDirective = range,
-		TL.codeOfDJSEmit = code,
-		TL.bindingsOfDJSEmit = bindings
+	return $ TLS.DJSEmit {
+		TLS.tagOfDirective = range,
+		TLS.codeOfDJSEmit = code,
+		TLS.bindingsOfDJSEmit = bindings
 		}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom r name) _)) =
@@ -196,10 +195,10 @@ parseTLDirectiveFromSExpr other =
 -- It is used in `fun ... -> ...` types, `\ ... -> ...` terms, and at the top
 -- of `let` and `js-expr` directives.
 
-parseTLParameterFromSExpr :: SExpr -> ErrorMonad (TL.Name, TL.MetaType Range)
+parseTLParameterFromSExpr :: SExpr -> ErrorMonad (TLS.Name, TLS.MetaType Range)
 parseTLParameterFromSExpr (List r (Cons (Atom _ name) (Cons (Atom _ "::") ty))) = do
 	ty' <- parseTLMetaTypeFromSExprs ty
-	return (TL.Name name, ty')
+	return (TLS.Name name, ty')
 parseTLParameterFromSExpr other =
 	fail ("invalid parameter: expected `(name :: type)`, got " ++ formatSExprForMessage other ++
 		" at " ++ formatRange (rangeOfSExpr other))
@@ -208,13 +207,13 @@ parseTLParameterFromSExpr other =
 -- `(name1 :: type1 | name2 :: type2 | name3 :: type3 | ...)`. It's used in
 -- bindings.
 
-parseTLMultiParameterFromSExpr :: SExpr -> ErrorMonad [(TL.Name, TL.MetaType Range)]
+parseTLMultiParameterFromSExpr :: SExpr -> ErrorMonad [(TLS.Name, TLS.MetaType Range)]
 parseTLMultiParameterFromSExpr (List r l) = do
 	parts <- multiBreakOnAtom "|" l
 	forM parts $ \ part -> case part of
 		Cons (Atom _ name) (Cons (Atom _ "::") ty) -> do
 			ty' <- parseTLMetaTypeFromSExprs ty
-			return (TL.Name name, ty')
+			return (TLS.Name name, ty')
 		_ -> fail ("invalid parameter: expected `name :: type`, got " ++ formatSExprsForMessage part ++
 			" at " ++ formatRange (rangeOfSExprs part))
 
@@ -248,18 +247,18 @@ parseClausesFromSExprs spec seq = do
 			return (M.adjust ((rangeOfSExpr c, value):) name rest')
 
 -- `parseTLMetaTypeFromSExpr` tries to interpret an S-expression as a
--- `TL.MetaType`.
+-- `TLS.MetaType`.
 
-parseTLMetaTypeFromSExpr :: SExpr -> ErrorMonad (TL.MetaType Range)
+parseTLMetaTypeFromSExpr :: SExpr -> ErrorMonad (TLS.MetaType Range)
 parseTLMetaTypeFromSExpr (List _ stuff) =
 	parseTLMetaTypeFromSExprs stuff
 parseTLMetaTypeFromSExpr other =
 	fail ("invalid meta-type " ++ formatSExprForMessage other ++ " at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseTLMetaTypeFromSExprs` tries to interpret a list of S-expressions as a
--- `TL.MetaType`.
+-- `TLS.MetaType`.
 
-parseTLMetaTypeFromSExprs :: SExprs -> ErrorMonad (TL.MetaType Range)
+parseTLMetaTypeFromSExprs :: SExprs -> ErrorMonad (TLS.MetaType Range)
 parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "sl-type") exprs1to2) = do
     {- sample input:
     (sl-type "kind" )
@@ -268,9 +267,9 @@ parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "sl-type") exprs1to2) = do
     -}
 	expr1to2 <- expectOne "kind" exprs1to2
 	kind <- parseSLKindFromString expr1to2
-	return $ TL.MTSLType {
-		TL.tagOfMetaType = rangeOfSExprs whole,
-		TL.slKindOfMTSLType = kind
+	return $ TLS.MTSLType {
+		TLS.tagOfMetaType = rangeOfSExprs whole,
+		TLS.slKindOfMTSLType = kind
 		}
 parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "sl-term") exprs1to2) = do
 	{- sample input:
@@ -280,9 +279,9 @@ parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "sl-term") exprs1to2) = do
     -}
 	expr1to2 <- expectOne "type" exprs1to2
 	type_ <- parseTLMetaObjectFromSExpr expr1to2
-	return $ TL.MTSLTerm {
-		TL.tagOfMetaType = rangeOfSExprs whole,
-		TL.slTypeOfMTSLTerm = type_
+	return $ TLS.MTSLTerm {
+		TLS.tagOfMetaType = rangeOfSExprs whole,
+		TLS.slTypeOfMTSLTerm = type_
 		}
 parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "fun") exprs1to4) = do
 	{- sample input:
@@ -293,10 +292,10 @@ parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "fun") exprs1to4) = do
 	(exprs1to2, exprs3to4) <- breakOnAtom "->" exprs1to4
 	params <- mapM parseTLParameterFromSExpr (sExprsToList exprs1to2)
 	body <- parseTLMetaTypeFromSExprs exprs3to4
-	return $ TL.MTFun {
-		TL.tagOfMetaType = rangeOfSExprs whole,
-		TL.paramsOfMTFun = params,
-		TL.resultOfMTFun = body
+	return $ TLS.MTFun {
+		TLS.tagOfMetaType = rangeOfSExprs whole,
+		TLS.paramsOfMTFun = params,
+		TLS.resultOfMTFun = body
 		}
 parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-expr-type") exprs1to2) = do
 	{- sample input:
@@ -306,9 +305,9 @@ parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-expr-type") exprs1to2) = do
 	-}
 	expr1to2 <- expectOne "type" exprs1to2
 	equiv <- parseTLMetaObjectFromSExpr expr1to2
-	return $ TL.MTJSExprType {
-		TL.tagOfMetaType = rangeOfSExprs whole,
-		TL.slTypeOfMTJSExprType = equiv
+	return $ TLS.MTJSExprType {
+		TLS.tagOfMetaType = rangeOfSExprs whole,
+		TLS.slTypeOfMTJSExprType = equiv
 		}
 parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-expr") exprs1to3) = do
     {- sample input:
@@ -320,10 +319,10 @@ parseTLMetaTypeFromSExprs whole@(Cons (Atom _ "js-expr") exprs1to3) = do
 	expr2to3 <- expectOne "equivalent" exprs2to3
 	type_ <- parseTLMetaObjectFromSExpr expr1to2
 	equiv <- parseTLMetaObjectFromSExpr expr2to3
-	return $ TL.MTJSExpr {
-		TL.tagOfMetaType = rangeOfSExprs whole,
-		TL.jsTypeOfMTJSExpr = type_,
-		TL.slTermOfMTJSExpr = equiv
+	return $ TLS.MTJSExpr {
+		TLS.tagOfMetaType = rangeOfSExprs whole,
+		TLS.jsTypeOfMTJSExpr = type_,
+		TLS.slTermOfMTJSExpr = equiv
 		}
 parseTLMetaTypeFromSExprs whole@(Cons x (Nil _)) =
 	parseTLMetaTypeFromSExpr x
@@ -331,13 +330,13 @@ parseTLMetaTypeFromSExprs other =
 	fail ("invalid meta-type " ++ formatSExprsForMessage other ++ " at " ++ formatRange (rangeOfSExprs other))
 
 -- `parseTLMetaObjectFromSExpr` tries to interpret a list of S-expressions as a
--- `TL.MetaObject`.
+-- `TLS.MetaObject`.
 
-parseTLMetaObjectFromSExpr :: SExpr -> ErrorMonad (TL.MetaObject Range)
+parseTLMetaObjectFromSExpr :: SExpr -> ErrorMonad (TLS.MetaObject Range)
 parseTLMetaObjectFromSExpr (Atom range x) =
-	return $ TL.MOName {
-		TL.tagOfMetaObject = range,
-		TL.varOfMOName = TL.Name x
+	return $ TLS.MOName {
+		TLS.tagOfMetaObject = range,
+		TLS.varOfMOName = TLS.Name x
 		}
 parseTLMetaObjectFromSExpr (List _ stuff) =
 	parseTLMetaObjectFromSExprs stuff
@@ -345,9 +344,9 @@ parseTLMetaObjectFromSExpr other =
 	fail ("invalid meta-object " ++ formatSExprForMessage other ++ " at " ++ formatRange (rangeOfSExpr other))
 
 -- `parseTLMetaObjectFromSExprs` tries to interpret a list of S-expressions as
--- a `TL.MetaObject`.
+-- a `TLS.MetaObject`.
 
-parseTLMetaObjectFromSExprs :: SExprs -> ErrorMonad (TL.MetaObject Range)
+parseTLMetaObjectFromSExprs :: SExprs -> ErrorMonad (TLS.MetaObject Range)
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "\\") exprs1to4) = do
 	{- sample input:
 	(\ (arg :: type) -> body )
@@ -357,10 +356,10 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "\\") exprs1to4) = do
 	(exprs1to2, exprs3to4) <- breakOnAtom "->" exprs1to4
 	args <- mapM parseTLParameterFromSExpr (sExprsToList exprs1to2)
 	body <- parseTLMetaObjectFromSExprs exprs3to4
-	return $ TL.MOAbs {
-		TL.tagOfMetaObject = rangeOfSExprs whole,
-		TL.paramsOfMOAbs = args,
-		TL.resultOfMOAbs = body
+	return $ TLS.MOAbs {
+		TLS.tagOfMetaObject = rangeOfSExprs whole,
+		TLS.paramsOfMOAbs = args,
+		TLS.resultOfMOAbs = body
 		}
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "sl-type") exprs1to5) = do
     {- sample input:
@@ -374,11 +373,11 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "sl-type") exprs1to5) = do
 	code <- parseSLTypeFromString expr1to2
 	clauses <- parseClausesFromSExprs [("type", True, True)] exprs2to5
 	bindings <- forM ((M.!) clauses "type") $ \ (range2to5, exprs3to4) ->
-		parseBindingFromSExprs SL.NameOfType range2to5 exprs3to4
-	return $ TL.MOSLTypeLiteral {
-		TL.tagOfMetaObject = rangeOfSExprs whole,
-		TL.codeOfMOSLTypeLiteral = code,
-		TL.typeBindingsOfMOSLTypeLiteral = bindings
+		parseBindingFromSExprs SLS.NameOfType range2to5 exprs3to4
+	return $ TLS.MOSLTypeLiteral {
+		TLS.tagOfMetaObject = rangeOfSExprs whole,
+		TLS.codeOfMOSLTypeLiteral = code,
+		TLS.typeBindingsOfMOSLTypeLiteral = bindings
 		}
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "sl-term") exprs1to8) = do
 	{- sample input:
@@ -392,14 +391,14 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "sl-term") exprs1to8) = do
 	code <- parseSLTermFromString expr1to2
 	clauses <- parseClausesFromSExprs [("type", True, True), ("term", True, True)] exprs2to8
 	typeBindings <- forM ((M.!) clauses "type") $ \ (range2to5, exprs3to4) ->
-		parseBindingFromSExprs SL.NameOfType range2to5 exprs3to4
+		parseBindingFromSExprs SLS.NameOfType range2to5 exprs3to4
 	termBindings <- forM ((M.!) clauses "term") $ \ (range5to8, exprs6to7) ->
-		parseBindingFromSExprs SL.NameOfTerm range5to8 exprs6to7
-	return $ TL.MOSLTermLiteral {
-		TL.tagOfMetaObject = rangeOfSExprs whole,
-		TL.codeOfMOSLTermLiteral = code,
-		TL.typeBindingsOfMOSLTermLiteral = typeBindings,
-		TL.termBindingsOfMOSLTermLiteral = termBindings
+		parseBindingFromSExprs SLS.NameOfTerm range5to8 exprs6to7
+	return $ TLS.MOSLTermLiteral {
+		TLS.tagOfMetaObject = rangeOfSExprs whole,
+		TLS.codeOfMOSLTermLiteral = code,
+		TLS.typeBindingsOfMOSLTermLiteral = typeBindings,
+		TLS.termBindingsOfMOSLTermLiteral = termBindings
 		}
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") exprs1to11) = do
 	{- sample input:
@@ -419,12 +418,12 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr") exprs1to11) = do
 		bindings <- forM ((M.!) clauses' "expr") $ \ (range7to10, exprs8to9) ->
 			parseBindingFromSExprs (JS.Id ()) range7to10 exprs8to9
 		return (code, bindings)
-	return $ TL.MOJSExprLiteral {
-		TL.tagOfMetaObject = rangeOfSExprs whole,
-		TL.slTermOfMOJSExprLiteral = spec,
-		TL.jsTypeOfMOJSExprLiteral = type_,
-		TL.codeOfMOJSExprLiteral = code,
-		TL.bindingsOfMOJSExprLiteral = bindings
+	return $ TLS.MOJSExprLiteral {
+		TLS.tagOfMetaObject = rangeOfSExprs whole,
+		TLS.slTermOfMOJSExprLiteral = spec,
+		TLS.jsTypeOfMOJSExprLiteral = type_,
+		TLS.codeOfMOJSExprLiteral = code,
+		TLS.bindingsOfMOJSExprLiteral = bindings
 		}
 parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr-convert-spec") exprs1to8) = do
 	{- sample input:
@@ -439,11 +438,11 @@ parseTLMetaObjectFromSExprs whole@(Cons (Atom _ "js-expr-convert-spec") exprs1to
 		parseTLMetaObjectFromSExprs exprs4to5
 	content <- let [(_, exprs6to7)] = (M.!) clauses "content" in
 		parseTLMetaObjectFromSExprs exprs6to7
-	return (TL.MOJSExprConvertEquiv {
-		TL.tagOfMetaObject = rangeOfSExprs whole,
-		TL.contentOfMOJSExprConvertEquiv = content,
-		TL.inEquivOfMOJSExprConvertEquiv = inSpec,
-		TL.outEquivOfMOJSExprConvertEquiv = outSpec
+	return (TLS.MOJSExprConvertEquiv {
+		TLS.tagOfMetaObject = rangeOfSExprs whole,
+		TLS.contentOfMOJSExprConvertEquiv = content,
+		TLS.inEquivOfMOJSExprConvertEquiv = inSpec,
+		TLS.outEquivOfMOJSExprConvertEquiv = outSpec
 		})
 parseTLMetaObjectFromSExprs whole@(Cons x (Nil _)) =
 	parseTLMetaObjectFromSExpr x
@@ -455,16 +454,16 @@ parseTLMetaObjectFromSExprs whole@(Cons first args) = do
 		| (arg, i) <- zip (sExprsToList args) [1..]]
 	let startPoint = startOfRange (rangeOfSExpr first)
 	return (foldl (\ f (a, endPoint) ->
-		TL.MOApp {
-			TL.tagOfMetaObject = Range startPoint endPoint,
-			TL.funOfMOApp = f,
-			TL.argOfMOApp = a
+		TLS.MOApp {
+			TLS.tagOfMetaObject = Range startPoint endPoint,
+			TLS.funOfMOApp = f,
+			TLS.argOfMOApp = a
 			}
 		) first' args')
 parseTLMetaObjectFromSExprs other =
 	fail ("invalid meta-object " ++ formatSExprsForMessage other ++ " at " ++ formatRange (rangeOfSExprs other))
 
-parseBindingFromSExprs :: (String -> n) -> Range -> SExprs -> ErrorMonad (TL.Binding Range n)
+parseBindingFromSExprs :: (String -> n) -> Range -> SExprs -> ErrorMonad (TLS.Binding Range n)
 parseBindingFromSExprs nameMaker range exprs1to5 = do
 	{- sample input:
 	 "name" (arg :: type) = value
@@ -478,14 +477,14 @@ parseBindingFromSExprs nameMaker range exprs1to5 = do
 	(exprs2to3, exprs4to5) <- breakOnAtom "=" exprs2to5
 	params <- sequence [do
 		parts <- parseTLMultiParameterFromSExpr exprs2to3'
-		return (TL.BindingParam (rangeOfSExpr exprs2to3') parts)
+		return (TLS.BindingParam (rangeOfSExpr exprs2to3') parts)
 		| exprs2to3' <- sExprsToList exprs2to3]
 	value <- parseTLMetaObjectFromSExprs exprs4to5
-	return (TL.Binding {
-		TL.tagOfBinding = range,
-		TL.nameOfBinding = name,
-		TL.paramsOfBinding = params,
-		TL.valueOfBinding = value
+	return (TLS.Binding {
+		TLS.tagOfBinding = range,
+		TLS.nameOfBinding = name,
+		TLS.paramsOfBinding = params,
+		TLS.valueOfBinding = value
 		})
 
 -- `parseJavaScriptExpressionFromString` and `parseJavaScriptStatementsFromString` try to interpret the given string as
@@ -514,23 +513,23 @@ parseJavaScriptStatementsFromString other =
 -- `parseSL{Kind,Type,Term,Directives}FromString` try to interpret the given string as a SL object. SL is also
 -- expressed as S-expressions, but it should still appear in quotes for consistency with Javascript.
 
-parseSLKindFromString :: SExpr -> ErrorMonad (SL.Kind Range)
+parseSLKindFromString :: SExpr -> ErrorMonad (SLS.Kind Range)
 parseSLKindFromString (Quoted _ string) = do
 	sexprs <- parseSExprs string
-	SL.parseSLKindFromSExprs sexprs
+	SLS.parseSLKindFromSExprs sexprs
 
-parseSLTypeFromString :: SExpr -> ErrorMonad (SL.Type Range)
+parseSLTypeFromString :: SExpr -> ErrorMonad (SLS.Type Range)
 parseSLTypeFromString (Quoted _ string) = do
 	sexprs <- parseSExprs string
-	SL.parseSLTypeFromSExprs sexprs
+	SLS.parseSLTypeFromSExprs sexprs
 
-parseSLTermFromString :: SExpr -> ErrorMonad (SL.Term Range)
+parseSLTermFromString :: SExpr -> ErrorMonad (SLS.Term Range)
 parseSLTermFromString (Quoted _ string) = do
 	sexprs <- parseSExprs string
-	SL.parseSLTermFromSExprs sexprs
+	SLS.parseSLTermFromSExprs sexprs
 
-parseSLDirectivesFromString :: SExpr -> ErrorMonad [SL.Dir Range]
+parseSLDirectivesFromString :: SExpr -> ErrorMonad [SLS.Dir Range]
 parseSLDirectivesFromString (Quoted _ string) = do
 	sexprs <- parseSExprs string
-	mapM SL.parseSLDirFromSExpr (sExprsToList sexprs)
+	mapM SLS.parseSLDirFromSExpr (sExprsToList sexprs)
 

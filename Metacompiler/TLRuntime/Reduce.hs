@@ -3,7 +3,7 @@ module Metacompiler.TLRuntime.Reduce where
 import Control.Monad.Identity
 import qualified Data.Map as M
 import qualified Data.Set as S
-import qualified Metacompiler.JS as JS
+import qualified Metacompiler.JS.JS as JS
 import Metacompiler.SLRuntime.Substitute as SLR
 import Metacompiler.SLRuntime.Types as SLR
 import Metacompiler.TLRuntime.Substitute

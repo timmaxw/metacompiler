@@ -6,6 +6,8 @@ import Metacompiler.TLRuntime.Reduce
 import Metacompiler.TLRuntime.Types
 import Prelude hiding (all)
 
+-- TODO: Come back and fix up this file
+
 -- `equivalentMetaTypes` and `equivalentMetaObjects` return `True` if the given meta-types or meta-objects are provably
 -- equivalent under all values of all variables, and `False` otherwise.
 

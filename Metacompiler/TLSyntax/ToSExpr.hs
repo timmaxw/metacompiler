@@ -1,62 +1,61 @@
-module Metacompiler.TL.ToSExpr where
+module Metacompiler.TLSyntax.ToSExpr where
 
 import qualified Data.List
-import qualified Language.ECMAScript3.PrettyPrint as JS
-import qualified Metacompiler.JS as JS
+import qualified Metacompiler.JS.JS as JS
 import Metacompiler.Error
 import Metacompiler.SExpr.Format
 import Metacompiler.SExpr.Types
 import Metacompiler.SExpr.UtilsTo
-import qualified Metacompiler.SL.Syntax as SL
-import Metacompiler.SL.ToSExpr
-import qualified Metacompiler.TL.Syntax as TL
+import qualified Metacompiler.SLSyntax.Types as SLS
+import qualified Metacompiler.SLSyntax.ToSExpr as SLS
+import qualified Metacompiler.TLSyntax.Types as TLS
 
-formatTLMetaTypeAsSExpr :: TL.MetaType a -> SExpr
-formatTLMetaTypeAsSExpr (TL.MTFun _ ps r) =
+formatTLMetaTypeAsSExpr :: TLS.MetaType a -> SExpr
+formatTLMetaTypeAsSExpr (TLS.MTFun _ ps r) =
 	mkList' $
 		[mkAtom "fun"] ++
 		[mkList' ([mkAtom n, mkAtom "::"] ++ sExprsToList (formatTLMetaTypeAsSExprs t))
-			| (TL.Name n, t) <- ps] ++
+			| (TLS.Name n, t) <- ps] ++
 		[mkAtom "->"] ++
 		sExprsToList (formatTLMetaTypeAsSExprs r)
 formatTLMetaTypeAsSExpr other =
 	mkList (formatTLMetaTypeAsSExprs other)
 
-formatTLMetaTypeAsSExprs :: TL.MetaType a -> SExprs
-formatTLMetaTypeAsSExprs (TL.MTSLType _ kind) =
+formatTLMetaTypeAsSExprs :: TLS.MetaType a -> SExprs
+formatTLMetaTypeAsSExprs (TLS.MTSLType _ kind) =
 	sExprsFromList [mkAtom "sl-type", mkQuoted (formatSLKindAsString kind)]
-formatTLMetaTypeAsSExprs (TL.MTSLTerm _ type_) =
+formatTLMetaTypeAsSExprs (TLS.MTSLTerm _ type_) =
 	sExprsFromList [mkAtom "sl-term", formatTLMetaObjectAsSExpr type_]
-formatTLMetaTypeAsSExprs (TL.MTJSExprType _ slType) =
+formatTLMetaTypeAsSExprs (TLS.MTJSExprType _ slType) =
 	sExprsFromList [mkAtom "js-expr-type", formatTLMetaObjectAsSExpr slType]
-formatTLMetaTypeAsSExprs (TL.MTJSExpr _ jsType slTerm) =
+formatTLMetaTypeAsSExprs (TLS.MTJSExpr _ jsType slTerm) =
 	sExprsFromList [mkAtom "js-expr", formatTLMetaObjectAsSExpr jsType, formatTLMetaObjectAsSExpr slTerm]
 formatTLMetaTypeAsSExprs other =
 	sExprsFromList [formatTLMetaTypeAsSExpr other]
 
-formatTLMetaTypeAsString :: TL.MetaType a -> String
+formatTLMetaTypeAsString :: TLS.MetaType a -> String
 formatTLMetaTypeAsString = formatSExpr . formatTLMetaTypeAsSExpr
 
-formatTLMetaObjectAsSExpr :: TL.MetaObject a -> SExpr
-formatTLMetaObjectAsSExpr (TL.MOAbs _ ps r) =
+formatTLMetaObjectAsSExpr :: TLS.MetaObject a -> SExpr
+formatTLMetaObjectAsSExpr (TLS.MOAbs _ ps r) =
 	mkList' $
 		[mkAtom "fun"] ++
 		[mkList' ([mkAtom n, mkAtom "::"] ++ sExprsToList (formatTLMetaTypeAsSExprs t))
-			| (TL.Name n, t) <- ps] ++
+			| (TLS.Name n, t) <- ps] ++
 		[mkAtom "->"] ++
 		sExprsToList (formatTLMetaObjectAsSExprs r)
-formatTLMetaObjectAsSExpr (TL.MOName _ (TL.Name n)) =
+formatTLMetaObjectAsSExpr (TLS.MOName _ (TLS.Name n)) =
 	mkAtom n
-formatTLMetaObjectAsSExpr (TL.MOSLTypeLiteral _ c bs) =
+formatTLMetaObjectAsSExpr (TLS.MOSLTypeLiteral _ c bs) =
 	mkList' $
 		[mkAtom "sl-type", mkQuoted (formatSLTypeAsString c)] ++
-		map (formatTLBindingAsSExpr "type" SL.unNameOfType) bs
-formatTLMetaObjectAsSExpr (TL.MOSLTermLiteral _ c tybs tebs) =
+		map (formatTLBindingAsSExpr "type" SLS.unNameOfType) bs
+formatTLMetaObjectAsSExpr (TLS.MOSLTermLiteral _ c tybs tebs) =
 	mkList' $
 		[mkAtom "sl-term", mkQuoted (formatSLTermAsString c)] ++
-		map (formatTLBindingAsSExpr "type" SL.unNameOfType) tybs ++
-		map (formatTLBindingAsSExpr "term" SL.unNameOfTerm) tebs
-formatTLMetaObjectAsSExpr (TL.MOJSExprLiteral _ e t c bs) =
+		map (formatTLBindingAsSExpr "type" SLS.unNameOfType) tybs ++
+		map (formatTLBindingAsSExpr "term" SLS.unNameOfTerm) tebs
+formatTLMetaObjectAsSExpr (TLS.MOJSExprLiteral _ e t c bs) =
 	mkList' [
 		mkAtom "js-expr",
 		mkList' ([mkAtom "spec"] ++ sExprsToList (formatTLMetaObjectAsSExprs e)),
@@ -66,7 +65,7 @@ formatTLMetaObjectAsSExpr (TL.MOJSExprLiteral _ e t c bs) =
 			map (formatTLBindingAsSExpr "expr" JS.unId) bs
 			)
 		]
-formatTLMetaObjectAsSExpr (TL.MOJSExprConvertEquiv _ i o c) =
+formatTLMetaObjectAsSExpr (TLS.MOJSExprConvertEquiv _ i o c) =
 	mkList' [
 		mkAtom "js-expr-convert-equiv",
 		mkList' ([mkAtom "in-spec"] ++ sExprsToList (formatTLMetaObjectAsSExprs i)),
@@ -76,28 +75,28 @@ formatTLMetaObjectAsSExpr (TL.MOJSExprConvertEquiv _ i o c) =
 formatTLMetaObjectAsSExpr other =
 	mkList (formatTLMetaObjectAsSExprs other)
 
-formatTLMetaObjectAsSExprs :: TL.MetaObject a -> SExprs
-formatTLMetaObjectAsSExprs (TL.MOApp _ f a) = let
+formatTLMetaObjectAsSExprs :: TLS.MetaObject a -> SExprs
+formatTLMetaObjectAsSExprs (TLS.MOApp _ f a) = let
 	f' = sExprsToList (formatTLMetaObjectAsSExprs f)
 	in sExprsFromList (f' ++ [formatTLMetaObjectAsSExpr a])
 formatTLMetaObjectAsSExprs other =
 	sExprsFromList [formatTLMetaObjectAsSExpr other]
 
-formatTLMetaObjectAsString :: TL.MetaObject a -> String
+formatTLMetaObjectAsString :: TLS.MetaObject a -> String
 formatTLMetaObjectAsString = formatSExpr . formatTLMetaObjectAsSExpr
 
-formatTLBindingAsSExpr :: String -> (name -> String) -> TL.Binding a name -> SExpr
-formatTLBindingAsSExpr tag nameFun (TL.Binding _ n ps v) =
+formatTLBindingAsSExpr :: String -> (name -> String) -> TLS.Binding a name -> SExpr
+formatTLBindingAsSExpr tag nameFun (TLS.Binding _ n ps v) =
 	mkList' $
 		[mkAtom tag, mkQuoted (nameFun n)] ++
 		map formatTLBindingParamAsSExpr ps ++
 		[mkAtom "="] ++
 		sExprsToList (formatTLMetaObjectAsSExprs v)
 
-formatTLBindingParamAsSExpr :: TL.BindingParam a -> SExpr
-formatTLBindingParamAsSExpr (TL.BindingParam _ ps) =
+formatTLBindingParamAsSExpr :: TLS.BindingParam a -> SExpr
+formatTLBindingParamAsSExpr (TLS.BindingParam _ ps) =
 	mkList' $ Data.List.intercalate [mkAtom "|"] $ [
 		[mkAtom n, mkAtom "::"] ++
 		sExprsToList (formatTLMetaTypeAsSExprs t)
-		| (TL.Name n, t) <- ps]
+		| (TLS.Name n, t) <- ps]
 

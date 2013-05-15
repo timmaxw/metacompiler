@@ -2,18 +2,18 @@ module Metacompiler.Main where
 
 import Control.Monad
 import qualified Data.Map as M
-import qualified Language.ECMAScript3.PrettyPrint as JS
-import qualified Metacompiler.Compile.CompileSL as CSL
-import qualified Metacompiler.Compile.CompileTL as CTL
-import qualified Metacompiler.Compile.FormatTL as FTL
 import Metacompiler.Error
-import qualified Metacompiler.Runtime as R
+import qualified Metacompiler.JS.JS as JS
 import Metacompiler.SExpr.Parse
 import Metacompiler.SExpr.Types
-import qualified Metacompiler.SL.Syntax as SL
-import qualified Metacompiler.TL.FromSExpr as TL
-import qualified Metacompiler.TL.Syntax as TL
-import qualified Metacompiler.TL.ToSExpr as TL
+import qualified Metacompiler.SLCompile.Compile as SLC
+import qualified Metacompiler.SLSyntax.Types as SLS
+import qualified Metacompiler.TLCompile.Compile as TLC
+import qualified Metacompiler.TLCompile.Format as TLF
+import qualified Metacompiler.TLRuntime.TLRuntime as TLR
+import qualified Metacompiler.TLSyntax.FromSExpr as TLS
+import qualified Metacompiler.TLSyntax.Types as TLS
+import qualified Metacompiler.TLSyntax.ToSExpr as TLS
 import System.Environment
 import System.Exit
 import System.IO
@@ -25,7 +25,7 @@ main = do
 		contents <- readFile filename
 		let maybeDirectives = do
 			sexprs <- parseSExprs contents
-			mapM TL.parseTLDirectiveFromSExpr (sExprsToList sexprs)
+			mapM TLS.parseTLDirectiveFromSExpr (sExprsToList sexprs)
 		case maybeDirectives of
 			Failure err -> do
 				hPutStrLn stderr "error:"
@@ -33,27 +33,26 @@ main = do
 				exitFailure
 			Success d -> return d
 		| filename <- filenames]
-	case CTL.compileDirectives allDirectives of
+	case TLC.compileDirectives allDirectives of
 		Failure err -> do
 			hPutStrLn stderr "error:"
 			hPutStrLn stderr err
 			exitFailure
-		Success (CTL.GlobalResults (CSL.Defns slDataDefns slCtorDefns slTermDefns) tlDefns emits) -> do
+		Success (TLC.GlobalResults (SLC.Defns slDataDefns slCtorDefns slTermDefns) tlDefns emits) -> do
 			hPutStrLn stderr ("note: found " ++ show (M.size slDataDefns) ++ " SL data definition(s)")
-			-- forM_ (M.toList slDataDefns) $ \ (name, _) -> do
-			--	hPutStrLn stderr ("note:     " ++ SL.unNameOfType name)
+			forM_ (M.toList slDataDefns) $ \ (name, _) -> do
+				hPutStrLn stderr ("note:     " ++ SL.unNameOfType name)
 			hPutStrLn stderr ("note: found " ++ show (M.size slCtorDefns) ++ " SL ctor definition(s)")
-			-- forM_ (M.toList slCtorDefns) $ \ (name, _) -> do
-			--	hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)
+			forM_ (M.toList slCtorDefns) $ \ (name, _) -> do
+				hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)
 			hPutStrLn stderr ("note: found " ++ show (M.size slTermDefns) ++ " SL term definition(s)")
-			-- forM_ (M.toList slTermDefns) $ \ (name, _) -> do
-			--	hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)
+			forM_ (M.toList slTermDefns) $ \ (name, _) -> do
+				hPutStrLn stderr ("note:     " ++ SL.unNameOfTerm name)
 			hPutStrLn stderr ("note: found " ++ show (M.size tlDefns) ++ " TL meta-object definition(s)")
-			-- forM_ (M.toList tlDefns) $ \ (name, value) -> do
-			--	let type1 = R.typeOfMetaObject value
-			--	let type2 = FTL.formatMetaTypeAsTL type1
-			--	let type3 = TL.formatTLMetaTypeAsString type2
-			--	hPutStrLn stderr ("note:     " ++ TL.unName name ++ " :: " ++ type3)
+			forM_ (M.toList tlDefns) $ \ (name, value) -> do
+				let type1 = TLR.typeOfMetaObject value
+				let type2 = TLF.formatMetaTypeAsString type1
+				hPutStrLn stderr ("note:     " ++ TLR.unName name ++ " :: " ++ type2)
 			when (null emits) $ do
 				hPutStrLn stderr "warning: there is no JS code to emit"
 			putStrLn (JS.renderStatements emits)

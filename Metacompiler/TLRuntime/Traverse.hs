@@ -1,8 +1,8 @@
-module Metacompiler.Runtime.Traverse where
+module Metacompiler.TLRuntime.Traverse where
 
 import Control.Applicative
 import Data.Traversable
-import Metacompiler.Runtime.Types
+import Metacompiler.TLRuntime.Types
 
 -- `traverseMetaType` and `traverseMetaObject` invoke `visitMetaType` or `visitMetaObject` of the given visitor on each
 -- sub-node of the given meta-type or meta-object, then combine the results using an applicative functor. They are a
@@ -35,28 +35,16 @@ traverseMetaObject v t = case t of
 	MOApp fun arg -> liftA2 MOApp (visitO fun) (visitO arg)
 	MOAbs (paramName, paramType) body -> liftA2 MOAbs (liftA ((,) paramName) (visitT paramType)) (visitO body)
 	MOName name type_ -> liftA (MOName name) (visitT type_)
-	MOSLTypeDefn defn -> pure (MOSLTypeDefn defn)
-	MOSLTypeName name kind -> pure (MOSLTypeName name kind)
-	MOSLTypeApp fun arg -> liftA2 MOSLTypeApp (visitO fun) (visitO arg)
-	MOSLTypeFun argType retType -> liftA2 MOSLTypeFun (visitO argType) (visitO retType)
-	MOSLTypeLazy x -> liftA MOSLTypeLazy (visitO x)
-	MOSLTermDefn defn params -> liftA (MOSLTermDefn defn) (traverse visitO params)
-	MOSLTermName name type_ -> liftA (MOSLTermName name) (visitO type_)
-	MOSLTermApp fun arg -> liftA2 MOSLTermApp (visitO fun) (visitO arg)
-	MOSLTermAbs (paramName, paramType) body -> liftA2 MOSLTermAbs (liftA ((,) paramName) (visitO paramType)) (visitO body)
-	MOSLTermCase subject clauses -> liftA2 MOSLTermCase
-		(visitO subject)
-		(traverse (\(ctor, typeParams, fieldNames, body) -> (,,,)
-				<$> (pure ctor)
-				<*> (traverse visitO typeParams)
-				<*> (pure fieldNames)
-				<*> (visitO body)
-				)
-			clauses
-			)
-	MOSLTermData ctor typeParams fields -> liftA2 (MOSLTermData ctor) (traverse visitO typeParams) (traverse visitO fields)
-	MOSLTermWrap x -> liftA MOSLTermWrap (visitO x)
-	MOSLTermUnwrap x -> liftA MOSLTermUnwrap (visitO x)
+	MOSLType type_ bs -> let
+		visitSLTypeBinding (SLTypeBinding v) =
+			SLTypeBinding <$> visitO v
+		in MOSLType type_ <$> traverse visitSLTypeBinding bs
+	MOSLTerm term typs tebs -> let
+		visitSLTypeBinding (SLTypeBinding v) =
+			SLTypeBinding <$> visitO v
+		visitSLTermBinding (SLTermBinding ps v) =
+			SLTermBinding <$> sequenceA [(,) pn <$> visitO pv | (pn, pv) <- ps] <*> visitO v
+		in MOSLTerm term <$> traverse visitSLTypeBinding tybs <*> visitSLTermBinding tebs
 	MOJSExprTypeDefn defn params -> liftA (MOJSExprTypeDefn defn) (traverse visitO params)
 	MOJSExprLiteral equiv type_ expr bindings -> let
 		visitJSExprBinding (JSExprBinding params value) =

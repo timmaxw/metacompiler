@@ -1,9 +1,9 @@
-module Metacompiler.TL.FreeNames where
+module Metacompiler.TLSyntax.FreeNames where
 
 import Control.Applicative
 import qualified Data.Set as S
-import Metacompiler.TL.Syntax
-import Metacompiler.TL.Traverse
+import Metacompiler.TLSyntax.Types
+import Metacompiler.TLSyntax.Traverse
 
 -- `freeNamesIn*` finds all unbound TL names in the given object.
 

@@ -1,9 +1,10 @@
-module Metacompiler.Runtime.TypeOf where
+module Metacompiler.TLRuntime.TypeOf where
 
 import qualified Data.Map as M
-import Metacompiler.Runtime.Reduce
-import Metacompiler.Runtime.Substitute
-import Metacompiler.Runtime.Types
+import qualified Metacompiler.SLRuntime.TypeOf as SLR
+import Metacompiler.TLRuntime.Reduce
+import Metacompiler.TLRuntime.Substitute
+import Metacompiler.TLRuntime.Types
 
 typeOfMetaObject :: MetaObject -> MetaType
 typeOfMetaObject (MOApp fun arg) =
@@ -16,9 +17,9 @@ typeOfMetaObject (MOAbs (paramName, paramType) body) =
 typeOfMetaObject (MOName _ type_) =
 	type_
 typeOfMetaObject (MOSLType type_ _) =
-	MTSLType (kindOfSLType type_)
+	MTSLType (SLR.kindOfSLType type_)
 typeOfMetaObject (MOSLTerm term subs) =
-	MTSLTerm (reduceMetaObject (MOSLType (typeOfSLTerm term) subs))
+	MTSLTerm (reduceMetaObject (MOSLType (SLR.typeOfSLTerm term) subs))
 typeOfMetaObject (MOJSExprTypeDefn defn params) =
 	MTJSExprType (slEquivOfJSExprTypeDefn defn params)
 typeOfMetaObject (MOJSExprLiteral equiv type_ _ _ ) =

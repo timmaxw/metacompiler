@@ -5,7 +5,6 @@ import Data.List
 import qualified Data.Map as M
 import Data.Monoid
 import qualified Data.Set as S
-import qualified Metacompiler.JS as JS
 import Metacompiler.SLRuntime.FreeNames
 import Metacompiler.SLRuntime.Traverse
 import Metacompiler.SLRuntime.Types

@@ -1,7 +1,8 @@
-module Metacompiler.Runtime.Types where
+module Metacompiler.TLRuntime.Types where
 
 import qualified Data.Map as M
-import qualified Metacompiler.JS as JS
+import qualified Metacompiler.JS.JS as JS
+import qualified Metacompiler.SLRuntime.Types as SLR
 
 newtype NameOfMetaObject = NameOfMetaObject { unNameOfMetaObject :: String } deriving (Ord, Show, Eq)
 
@@ -22,8 +23,8 @@ data MetaObject
 	= MOApp MetaObject MetaObject
 	| MOAbs (NameOfMetaObject, MetaType) MetaObject
 	| MOName NameOfMetaObject MetaType
-	| MOSLType SLType (M.Map NameOfSLType SLTypeBinding)
-	| MOSLTerm SLTerm (M.Map NameOfSLType SLTypeBinding) (M.Map NameOfSLTerm SLTermBinding)
+	| MOSLType SLR.Type (M.Map SLR.NameOfType SLTypeBinding)
+	| MOSLTerm SLR.Term (M.Map SLR.NameOfType SLTypeBinding) (M.Map SLR.NameOfTerm SLTermBinding)
 	| MOJSExprTypeDefn JSExprTypeDefn [MetaObject]
 	| MOJSExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) JSExprBinding)   -- equiv, type
 	| MOJSExprConvertEquiv MetaObject MetaObject   -- new equivalent, expression to convert

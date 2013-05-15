@@ -1,8 +1,8 @@
-module Metacompiler.TL.Traverse where
+module Metacompiler.TLSyntax.Traverse where
 
 import Control.Applicative
 import Data.Traversable
-import Metacompiler.TL.Syntax
+import Metacompiler.TLSyntax.Types
 
 -- `traverse*` invokes `visitMetaType` or `visitMetaObject` of the given visitor on each sub-node of the given object,
 -- then combine the results using an applicative functor. They are a generic way to implement many different things

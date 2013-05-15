@@ -6,8 +6,7 @@ import qualified Data.Graph
 import Data.List
 import qualified Data.Map as M
 import qualified Data.Set as S
-import qualified Language.ECMAScript3.Syntax.Annotations as JS
-import qualified Metacompiler.JS as JS
+import qualified Metacompiler.JS.JS as JS
 import Metacompiler.Error
 import qualified Metacompiler.SLCompile.Compile as SLC
 import qualified Metacompiler.SLCompile.Format as SLF

@@ -1,18 +1,18 @@
-module Metacompiler.Runtime (
-	module Metacompiler.Runtime.FreeNames,
-	module Metacompiler.Runtime.Reduce,
-	module Metacompiler.Runtime.Substitute,
-	module Metacompiler.Runtime.TestEquivalent,
-	module Metacompiler.Runtime.Traverse,
-	module Metacompiler.Runtime.TypeOf,
-	module Metacompiler.Runtime.Types
+module Metacompiler.TLRuntime.TLRuntime (
+	module Metacompiler.TLRuntime.FreeNames,
+	module Metacompiler.TLRuntime.Reduce,
+	module Metacompiler.TLRuntime.Substitute,
+	module Metacompiler.TLRuntime.TestEquivalent,
+	module Metacompiler.TLRuntime.Traverse,
+	module Metacompiler.TLRuntime.TypeOf,
+	module Metacompiler.TLRuntime.Types
 	) where
 
-import Metacompiler.Runtime.FreeNames
-import Metacompiler.Runtime.Reduce
-import Metacompiler.Runtime.Substitute
-import Metacompiler.Runtime.TestEquivalent
-import Metacompiler.Runtime.Traverse
-import Metacompiler.Runtime.TypeOf
-import Metacompiler.Runtime.Types
+import Metacompiler.TLRuntime.FreeNames
+import Metacompiler.TLRuntime.Reduce
+import Metacompiler.TLRuntime.Substitute
+import Metacompiler.TLRuntime.TestEquivalent
+import Metacompiler.TLRuntime.Traverse
+import Metacompiler.TLRuntime.TypeOf
+import Metacompiler.TLRuntime.Types
 
