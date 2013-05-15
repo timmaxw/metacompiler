@@ -98,22 +98,81 @@ compileMetaObject scope (TL.MOName range name) = case M.lookup name (metaObjects
 	Just x -> return x
 	Nothing -> fail ("at " ++ formatRange range ++ ": name `" ++ TL.unName name ++ "` is not in scope")
 
-compileMetaObject scope (TL.MOSLTypeLiteral range code typeBindings) = do
+compileMetaObject scope (TL.MOSLTypeLiteral range type_ typeBindings) = do
 	let msgPrefix = "in `(sl-type ...)` literal at " ++ formatRange range ++ ": "
 	typeBindings' <- compileSLTypeBindings msgPrefix scope typeBindings
-	errorContext msgPrefix $ CSL.compileSLType
-		(M.union typeBindings' (CSL.typesInScope $ slObjectsInScope $ scope))
-		[] code
+	let typeScopeAdditions = M.mapWithKey (\ (SL.NameOfType name) value -> case R.typeOfMetaObject value of
+		R.MTSLType kind -> CSL.NamedTypeInScope (SLR.NameOfType name) kind
+		_ -> error "binding should have type (sl-type ...)"
+		) typeBindings'
+	type_' <- errorContext msgPrefix $
+		CSL.compileSLType
+			(typeBindingsInSLScope `M.union` CSL.typesInScope (slObjectsInScope scope))
+			type_
+	return (R.MOSLType type_' typeBindings')
 
-compileMetaObject scope (TL.MOSLTermLiteral range code typeBindings termBindings) = do
+compileMetaObject scope (TL.MOSLTermLiteral range term typeBindings termBindings) = do
 	let msgPrefix = "in `(sl-term ...)` literal at " ++ formatRange range ++ ": "
 	typeBindings' <- compileSLTypeBindings msgPrefix scope typeBindings
 	termBindings' <- compileSLTermBindings msgPrefix scope termBindings
-	let slScope' = (slObjectsInScope scope) {
-			CSL.typesInScope = typeBindings' `M.union` (CSL.typesInScope $ slObjectsInScope scope),
-			CSL.termsInScope = termBindings' `M.union` (CSL.termsInScope $ slObjectsInScope scope)
-			} 
-	errorContext msgPrefix $ CSL.compileSLTerm slScope' [] code
+	let
+		termScopeMaker :: State
+				(M.Map SLR.NameOfType R.SLTypeBinding)
+				(M.Map SL.NameOfTerm CSL.TermInScope)
+		termScopeMaker = liftM M.fromList $ sequence [do
+			let
+				internType :: R.MetaObject
+				           -> SLR.NameOfType
+				           -> State (M.Map SLR.NameOfType R.SLTypeBinding) SLR.SLType
+				internType suggestedName typeAsMO = case R.reduceMetaObject typeAsMO of
+					R.MOSLType typeAsSL bindings -> do
+						subs <- liftM M.fromList $ sequence [do
+							value' <- internType name value
+							return (TypeSub (Identity .foldl SLR.SLTypeApp value'))
+							| (name, R.SLTypeBinding value) <- M.toList bindings]
+						return (runIdentity (substituteSLType subs typeAsSL))
+					other -> do
+						existingBindings <- get
+						name' <- case find (\(_, v) -> R.equivalentMetaObjects v other) (M.toList existingBindings) of
+							Nothing -> do
+								let forbiddenNames = M.keysSet existingBindings
+										`S.union` S.fromList [case tis of
+											CSL.NamedTypeInScope name _ -> name
+											CSL.DefinedTypeInScope defn -> nameOfSLDataDefn defn
+											| (_, tis) <- CSL.typesInScope (slObjectsInScope scope)]
+								let candidateNames =
+									[SLR.NameOfType (SLR.unNameOfType suggestedName ++ replicate i '\'') | i <- [0..]]
+								let Just name' = find (`S.notMember` forbiddenNames) candidateNames
+								put (M.insert name' (R.SLTypeBinding other) existingBindings)
+								return name'
+							Just (n, _) -> return n
+						let kind = case R.typeOfMetaObject other of
+								R.MTSLType k -> k
+								_ -> error "this should have type (sl-type ...)"
+						return (SLR.SLTypeName name' kind)
+			paramTypes <- sequence [
+				internType type_ (SLR.NameOfType (name ++ "Type"))
+				| (R.NameOfMetaObject name, type_) <- params]
+			valueType <- case R.typeOfMetaObject value of
+				R.MTSLTerm type_ -> internType value suggestedName
+					where suggestedName = SLR.NameOfType (SLR.unNameOfTerm name ++ "Type")
+				_ -> error "this should have type (sl-term ...)"
+			let wholeType = foldr SLR.SLTermFun valueType paramTypes
+			return (name, CSL.NameTermInScope (SLR.NameOfTerm (SL.unNameOfTerm name)) wholeType)
+			| (name, SLTermBinding params value) <- M.toList termBindings']
+	let (termScopeAdditions, typeBindings'') = runState termScopeMaker typeBindings'
+	let typeScopeAdditions = M.mapWithKey (\ (SL.NameOfType name) value -> case R.typeOfMetaObject value of
+		R.MTSLType kind -> CSL.NamedTypeInScope (SLR.NameOfType name) kind
+		_ -> error "binding should have type (sl-type ...)"
+		) typeBindings''
+	term' <- errorContext msgPrefix $
+		CSL.compileSLTerm
+			(slObjectsInScope scope) {
+				CSL.typesInScope = typeBindings'' `M.union` (CSL.typesInScope $ slObjectsInScope scope),
+				CSL.termsInScope = termScopeAdditions `M.union` (CSL.termsInScope $ slObjectsInScope scope)
+				} 
+			term
+	return (R.MOSLTerm term' typeBindings'' termBindings')
 
 compileMetaObject scope (TL.MOJSExprLiteral range equiv type_ expr bindings) = do
 	let msgPrefix = "in `(js-expr ...)` literal at " ++ formatRange range ++ ": "
@@ -201,48 +260,28 @@ compileBindings scope paramFun valueFun bindings = do
 compileSLTypeBindings :: String
                       -> Scope
                       -> [TL.Binding Range SL.NameOfType]
-                      -> ErrorMonad (M.Map SL.NameOfType CSL.TypeInScope)
+                      -> ErrorMonad (M.Map SL.NameOfType R.SLTypeBinding)
 compileSLTypeBindings msgPrefix1 scope bindings = compileBindings scope
 	(\ subScope binding (TL.BindingParam paramRange parts) -> do
 		let msgPrefix2 = msgPrefix1 ++ "in binding of name `" ++ SL.unNameOfType (TL.nameOfBinding binding) ++
 			"` (at " ++ formatRange (TL.tagOfBinding binding) ++ "): "
-		(name, type_) <- case parts of
-			[(name, type_)] -> return (name, type_)
-			_ -> fail (msgPrefix2 ++ "parameter at " ++ formatRange paramRange ++ " has two or more parts, which is \
-				\illegal.")
-		let name' = R.NameOfMetaObject (TL.unName name)
-		type_' <- compileMetaType scope type_
-		slKind' <- case type_' of
-			R.MTSLType slKind' -> return slKind'
-			_ -> fail (msgPrefix2 ++ "parameter `" ++ TL.unName name ++ "` (at " ++ formatRange paramRange ++ ") has \
-				\meta-type " ++ formatMTForMessage type_' ++ " (at " ++ formatRange (TL.tagOfMetaType type_) ++ "), \
-				\but all parameters in a `(sl-type ...)` literal should have meta-type `(sl-type ...)`.")
-		let subScope' = subScope {
-			metaObjectsInScope = M.insert name (R.MOName name' type_') (metaObjectsInScope subScope)
-			}
-		return (subScope', (name', slKind'))
+		fail (msgPrefix2 ++ "type bindings are not allowed to have parameters")
 		)
-	(\ subScope' binding params' value -> do
-		value' <- compileMetaObject subScope' value
+	(\ subScope binding [] value -> do
+		value' <- compileMetaObject subScope value
 		case R.typeOfMetaObject value' of
-			R.MTSLType _ -> return ()
+			R.MTSLType _ -> return (R.SLTypeBinding value')
 			otherType -> fail (msgPrefix1 ++ "in binding of name `" ++ SL.unNameOfType (TL.nameOfBinding binding) ++
 				"` (at " ++ formatRange (TL.tagOfBinding binding) ++ ": value at " ++
 				formatRange (TL.tagOfMetaObject value) ++ " has meta-type " ++ formatMTForMessage otherType ++ ", but \
 				\it's supposed to have meta-type `(sl-type ...)`.")
-		return (CSL.TypeInScope {
-			CSL.typeParamsOfTypeInScope = map snd params',
-			CSL.valueOfTypeInScope = \ paramValues -> let
-				metaObjectSubs = M.fromList (zip (map fst params') paramValues)
-				in R.substituteMetaObject (R.Substitutions metaObjectSubs M.empty M.empty) value'
-			})
 		)
 	bindings
 
 compileSLTermBindings :: String
                       -> Scope
                       -> [TL.Binding Range SL.NameOfTerm]
-                      -> ErrorMonad (M.Map SL.NameOfTerm CSL.TermInScope)
+                      -> ErrorMonad (M.Map SL.NameOfTerm R.SLTermBinding)
 compileSLTermBindings msgPrefix1 scope bindings = compileBindings scope
 	(\ subScope binding (TL.BindingParam paramRange parts) -> do
 		let msgPrefix2 = msgPrefix1 ++ "in binding of name `" ++ SL.unNameOfTerm (TL.nameOfBinding binding) ++
@@ -253,40 +292,24 @@ compileSLTermBindings msgPrefix1 scope bindings = compileBindings scope
 				\illegal.")
 		let name' = R.NameOfMetaObject (TL.unName name)
 		type_' <- compileMetaType scope type_
-		slKindOrType' <- case R.reduceMetaType type_' of
-			R.MTSLType slKind' -> return (Left slKind')
-			R.MTSLTerm slType' -> return (Right slType')
+		slType' <- case R.reduceMetaType type_' of
+			R.MTSLTerm slType' -> return slType'
 			otherType -> fail (msgPrefix2 ++ "parameter `" ++ TL.unName name ++ "` (at " ++ formatRange paramRange ++
 				") has meta-type " ++ formatMTForMessage type_' ++ ", but all parameters in a `(sl-term ...)` literal \
-				\are supposed to have meta-type `(sl-type ...)` or `(sl-term ...)`.")
+				\are supposed to have meta-type `(sl-term ...)`.")
 		let subScope' = subScope {
-			metaObjectsInScope =	M.insert name (R.MOName name' type_') (metaObjectsInScope subScope)
+			metaObjectsInScope = M.insert name (R.MOName name' type_') (metaObjectsInScope subScope)
 			}
-		return (subScope', (name', slKindOrType'))
+		return (subScope', (name', slType'))
 		)
 	(\ subScope' binding params' value -> do
 		let msgPrefix2 = msgPrefix1 ++ "in binding of name `" ++ SL.unNameOfTerm (TL.nameOfBinding binding) ++
 			"` (at " ++ formatRange (TL.tagOfBinding binding) ++ "): "
-		let
-			isLeft :: Either l r -> Bool
-			isLeft (Left _) = True
-			isLeft (Right _) = False
-		when (any (isLeft . snd) $ dropWhile (isLeft . snd) params') $
-			fail (msgPrefix2 ++ "all type-parameters must come before all term-parameters.")
-		let typeParams' = [(name, slKind') | (name, Left slKind') <- params']
-		let termParams' = [(name, slType') | (name, Right slType') <- params']
 		value' <- compileMetaObject subScope' value
 		case R.typeOfMetaObject value' of
-			R.MTSLTerm _ -> return ()
+			R.MTSLTerm _ -> return (R.SLTermBinding params' value')
 			otherType -> fail ("value at " ++ formatRange (TL.tagOfMetaObject value) ++ " has meta-type " ++
 				formatMTForMessage otherType ++ ", but it's supposed to have meta-type `(sl-term ...)`.")
-		return (CSL.TermInScope {
-			CSL.typeParamsOfTermInScope = map snd typeParams',
-			CSL.termParamsOfTermInScope = map snd termParams',
-			CSL.valueOfTermInScope = \ typeParamValues termParamValues -> let
-				metaObjectSubs = M.fromList (zip (map fst typeParams') typeParamValues ++ zip (map fst termParams') termParamValues)
-				in R.substituteMetaObject (R.Substitutions metaObjectSubs M.empty M.empty) value'
-			})
 		)
 	bindings
 
