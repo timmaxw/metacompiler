@@ -1,11 +1,11 @@
-module Metacompiler.Runtime.FreeNames where
+module Metacompiler.TLRuntime.FreeNames where
 
 import Control.Applicative
 import Data.Monoid
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Metacompiler.Runtime.Traverse
-import Metacompiler.Runtime.Types
+import Metacompiler.TLRuntime.Traverse
+import Metacompiler.TLRuntime.Types
 
 -- `freeVarsInMetaType` and `freeVarsInMetaObject` find all the unbound variables in the given term
 -- and return their names and types.

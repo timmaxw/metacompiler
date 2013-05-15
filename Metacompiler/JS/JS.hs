@@ -1,4 +1,4 @@
-module Metacompiler.JS (
+module Metacompiler.JS.JS (
 	module Language.ECMAScript3.Syntax,
 	module Metacompiler.JS.Eval,
 	module Metacompiler.JS.FreeNames,

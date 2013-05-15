@@ -1,4 +1,4 @@
-module Metacompiler.Runtime.Substitute where
+module Metacompiler.TLRuntime.Substitute where
 
 import Control.Monad.Identity
 import Data.List
@@ -6,9 +6,9 @@ import qualified Data.Map as M
 import Data.Monoid
 import qualified Data.Set as S
 import qualified Metacompiler.JS as JS
-import Metacompiler.Runtime.FreeNames
-import Metacompiler.Runtime.Traverse
-import Metacompiler.Runtime.Types
+import Metacompiler.TLRuntime.FreeNames
+import Metacompiler.TLRuntime.Traverse
+import Metacompiler.TLRuntime.Types
 
 -- `substituteMetaType` and `substituteMetaObject` traverse the given meta-type or meta-object; whenever they encounter
 -- a reference to a free variable that appears in the given map, they replace it with its value from the map. They

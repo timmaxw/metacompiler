@@ -1,44 +1,44 @@
 module Metacompiler.SLRuntime.Types where
 
-newtype NameOfSLType = NameOfSLType { unNameOfSLType :: String } deriving (Eq, Show, Ord)
-newtype NameOfSLTerm = NameOfSLTerm { unNameOfSLTerm :: String } deriving (Eq, Show, Ord)
+newtype NameOfType = NameOfType { unNameOfType :: String } deriving (Eq, Show, Ord)
+newtype NameOfTerm = NameOfTerm { unNameOfTerm :: String } deriving (Eq, Show, Ord)
 
-data SLKind
-	= SLKindType
-	| SLKindFun SLKind SLKind
+data Kind
+	= KindType
+	| KindFun Kind Kind
 	deriving (Show, Eq)
 
-data SLDataDefn = SLDataDefn {
-	nameOfSLDataDefn :: NameOfSLType,
-	typeParamsOfSLDataDefn :: [SLKind]
+data DataDefn = DataDefn {
+	nameOfDataDefn :: NameOfType,
+	typeParamsSLDataDefn :: [Kind]
 	}
 
-data SLCtorDefn = SLCtorDefn {
-	nameOfSLCtorDefn :: NameOfSLTerm,
-	parentDataOfSLCtorDefn :: SLDataDefn,
-	fieldTypesOfSLCtorDefn :: [[SLType] -> SLType]
+data CtorDefn = CtorDefn {
+	nameOfCtorDefn :: NameOfTerm,
+	parentDataOfCtorDefn :: SLDataDefn,
+	fieldTypesOfCtorDefn :: [[Type] -> Type]
 	}
 
-data SLTermDefn = SLTermDefn {
-	nameOfSLTermDefn :: NameOfSLTerm,
-	typeParamsOfSLTermDefn :: [SLKind],
-	typeOfSLTermDefn :: [SLType] -> SLType,
-	valueOfSLTermDefn :: [SLType] -> SLTerm
+data TermDefn = TermDefn {
+	nameOfTermDefn :: NameOfTerm,
+	typeParamsOfTermDefn :: [Kind],
+	typeOfTermDefn :: [Type] -> Type,
+	valueOfTermDefn :: [Type] -> Term
 	}
 
-data SLType
-	= SLTypeDefined SLDataDefn
-	| SLTypeName NameOfSLType SLKind
-	| SLTypeApp SLType SLType
-	| SLTypeFun SLType SLType
-	| SLTypeLazy SLType
+data Type
+	= TypeDefined DataDefn
+	| TypeName NameOfType Kind
+	| TypeApp Type Type
+	| TypeFun Type Type
+	| TypeLazy Type
 
-data SLTerm
-	= SLTermDefined SLTermDefn [SLType]
-	| SLTermName NameOfSLTerm SLType
-	| SLTermApp SLTerm SLTerm
-	| SLTermAbs (NameOfSLTerm, SLType) SLTerm
-	| SLTermCase SLTerm [(SLCtorDefn, [SLType], [NameOfSLTerm], SLTerm)]
-	| SLTermData SLCtorDefn [SLType] [SLTerm]
-	| SLTermWrap SLTerm
-	| SLTermUnwrap SLTerm
+data Term
+	= TermDefined TermDefn [Type]
+	| TermName NameOfTerm Type
+	| TermApp Term Term
+	| TermAbs (NameOfTerm, Type) Term
+	| TermCase Term [(CtorDefn, [Type], [NameOfTerm], Term)]
+	| TermData CtorDefn [Type] [Term]
+	| TermWrap Term
+	| TermUnwrap Term

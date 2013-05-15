@@ -1,9 +1,9 @@
-module Metacompiler.Runtime.TestEquivalent where
+module Metacompiler.TLRuntime.TestEquivalent where
 
 import qualified Data.Set as S
 import Data.Foldable (all)
-import Metacompiler.Runtime.Reduce
-import Metacompiler.Runtime.Types
+import Metacompiler.TLRuntime.Reduce
+import Metacompiler.TLRuntime.Types
 import Prelude hiding (all)
 
 -- `equivalentMetaTypes` and `equivalentMetaObjects` return `True` if the given meta-types or meta-objects are provably
@@ -14,31 +14,6 @@ equivalentMetaTypes t1 t2 = equivalentMetaTypes' (S.empty, S.empty) (reduceMetaT
 
 equivalentMetaObjects :: MetaObject -> MetaObject -> Bool
 equivalentMetaObjects o1 o2 = equivalentMetaObjects' (S.empty, S.empty) (reduceMetaObject o1) (reduceMetaObject o2)
-
--- `matchMetaTypes` and `matchMetaObjects` are a generalized version of comparing for equality. They differ from
--- `equivalentMetaTypes` and `equivalentMetaObjects` in two ways:
---   * They accept sets of pairs of variables that are considered to be equivalent. This is used to implement matching
---     of lambdas and such. For example, when matching `\ (x :: T) -> f x` and `\ (y :: T) -> f y`, the algorithm will
---     recursively call `matchMetaObjects` on `f x` and `f y` with the stipulation that `x` and `y` are equivalent.
---   * Certain variables can be designated as "wildcard" variables; if the objects can be made equal for any value of
---     the wildcard variables, the algorithm will indicate what value that is. For example, when matching `f x` against
---     `f True` where `x` is a wildcard variable, the algorithm will indicate that the match is possible if `x` is
---     `True`.
-
-data MatchInput = MatchInput {
-	equivalentMetaObjectsInMI :: S.Set (NameOfMetaObject, NameOfMetaObject),
-	equivalentSLTypesInMI :: S.Set (NameOfSLType, NameOfSLType),
-	equivalentSLTermsInMI :: S.Set (NameOfSLTerm, NameOfSLTerm),
-	wildcardMetaObjectNamesInMI :: (S.Set NameOfMetaObject, S.Set NameOfMetaObject),
-	wildcardSLTypeNamesInMI :: (S.Set NameOfSLType, S.Set NameOfSLType),
-	wildcardSLTermNamesInMI :: (S.Set NameOfSLTerm, S.Set NameOfSLTerm)
-	}
-
-data MatchOutput = MatchOutput {
-	wildcardMetaObjectValuesInMO :: (M.Map NameOfMetaObject R.MetaObject, M.Map NameOfMetaObject R.MetaObject),
-	wildcardSLTermValuesInMO :: (M.Map NameOfSLTerm R.MetaObject, M.Map NameOfSLTerm R.MetaObject),
-	
-	
 
 equivalentMetaTypes' :: (S.Set (NameOfMetaObject, NameOfMetaObject), S.Set (NameOfSLTerm, NameOfSLTerm))
                      -> MetaType

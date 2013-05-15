@@ -10,7 +10,7 @@ import Metacompiler.SLRuntime.FreeNames
 import Metacompiler.SLRuntime.Traverse
 import Metacompiler.SLRuntime.Types
 
-{- `substituteSLType` and `substituteSLTerm` recursively traverse the given object, looking for variables that appear
+{- `substituteType` and `substituteTerm` recursively traverse the given object, looking for variables that appear
 in the given maps. When a variable is found, it is replaced with the result of `performTypeSub` or `performTermSub`,
 where the argument to `performTypeSub` or `performTermSub` is a list of the types or terms that are being passed as
 parameters to the variable.
@@ -19,12 +19,12 @@ In addition, the entire thing is parameterized on an applicative functor, which 
 other than simple substitution (e.g. count the number of times a variable is used).
 
 This is best explained by example. Suppose that we run:
-	substituteSLTerm (M.singleton (NameOfSLTerm "f") termSub, M.empty) term
+	substituteTerm (M.singleton (NameOfTerm "f") termSub, M.empty) term
 where `term` is the SL term `(f x y)`. Then `performTermSub termSub` will be called, with the parameter:
-	[SLTermName (NameOfSLTerm "x") ..., SLTermName (NameOfSLTerm "y") ...]
-Whatever `performTermSub termSub` returns will be the return value of `substituteSLTerm`.
+	[TermName (NameOfTerm "x") ..., TermName (NameOfTerm "y") ...]
+Whatever `performTermSub termSub` returns will be the return value of `substituteTerm`.
 
-`substituteSLTerm` also correctly preserves semantics. There are two tricky cases:
+`substituteTerm` also correctly preserves semantics. There are two tricky cases:
 
 1. In the expression `f x (\ x :: T -> x)`, substituting `x` should only affect the first parameter to `f` and not the
     second, because the `x`s in the second parameter are semantically a different variable.
@@ -37,90 +37,90 @@ Whatever `performTermSub termSub` returns will be the return value of `substitut
 -}
 
 data TypeSub f = TypeSub {
-	performTypeSub :: [SLType] -> f SLType
+	performTypeSub :: [Type] -> f Type
 	}
 
 data TermSub f = TermSub {
-	varsOfTermSub :: S.Set NameOfSLTerm,
-	performTermSub :: [SLTerm] -> f SLTerm
+	varsOfTermSub :: S.Set NameOfTerm,
+	performTermSub :: [Term] -> f Term
 	}
 
-substituteSLType :: Applicative f => M.Map NameOfSLType (TypeSub f) -> SLType -> f SLType
-substituteSLType subs ty = substituteSLType' subs ty []
+substituteType :: Applicative f => M.Map NameOfType (TypeSub f) -> Type -> f Type
+substituteType subs ty = substituteType' subs ty []
 
-substituteSLType' :: Applicative f => M.Map NameOfSLType (TypeSub f) -> SLType -> [SLType] -> f SLType
-substituteSLType' subs (SLTypeName n k) args | n `M.elem` subs =
+substituteType' :: Applicative f => M.Map NameOfType (TypeSub f) -> Type -> [Type] -> f Type
+substituteType' subs (TypeName n k) args | n `M.elem` subs =
 	performTypeSub (subs M.! n) args
-substituteSLType' subs (SLTypeApp f x) args =
-	substituteSLType' subs f (substituteSLType' x : args)
-substituteSLType' subs other args@(_:_) =
-	foldl SLTypeApp <$> substituteSLType' subs other [] <*> pure args
-substituteSLType' subs other [] =
-	traverseSLType (substituteTypeVisitor subs) other
+substituteType' subs (TypeApp f x) args =
+	substituteType' subs f (substituteType' x : args)
+substituteType' subs other args@(_:_) =
+	foldl TypeApp <$> substituteType' subs other [] <*> pure args
+substituteType' subs other [] =
+	traverseType (substituteTypeVisitor subs) other
 
-substituteTypeVisitor :: Applicative f => M.Map NameOfSLType (TypeSub f) -> TypeVisitor f
+substituteTypeVisitor :: Applicative f => M.Map NameOfType (TypeSub f) -> TypeVisitor f
 substituteTypeVisitor subs = TypeVisitor {
-	visitSLType = substituteSLType subs
+	visitType = substituteType subs
 	}
 
-substituteSLTerm :: Applicative f
-                 => (M.Map NameOfSLType (TypeSub f), M.Map NameOfSLTerm (TermSub f))
-                 -> SLTerm -> f SLTerm
-substituteSLTerm subs te = substituteSLTerm' subs te []
+substituteTerm :: Applicative f
+                 => (M.Map NameOfType (TypeSub f), M.Map NameOfTerm (TermSub f))
+                 -> Term -> f Term
+substituteTerm subs te = substituteTerm' subs te []
 
-substituteSLTerm' :: Applicative f
-                  => (M.Map NameOfSLType (TypeSub f), M.Map NameOfSLTerm (TermSub f))
-                  -> SLTerm -> [SLTerm] -> f SLTerm
-substituteSLTerm' (typeSubs, termSubs) (SLTermName n t) args | n `M.elem` termSubs =
+substituteTerm' :: Applicative f
+                  => (M.Map NameOfType (TypeSub f), M.Map NameOfTerm (TermSub f))
+                  -> Term -> [Term] -> f Term
+substituteTerm' (typeSubs, termSubs) (TermName n t) args | n `M.elem` termSubs =
 	performTermSub (termSubs M.! n) args
-substituteSLTerm' subs (SLTermApp f x) args =
-	substituteSLTerm' subs f (substituteSLTerm' x : args)
-substituteSLTerm' (typeSubs, termSubs) (SLTermAbs (argName, argType) body) [] = let
-	argType' = substituteSLType typeSubs argType
-	(argName', termSubs') = prepareBinding (argName, argType') (freeVarsAndGlobalsInSLTerm body) termSubs
-	body' = substituteSLTerm (typeSubs, termSubs') body
-	in SLTermAbs <$> ((argName',) <$> argType') <*> body'
-substituteSLTerm' (typeSubs, termSubs) (SLTermCase subject clauses) [] = let
-	subject' = substituteSLTerm (typeSubs, termSubs) subject
+substituteTerm' subs (TermApp f x) args =
+	substituteTerm' subs f (substituteTerm' x : args)
+substituteTerm' (typeSubs, termSubs) (TermAbs (argName, argType) body) [] = let
+	argType' = substituteType typeSubs argType
+	(argName', termSubs') = prepareBinding (argName, argType') (freeVarsAndGlobalsInTerm body) termSubs
+	body' = substituteTerm (typeSubs, termSubs') body
+	in TermAbs <$> ((argName',) <$> argType') <*> body'
+substituteTerm' (typeSubs, termSubs) (TermCase subject clauses) [] = let
+	subject' = substituteTerm (typeSubs, termSubs) subject
 	clauses' = sequenceA [let
-		tps' = traverse (substituteSLType typeSubs) tps
+		tps' = traverse (substituteType typeSubs) tps
 		fieldTypes' = map ($ tps') (fieldTypesOfSLCtorDefn ctor)
-		f :: M.Map NameOfSLTerm (TermSub f) -> [(NameOfSLTerm, SLType)] -> f ([NameOfSLTerm], SLTerm)
-		f subs [] = (,) [] <$> substituteSLTerm (typeSubs, subs) body
+		f :: M.Map NameOfTerm (TermSub f) -> [(NameOfTerm, Type)] -> f ([NameOfTerm], Term)
+		f subs [] = (,) [] <$> substituteTerm (typeSubs, subs) body
 		f subs ((fieldName, fieldType'):fieldNamesAndTypes) = let
 			(fieldName', subs') = prepareBinding
 				(fieldName, fieldType')
-				(freeVarsAndGlobalsInSLTerm body S.\\ S.fromList (map fst fieldNamesAndTypes))
+				(freeVarsAndGlobalsInTerm body S.\\ S.fromList (map fst fieldNamesAndTypes))
 				subs
 			rest = f subs' fieldNamesAndTypes
 			in (\ (fieldNames', body') -> (fieldName' : fieldNames', body')) <$> rest
 		in (\ tps' (fieldNames', body') -> (ctor, tps', fieldNames', body')) <$> tps' <*> f termSubs fieldNames
 		| (ctor, tps, fieldNames, body) <- clauses]
-	in SLTermCase <$> subject' <*> clauses'
-substituteSLTerm' subs other args@(_:_) =
-	foldl SLTermApp <$> substituteSLTerm' subs other [] <*> pure args
-substituteSLTerm' subs other [] =
-	traverseSLTerm (substituteTermVisitor subs) other
+	in TermCase <$> subject' <*> clauses'
+substituteTerm' subs other args@(_:_) =
+	foldl TermApp <$> substituteTerm' subs other [] <*> pure args
+substituteTerm' subs other [] =
+	traverseTerm (substituteTermVisitor subs) other
 
-substituteTermVisitor :: Applicative f => (M.Map NameOfSLType (TypeSub f), M.Map NameOfSLTerm (TermSub f)) -> TermVisitor f
+substituteTermVisitor :: Applicative f => (M.Map NameOfType (TypeSub f), M.Map NameOfTerm (TermSub f)) -> TermVisitor f
 substituteTermVisitor subs@(typeSubs, _) = TermVisitor {
 	getTypeVisitor = TypeVisitor {
-		visitSLType = substituteSLType typeSubs
+		visitType = substituteType typeSubs
 		},
-	visitSLTerm = substituteSLTerm subs
+	visitTerm = substituteTerm subs
 	}
 
-performBinding :: (NameOfSLTerm, SLType)
-               -> S.Set NameOfSLTerm
-               -> M.Map NameOfSLTerm (TermSub f)
-               -> (NameOfSLTerm, M.Map NameOfSLTerm (TermSub f))
+performBinding :: (NameOfTerm, Type)
+               -> S.Set NameOfTerm
+               -> M.Map NameOfTerm (TermSub f)
+               -> (NameOfTerm, M.Map NameOfTerm (TermSub f))
 performBinding (name, nameType) namesWithin subs = let
 	forbiddenNames =
 		S.unions [maybe S.empty varsOfTermSub $ M.lookup n subs
 			| n <- S.toList (S.delete name namesWithin)]
 		`S.union` S.delete name namesWithin
-	candidateNames = [NameOfSLTerm (unNameOfSLTerm name ++ replicate i '\'') | i <- [0..]]
+	candidateNames = [NameOfTerm (unNameOfTerm name ++ replicate i '\'') | i <- [0..]]
 	Just name' = find (`S.notMember` forbiddenNames) candidateNames
-	subs' = if name' == name then S.delete name subs else S.insert name (SLTermName name' nameType) subs'
+	subs' = if name' == name then S.delete name subs else S.insert name (TermName name' nameType) subs'
 	in (name', subs')
 

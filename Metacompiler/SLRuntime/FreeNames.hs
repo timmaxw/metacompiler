@@ -1,4 +1,4 @@
-module Metacompiler.Runtime.FreeNames where
+module Metacompiler.SLRuntime.FreeNames where
 
 import Control.Applicative
 import Data.Monoid
@@ -7,73 +7,73 @@ import qualified Data.Set as S
 import Metacompiler.SLRuntime.Traverse
 import Metacompiler.SLRuntime.Types
 
-freeVarsInSLType :: SLType -> M.Map NameOfSLType SLKind
-freeVarsInSLType (SLTypeName name kind) = M.singleton name kind
-freeVarsInSLType other = getConst (traverseSLType freeTypeVarsVisitor other)
+freeVarsInType :: Type -> M.Map NameOfType Kind
+freeVarsInType (TypeName name kind) = M.singleton name kind
+freeVarsInType other = getConst (traverseType freeTypeVarsVisitor other)
 
-freeVarsInSLTerm :: SLTerm -> (M.Map NameOfSLType SLKind, M.Map NameOfSLTerm SLType)
-freeVarsInSLTerm (SLTermName name type_) = (freeVarsInSLType type_, M.singleton name type_)
-freeVarsInSLTerm (SLTermAbs (argName, argType) body) = let
-	(bodyTypeVars, bodyTermVars) = freeVarsInSLTerm body
-	typeVars = bodyTypeVars `M.union` freeVarsInSLType argType
+freeVarsInTerm :: Term -> (M.Map NameOfType Kind, M.Map NameOfTerm Type)
+freeVarsInTerm (TermName name type_) = (freeVarsInType type_, M.singleton name type_)
+freeVarsInTerm (TermAbs (argName, argType) body) = let
+	(bodyTypeVars, bodyTermVars) = freeVarsInTerm body
+	typeVars = bodyTypeVars `M.union` freeVarsInType argType
 	termVars = M.delete argName bodyTermVars
 	in (typeVars, termVars)
-freeVarsInSLTerm (SLTermCase subject clauses) = let
-	subjectVars = freeVarsInSLTerm subject
+freeVarsInTerm (TermCase subject clauses) = let
+	subjectVars = freeVarsInTerm subject
 	clauseVars = mconcat [let
-		(bodyTypeVars, bodyTermVars) = freeVarsInSLTerm body
-		typeVars = bodyTypeVars `M.union` M.unions (map freeVarsInSLType tps)
+		(bodyTypeVars, bodyTermVars) = freeVarsInTerm body
+		typeVars = bodyTypeVars `M.union` M.unions (map freeVarsInType tps)
 		termVars = foldr M.delete bodyTermVars fns
 		in (typeVars, termVars)
 		| (_, tps, fns, body) <- clauses]
 	in subjectVars `mappend` clauseVars 
-freeVarsInSLTerm other = getConst (traverseSLTerm freeAllVarsVisitor other)
+freeVarsInTerm other = getConst (traverseTerm freeAllVarsVisitor other)
 
-freeTypeVarsVisitor :: TypeVisitor (Const (M.Map NameOfSLType SLKind))
+freeTypeVarsVisitor :: TypeVisitor (Const (M.Map NameOfType Kind))
 freeTypeVarsVisitor = TypeVisitor {
-	visitSLType = Const . freeVarsInSLType
+	visitType = Const . freeVarsInType
 	}
 
-freeAllVarsVisitor :: TermVisitor (Const (M.Map NameOfSLType SLKind, M.Map NameOfSLTerm SLType))
+freeAllVarsVisitor :: TermVisitor (Const (M.Map NameOfType Kind, M.Map NameOfTerm Type))
 freeAllVarsVisitor = TermVisitor {
 	getTypeVisitor = TypeVisitor {
-		visitSLType = \t -> Const (freeVarsInSLType t, M.empty),
+		visitType = \t -> Const (freeVarsInType t, M.empty),
 		},
-	visitSLTerm = Const . freeVarsInSLTerm
+	visitTerm = Const . freeVarsInTerm
 	}
 
-globalsInSLType :: SLType -> S.Set NameOfSLType
-globalsInSLType (SLTypeDefined defn) =
-	S.singleton (nameOfSLDataDefn defn)
-globalsInSLType other =
-	getConst (traverseSLType typeGlobalsVisitor other)
+globalsInType :: Type -> S.Set NameOfType
+globalsInType (TypeDefined defn) =
+	S.singleton (nameOfDataDefn defn)
+globalsInType other =
+	getConst (traverseType typeGlobalsVisitor other)
 
-globalsInSLTerm :: SLTerm -> (S.Set NameOfSLType, S.Set NameOfSLTerm)
-globalsInSLTerm (SLTermDefined defn params) =
-	(S.singleton (nameOfSLTermDefn defn), S.unions (map globalsInSLType params))
-globalsInSLTerm other =
-	getConst (traverseSLTerm allGlobalsVisitor other)
+globalsInTerm :: Term -> (S.Set NameOfType, S.Set NameOfTerm)
+globalsInTerm (TermDefined defn params) =
+	(S.singleton (nameOfTermDefn defn), S.unions (map globalsInType params))
+globalsInTerm other =
+	getConst (traverseTerm allGlobalsVisitor other)
 
-typeGlobalsVisitor :: TypeVisitor (Const (S.Set NameOfSLType))
+typeGlobalsVisitor :: TypeVisitor (Const (S.Set NameOfType))
 typeGlobalsVisitor = TypeVisitor {
-	visitType = Const . globalsInSLType
+	visitType = Const . globalsInType
 	}
 
-allGlobalsVisitor :: TermVisitor (Const (S.Set NameOfSLType, S.Set NameOfSLTerm))
+allGlobalsVisitor :: TermVisitor (Const (S.Set NameOfType, S.Set NameOfTerm))
 allGlobalsVisitor = TermVisitor {
 	getTypeVisitor = TypeVisitor {
-		visitSLType = \t -> Const (globalsInSLType t, S.empty)
+		visitType = \t -> Const (globalsInType t, S.empty)
 		},
-	visitSLTerm = Const . globalsInSLTerm
+	visitTerm = Const . globalsInTerm
 	}
 
-freeVarsAndGlobalsInSLType :: SLType -> S.Set NameOfSLType
-freeVarsAndGlobalsInSLType t =
-	S.fromList (M.keys (freeVarsInSLType t)) `S.union` globalsInSLType t
+freeVarsAndGlobalsInType :: Type -> S.Set NameOfType
+freeVarsAndGlobalsInType t =
+	S.fromList (M.keys (freeVarsInType t)) `S.union` globalsInType t
 
-freeVarsAndGlobalsInSLTerm :: SLTerm -> (S.Set NameOfSLType, S.Set NameOfSLTerm)
-freeVarsAndGlobalsInSLTerm t = let
-	(typeVars, termVars) = freeVarsInSLTerm t
-	(typeGlobals, termGlobals) = globalsInSLTerm t
+freeVarsAndGlobalsInTerm :: Term -> (S.Set NameOfType, S.Set NameOfTerm)
+freeVarsAndGlobalsInTerm t = let
+	(typeVars, termVars) = freeVarsInTerm t
+	(typeGlobals, termGlobals) = globalsInTerm t
 	in (S.fromList (M.keys typeVars) `S.union` typeGlobals, S.fromList (M.keys termVars) `S.union` termGlobals)
 

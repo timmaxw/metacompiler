@@ -1,12 +1,14 @@
-module Metacompiler.Runtime.Reduce where
+module Metacompiler.TLRuntime.Reduce where
 
 import Control.Monad.Identity
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Metacompiler.JS as JS
-import Metacompiler.Runtime.Substitute
-import Metacompiler.Runtime.Traverse
-import Metacompiler.Runtime.Types
+import Metacompiler.SLRuntime.Substitute as SLR
+import Metacompiler.SLRuntime.Types as SLR
+import Metacompiler.TLRuntime.Substitute
+import Metacompiler.TLRuntime.Traverse
+import Metacompiler.TLRuntime.Types
 
 -- `reduceMetaType` and `reduceMetaObject` return the simplest meta-type or meta-object equivalent to the given
 -- meta-type or meta-object. They are idempotent. Note that they do not reduce SL terms because this might never
@@ -66,23 +68,23 @@ reductionVisitor = Visitor {
 	}
 
 bindingReductionParametersForSL :: BindingReductionParameters
-		(Either NameOfSLType NameOfSLTerm)
-		(Either SLType SLTerm)
-		(Either SLKind SLType)
+		(Either SLR.NameOfType SLR.NameOfTerm)
+		(Either SLR.Type SLR.Term)
+		(Either SLR.Kind SLR.Type)
 		(Either SLTypeBinding SLTermBinding)
 		(NameOfMetaObject, MetaObject)
 
-bindingReductionParametersForSL = BRP {
+bindingReductionParametersForSL = BindingReductionParameters {
 	generateUniqueNameBRP = (\ name taken -> let
-		unwrap :: Either NameOfSLType NameOfSLTerm -> String
-		unwrap (Left (NameOfSLType n)) = n
-		unwrap (Right (NameOfSLTerm n)) = n
+		unwrap :: Either SLR.NameOfType SLR.NameOfTerm -> String
+		unwrap (Left (SLR.NameOfType n)) = n
+		unwrap (Right (SLR.NameOfTerm n)) = n
 		takenStrings = S.map unwrap taken
 		candidateStrings = [unwrap name ++ replicate i '\'' | i <- [0..]]
 		Just newNameString = find (`S.notMember` takenStrings) candidateStrings
 		in case name of
-			Left _ -> Left (NameOfSLType newNameString)
-			Right _ -> Right (NameOfSLTerm newNameString)
+			Left _ -> Left (SLR.NameOfType newNameString)
+			Right _ -> Right (SLR.NameOfTerm newNameString)
 		),
 	makeBindingBRP = (\ params value -> case typeOfMetaObject value of
 		MTSLType _ -> assert (null params) $ Left (SLTypeBinding value)
@@ -109,20 +111,20 @@ bindingReductionParametersForSL = BRP {
 	applySubstBRP = (\ typeOrTermName numParams newNames substFun typeOrTerm -> let
 		(typeSubs, termSubs) = case typeOrTermName of
 			Left typeName | numParams == 0 -> (
-				M.singleton typeName (TypeSub
+				M.singleton typeName (SLR.TypeSub
 					(\ params -> let
 						Left value = substFun []
-						in Identity (foldl SL.TypeApp value params))
+						in Identity (foldl SLR.TypeApp value params))
 					),
 				M.empty
 				)
 			Right termName -> (
 				M.empty,
-				M.singleton termName (TermSub
+				M.singleton termName (SLR.TermSub
 					(S.fromList [name | Right name <- S.toList newNames])
 					(\ params -> assert (length params >= numParams) $ let
 						Right value = substFun (take numParams params)
-						in Identity (foldl SL.TermApp value (drop numParams params)))
+						in Identity (foldl SLR.TermApp value (drop numParams params)))
 					)
 				)
 		in case typeOrTerm of
@@ -133,9 +135,9 @@ bindingReductionParametersForSL = BRP {
 		(kindsOfTypes, typesOfTerms) = case typeOrTerm of
 			Left type_ -> (freeVarsInSLType type_, M.empty)
 			Right term -> freeVarsInSLTerm term
-		stripType :: Int -> SLType -> SLType
+		stripType :: Int -> SLR.Type -> SLR.Type
 		stripType 0 t = t
-		stripType i (SLTypeFun _ r) = stripType (i - 1) r
+		stripType i (SLR.TypeFun _ r) = stripType (i - 1) r
 		in case (typeOrTermName, binding) of
 			(Left typeName, Left (SLTypeBinding _)) ->
 				Left (kindsOfTypes M.! typeName)
@@ -155,12 +157,12 @@ bindingReductionParametersForSL = BRP {
 	makeTermInvokingSubstBRP = (\ typeOrTermName kindOrType typeOrTermArgs -> case (name, kindOrType) of
 		(Left name, Left kind) -> let
 			args = [t | t' <- typeOrTermArgs, let Left t = t']
-			kind' = foldr SLKindFun kind (map kindOfSLType args)
-			in foldl SLTypeApp (SLTypeName name kind') args
+			kind' = foldr SLR.KindFun kind (map kindOfSLType args)
+			in foldl SLR.TypeApp (SLR.TypeName name kind') args
 		(Right name, Right type_) -> let
 			args = [t | t <- typeOrTermArgs, let Right t = t']
-			type_' = foldr SLTypeFun type_ (map typeOfSLTerm args)
-			in foldl SLTermApp (SLTermName name type_') args
+			type_' = foldr SLR.TypeFun type_ (map typeOfSLTerm args)
+			in foldl SLR.TermApp (SLR.TermName name type_') args
 		)
 	}
 
@@ -171,7 +173,7 @@ bindingReductionParametersForJS :: BindingReductionParameters
 		JSExprBinding
 		JSExprBindingParam
 
-bindingReductionParametersForJS = BRP {
+bindingReductionParametersForJS = BindingReductionParameters {
 	generateUniqueNameBRP = (\ name taken -> let
 		candidates = [JS.unId name ++ replicate i "_" | i <- [0..]]
 		Just name' = find (`S.notMember` taken) candidates
@@ -205,7 +207,7 @@ bindingReductionParametersForJS = BRP {
 		)
 	}
 
-data BindingReductionParameters nameType termType typeType bindingType paramType = BRP {
+data BindingReductionParameters nameType termType typeType bindingType paramType = BindingReductionParameters {
 	generateUniqueNameBRP :: nameType -> S.Set nameType -> nameType,
 
 	makeBindingBRP :: ([paramType], MetaObject) -> bindingType,

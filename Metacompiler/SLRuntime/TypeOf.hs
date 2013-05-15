@@ -1,27 +1,29 @@
 module Metacompiler.SLRuntime.TypeOf where
 
-kindOfSLType :: SLType -> SLKind
-kindOfSLType (SLTypeDefined defn) = foldr SLKindFun SLKindType (typeParamsOfSLDataDefn defn)
-kindOfSLType (SLTypeName _ kind) = kind
-kindOfSLType (SLTypeApp f _) = case kindOfSLType f of
-	SLKindFun _ r -> r
-	_ -> error "badly kinded type"
-kindOfSLType (SLTypeFun _ _) = SLKindType
-kindOfSLType (SLTypeLazy _) = SLKindType
+import Metacompiler.SLRuntime.Types
 
-typeOfSLTerm :: SLTerm -> SLType
-typeOfSLTerm (SLTermDefined defn tps) = typeOfSLTermDefn defn tps
-typeOfSLTerm (SLTermName _ type_) = type_
-typeOfSLTerm (SLTermApp f _) = case typeOfSLTerm f of
-	SLTypeFun _ r -> r
+kindOfType :: Type -> Kind
+kindOfType (TypeDefined defn) = foldr KindFun KindType (typeParamsOfSLDataDefn defn)
+kindOfType (TypeName _ kind) = kind
+kindOfType (TypeApp f _) = case kindOfType f of
+	KindFun _ r -> r
+	_ -> error "badly kinded type"
+kindOfType (TypeFun _ _) = KindType
+kindOfType (TypeLazy _) = KindType
+
+typeOfTerm :: Term -> Type
+typeOfTerm (TermDefined defn tps) = typeOfTermDefn defn tps
+typeOfTerm (TermName _ type_) = type_
+typeOfTerm (TermApp f _) = case typeOfTerm f of
+	TypeFun _ r -> r
 	_ -> error "badly typed term"
-typeOfSLTerm (SLTermAbs (_, a) b) = SLTypeFun a (typeOfSLTerm b)
-typeOfSLTerm (SLTermCase _ cs) = case cs of
-	(_, _, _, b):_ -> typeOfSLTerm b
+typeOfTerm (TermAbs (_, a) b) = TypeFun a (typeOfTerm b)
+typeOfTerm (TermCase _ cs) = case cs of
+	(_, _, _, b):_ -> typeOfTerm b
 	[] -> error "case with no clauses"
-typeOfSLTerm (SLTermData c tps _) = SLTypeDefined (parentDataOfSLCtorDefn c)
-typeOfSLTerm (SLTermWrap x) = SLTypeLazy (typeOfSLTerm x)
-typeOfSLTerm (SLTermUnwrap x) = case typeOfSLTerm x of
-	SLTypeLazy t -> t
+typeOfTerm (TermData c tps _) = TypeDefined (parentDataOfSLCtorDefn c)
+typeOfTerm (TermWrap x) = TypeLazy (typeOfTerm x)
+typeOfTerm (TermUnwrap x) = case typeOfTerm x of
+	TypeLazy t -> t
 	_ -> error "badly typed term"
 

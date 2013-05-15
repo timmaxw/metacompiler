@@ -4,36 +4,36 @@ import Control.Applicative
 import Data.Traversable
 import Metacompiler.SLRuntime.Types
 
--- `traverseSLType` and `traverseSLTerm` invoke `visitSLType` or `visitSLTerm` of the given visitor on each sub-node of
+-- `traverseType` and `traverseTerm` invoke `visitType` or `visitTerm` of the given visitor on each sub-node of
 -- the given meta-type or meta-object, then combine the results using an applicative functor. They are a generic way to
 -- implement many different things with a minimum of boilerplate.
 
 data TypeVisitor f = TypeVisitor {
-	visitSLType :: SLType -> f SLType,
+	visitType :: Type -> f Type,
 	}
 
 data TermVisitor f = TermVisitor {
 	getTypeVisitor :: TypeVisitor f,
-	visitSLTerm :: SLTerm -> f SLTerm
+	visitTerm :: Term -> f Term
 	}
 
-traverseSLType :: Applicative f => TypeVisitor f -> SLType -> f SLType
-traverseSLType v t = case t of
-	SLTypeDefined d -> pure (SLTypeDefined d)
-	SLTypeName n -> pure (SLTypeName n)
-	SLTypeApp f x -> SLTypeApp <$> visitTy f <*> visitTy x
-	SLTypeFun a r -> SLTypeFun <$> visitTy a <*> visitTy r
-	SLTypeLazy x -> SLTypeLazy <$> visitTy x
+traverseType :: Applicative f => TypeVisitor f -> Type -> f Type
+traverseType v t = case t of
+	TypeDefined d -> pure (TypeDefined d)
+	TypeName n -> pure (TypeName n)
+	TypeApp f x -> TypeApp <$> visitTy f <*> visitTy x
+	TypeFun a r -> TypeFun <$> visitTy a <*> visitTy r
+	TypeLazy x -> TypeLazy <$> visitTy x
 	where
-		visitTy = visitSLType v
+		visitTy = visitType v
 
-traverseSLTerm :: Applicative f => TermVisitor f -> SLTerm -> f SLTerm
-traverseSLTerm v t = case t of
-	SLTermDefined defn tps -> SLTermDefined defn <*> traverse visitTy tps
-	SLTermName name -> pure (SLTermName name)
-	SLTermApp f x -> SLTermApp <$> visitTe f <*> visitTe x
-	SLTermAbs (an, at) b -> SLTermAbs <$> ((,) paramName <$> visitTy at) <*> visitTe b
-	SLTermCase s cs -> SLTermCase
+traverseTerm :: Applicative f => TermVisitor f -> Term -> f Term
+traverseTerm v t = case t of
+	TermDefined defn tps -> TermDefined defn <*> traverse visitTy tps
+	TermName name -> pure (TermName name)
+	TermApp f x -> TermApp <$> visitTe f <*> visitTe x
+	TermAbs (an, at) b -> TermAbs <$> ((,) paramName <$> visitTy at) <*> visitTe b
+	TermCase s cs -> TermCase
 		<$> visitTe s
 		<*> traverse (\(c, tps, fns, b) ->
 			(,,,) c
@@ -41,10 +41,10 @@ traverseSLTerm v t = case t of
 			<*> pure fns
 			<*> visitTe b
 			) cs
-	SLTermData c tps fs -> SLTermData c <$> traverse visitTy tps <*> traverse visitTe fs
-	SLTermWrap x -> SLTermWrap <$> visitTe x
-	SLTermUnwrap x -> SLTermUnwrap <$> visitTe x
+	TermData c tps fs -> TermData c <$> traverse visitTy tps <*> traverse visitTe fs
+	TermWrap x -> TermWrap <$> visitTe x
+	TermUnwrap x -> TermUnwrap <$> visitTe x
 	where
-		visitTy = visitSLType (getTypeVisitor v)
-		visitTe = visitSLTerm v
+		visitTy = visitType (getTypeVisitor v)
+		visitTe = visitTerm v
 
