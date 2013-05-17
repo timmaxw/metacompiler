@@ -10,8 +10,8 @@ data Kind
 
 data DataDefn = DataDefn {
 	nameOfDataDefn :: NameOfType,
-	typeParamsSLDataDefn :: [Kind]
-	}
+	typeParamsDataDefn :: [Kind]
+	} deriving Eq
 
 data CtorDefn = CtorDefn {
 	nameOfCtorDefn :: NameOfTerm,
@@ -32,6 +32,7 @@ data Type
 	| TypeApp Type Type
 	| TypeFun Type Type
 	| TypeLazy Type
+	deriving Eq
 
 data Term
 	= TermDefined TermDefn [Type]

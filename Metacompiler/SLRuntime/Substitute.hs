@@ -39,10 +39,16 @@ data TypeSub f = TypeSub {
 	performTypeSub :: [Type] -> f Type
 	}
 
+simpleTypeSub :: Applicative f => Type -> TypeSub f
+simpleTypeSub type_ = TypeSub (pure . foldl TypeApp type_)
+
 data TermSub f = TermSub {
 	varsOfTermSub :: S.Set NameOfTerm,
 	performTermSub :: [Term] -> f Term
 	}
+
+simpleTermSub :: Applicative f => Term -> TermSub f
+simpleTermSub term = TermSub (freeVarsAndGlobalsInTerm term) (pure . foldl TermApp term)
 
 substituteType :: Applicative f => M.Map NameOfType (TypeSub f) -> Type -> f Type
 substituteType subs ty = substituteType' subs ty []
