@@ -1,11 +1,17 @@
 module Metacompiler.TLRuntime.Reduce where
 
+import Control.Exception (assert)
 import Control.Monad.Identity
+import Control.Monad.State
+import Data.List (find, tails)
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Metacompiler.JS.JS as JS
+import Metacompiler.SLRuntime.FreeNames as SLR
 import Metacompiler.SLRuntime.Substitute as SLR
+import Metacompiler.SLRuntime.TypeOf as SLR
 import Metacompiler.SLRuntime.Types as SLR
+import Metacompiler.TLRuntime.FreeNames
 import Metacompiler.TLRuntime.Substitute
 import Metacompiler.TLRuntime.Traverse
 import Metacompiler.TLRuntime.Types
@@ -25,7 +31,7 @@ reduceMetaObject (MOApp fun arg) = let
 	arg' = reduceMetaObject arg
 	in case fun' of
 		MOAbs (paramName, _) body -> reduceMetaObject $
-			substituteMetaObject (Substitutions (M.singleton paramName arg') M.empty M.empty) body
+			substituteMetaObject (M.singleton paramName arg') body
 		_ -> MOApp fun' arg'
 
 -- TODO: Handle things like `(sl-term "x" (term "x" = ...))`. Also take into account the case where `x` takes
@@ -40,13 +46,13 @@ reduceMetaObject (MOSLType type_ bindings) = let
 	in MOSLType type_''' bindings'''
 
 reduceMetaObject (MOSLTerm term typeBindings termBindings) = let
-	term' = Left term
+	term' = Right term
 	bindings' = M.mapKeys Left (M.map Left typeBindings) `M.union` M.mapKeys Right (M.map Right termBindings)
-	(type_'', bindings'') = reduceBindings bindingReductionParametersForSL (type_', bindings')
-	Right type_''' = type_''
+	(term'', bindings'') = reduceBindings bindingReductionParametersForSL (term', bindings')
+	Right term''' = term''
 	typeBindings''' = M.fromList [(n, v) | (Left n, Left v) <- M.toList bindings'']
 	termBindings''' = M.fromList [(n, v) | (Right n, Right v) <- M.toList bindings'']
-	in MOSLTerm type_''' typeBindings''' termBindings'''
+	in MOSLTerm term''' typeBindings''' termBindings'''
 
 reduceMetaObject (MOJSExprLiteral equiv type_ expr bindings) = let
 	equiv' = reduceMetaObject equiv
@@ -86,9 +92,9 @@ bindingReductionParametersForSL = BindingReductionParameters {
 			Left _ -> Left (SLR.NameOfType newNameString)
 			Right _ -> Right (SLR.NameOfTerm newNameString)
 		),
-	makeBindingBRP = (\ params value -> case typeOfMetaObject value of
-		MTSLType _ -> assert (null params) $ Left (SLTypeBinding value)
-		MTSLTerm _ -> Right (SLTermBinding params value)
+	makeBindingBRP = (\ name (params, value) -> case name of
+		Left _ -> assert (null params) $ Left (SLTypeBinding value)
+		Right _ -> Right (SLTermBinding params value)
 		),
 	unmakeBindingBRP = (\ binding -> case binding of
 		Left (SLTypeBinding value) -> ([], value)
@@ -119,18 +125,18 @@ bindingReductionParametersForSL = BindingReductionParameters {
 				M.singleton termName (SLR.TermSub
 					(S.fromList [name | Right name <- S.toList newNames])
 					(\ params -> assert (length params >= numParams) $ let
-						Right value = substFun (take numParams params)
+						Right value = substFun (map Right $ take numParams params)
 						in Identity (foldl SLR.TermApp value (drop numParams params)))
 					)
 				)
 		in case typeOrTerm of
-			Left type_ -> Left (runIdentity (substituteSLType typeSubs type_))
-			Right term_ -> Right (runIdentity (substituteSLTerm typeSubs termSubs term))
+			Left type_ -> Left (runIdentity (SLR.substituteType typeSubs type_))
+			Right term -> Right (runIdentity (SLR.substituteTerm typeSubs termSubs term))
 		),
 	typeOfSubstInTermBRP = (\ typeOrTerm typeOrTermName binding -> let
 		(kindsOfTypes, typesOfTerms) = case typeOrTerm of
-			Left type_ -> (freeVarsInSLType type_, M.empty)
-			Right term -> freeVarsInSLTerm term
+			Left type_ -> (SLR.freeVarsInType type_, M.empty)
+			Right term -> SLR.freeVarsInTerm term
 		stripType :: Int -> SLR.Type -> SLR.Type
 		stripType 0 t = t
 		stripType i (SLR.TypeFun _ r) = stripType (i - 1) r
@@ -141,23 +147,23 @@ bindingReductionParametersForSL = BindingReductionParameters {
 				Right (stripType (length params) (typesOfTerms M.! termName))
 		),
 	freeVarsAndGlobalsOfTermBRP = (\ typeOrTerm -> case typeOrTerm of
-		Left type_ -> S.map Left (freeVarsAndGlobalsOfSLType type_)
+		Left type_ -> S.map Left (SLR.freeVarsAndGlobalsInType type_)
 		Right term -> let
-			(typeVars, termVars) = freeVarsAndGlobalsOfSLTerm term
+			(typeVars, termVars) = SLR.freeVarsAndGlobalsInTerm term
 			in S.map Left typeVars `S.union` S.map Right termVars
 		),
-	freeVarsAndGlobalsOfTypeBRP = (\ kindOrType -> case kindOrType of
+	freeVarsAndGlobalsInTypeBRP = (\ kindOrType -> case kindOrType of
 		Left _ -> S.empty
-		Right type_ -> S.map Left (freeVarsAndGlobalsOfSLType type_)
+		Right type_ -> S.map Left (SLR.freeVarsAndGlobalsInType type_)
 		),
-	makeTermInvokingSubstBRP = (\ typeOrTermName kindOrType typeOrTermArgs -> case (name, kindOrType) of
+	makeTermInvokingSubstBRP = (\ typeOrTermName kindOrType typeOrTermArgs -> case (typeOrTermName, kindOrType) of
 		(Left name, Left kind) -> let
 			args = [t | t' <- typeOrTermArgs, let Left t = t']
-			kind' = foldr SLR.KindFun kind (map kindOfSLType args)
+			kind' = foldr SLR.KindFun kind (map SLR.kindOfType args)
 			in foldl SLR.TypeApp (SLR.TypeName name kind') args
 		(Right name, Right type_) -> let
-			args = [t | t <- typeOrTermArgs, let Right t = t']
-			type_' = foldr SLR.TypeFun type_ (map typeOfSLTerm args)
+			args = [t | t' <- typeOrTermArgs, let Right t = t']
+			type_' = foldr SLR.TypeFun type_ (map SLR.typeOfTerm args)
 			in foldl SLR.TermApp (SLR.TermName name type_') args
 		)
 	}
@@ -171,11 +177,11 @@ bindingReductionParametersForJS :: BindingReductionParameters
 
 bindingReductionParametersForJS = BindingReductionParameters {
 	generateUniqueNameBRP = (\ name taken -> let
-		candidates = [JS.unId name ++ replicate i "_" | i <- [0..]]
+		candidates = [JS.Id () (JS.unId name ++ replicate i '_') | i <- [0..]]
 		Just name' = find (`S.notMember` taken) candidates
 		in name'
 		),
-	makeBindingBRP = (\ (params, value) -> JSExprBinding params value),
+	makeBindingBRP = (\ _ (params, value) -> JSExprBinding params value),
 	unmakeBindingBRP = (\ (JSExprBinding params value) -> (params, value)),
 	isMetaObjectALiteralBRP = (\ obj -> case obj of
 		MOJSExprLiteral _ _ expr bindings -> Just (expr, bindings)
@@ -197,7 +203,7 @@ bindingReductionParametersForJS = BindingReductionParameters {
 		),
 	typeOfSubstInTermBRP = (\ _ _ _ -> ()),
 	freeVarsAndGlobalsOfTermBRP = JS.freeNamesInExpression,
-	freeVarsAndGlobalsOfTypeBRP = const S.empty,
+	freeVarsAndGlobalsInTypeBRP = const S.empty,
 	makeTermInvokingSubstBRP = (\ name () args ->
 		JS.CallExpr () (JS.VarRef () name) args
 		)
@@ -206,7 +212,7 @@ bindingReductionParametersForJS = BindingReductionParameters {
 data BindingReductionParameters nameType termType typeType bindingType paramType = BindingReductionParameters {
 	generateUniqueNameBRP :: nameType -> S.Set nameType -> nameType,
 
-	makeBindingBRP :: ([paramType], MetaObject) -> bindingType,
+	makeBindingBRP :: nameType -> ([paramType], MetaObject) -> bindingType,
 	unmakeBindingBRP :: bindingType -> ([paramType], MetaObject),
 
 	isMetaObjectALiteralBRP :: MetaObject -> Maybe (termType, M.Map nameType bindingType),
@@ -218,7 +224,7 @@ data BindingReductionParameters nameType termType typeType bindingType paramType
 	applySubstBRP :: nameType -> Int -> S.Set nameType -> ([termType] -> termType) -> termType -> termType,
 	typeOfSubstInTermBRP :: termType -> nameType -> bindingType -> typeType,
 	freeVarsAndGlobalsOfTermBRP :: termType -> S.Set nameType,
-	freeVarsAndGlobalsOfTypeBRP :: typeType -> S.Set nameType,
+	freeVarsAndGlobalsInTypeBRP :: typeType -> S.Set nameType,
 	makeTermInvokingSubstBRP :: nameType -> typeType -> [termType] -> termType
 	}
 
@@ -283,12 +289,12 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 	-- `reducedOuterBindings` is `originalOuterBindings` but with basic reductions performed on each binding. In our
 	-- example, `reducedOuterBindings` would be the same as `originalOuterBindings`, because all of the values of the
 	-- bindings are already in their simplest forms.
-	reducedOuterBindings = M.map
-		(\ binding -> let
-			(params, value) = makeBindingBRP brp binding
+	reducedOuterBindings = M.mapWithKey
+		(\ name binding -> let
+			(params, value) = unmakeBindingBRP brp binding
 			params' = map (reduceParamBRP brp) params
 			value' = reduceMetaObject value
-			in makeBindingBRP brp (params', value'))
+			in makeBindingBRP brp name (params', value'))
 		originalOuterBindings
 
 	-- `globals` is all of the global variables that are mentioned in both the original outer term and the things that
@@ -302,7 +308,8 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 				Nothing -> S.empty
 				Just (innerTerm, innerBindings) ->
 					freeVarsAndGlobalsOfTermBRP brp innerTerm S.\\ S.fromList (M.keys innerBindings)
-			| (_, value) <- M.toList reducedOuterBindings]
+			| (_, binding) <- M.toList reducedOuterBindings
+			, let (_, value) = unmakeBindingBRP brp binding]
 
 	-- The `StateT` monad is used to keep track of which names are safe to use. `uniqify` changes a name if necessary
 	-- to make it unique, then records the new name so nothing else uses it, and returns the new name. There are no
@@ -349,7 +356,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 
 				processOuterBindings (outerTerm, remainingOuterBindings)
 
-			(MOName name _, _) | name `M.member` paramPrimaryNames ->
+			(MOName name _, _) | name `M.member` paramPrimaryNames -> do
 				-- The binding is simply the name of one of its parameters, so we can easily reduce it.
 
 				-- In our example, the `subC` binding will be handled by this code path. `numberOfTheParam` will be
@@ -358,7 +365,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 				let numberOfTheParam = paramPrimaryNames M.! name
 
 				let outerTerm' = applySubstBRP brp
-						outerBindingName'
+						outerBindingName
 						(length outerBindingParams)
 						S.empty
 						(!! numberOfTheParam)
@@ -366,7 +373,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 
 				processOuterBindings (outerTerm', remainingOuterBindings)
 
-			Nothing -> do
+			(_, Nothing) -> do
 				-- This binding is used, but cannot be reduced further, so we must keep it. However, we might still
 				-- have to rename it so it doesn't conflict with global names, and we might want to prune unused
 				-- parameters.
@@ -388,13 +395,13 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 							-- In our example, this test would fail for `param2`.
 							name `M.member` freeVarsInMetaObject outerBindingValue
 							-- This condition tests that the parameter isn't being shadowed by another parameter.
-							&& n `S.notMember` S.unions (map (allParamNamesBRP brp) rest)
+							&& name `S.notMember` S.unions (map (allParamNamesBRP brp) rest)
 							| name <- S.toList (allParamNamesBRP brp param)]
 						| param:rest <- tails outerBindingParams]
 
 				let outerBindingParams' = filterByFlags outerBindingParamsKeepFlags outerBindingParams
 
-				let outerBinding' = makeBindingBRP brp (outerBindingParams', outerBindingValue)
+				let outerBinding' = makeBindingBRP brp outerBindingName (outerBindingParams', outerBindingValue)
 
 				-- In our example for `subB`, `bindingType` would be `Nat`.
 				let bindingType = typeOfSubstInTermBRP outerTerm outerBindingName outerBinding
@@ -418,7 +425,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 
 				return (finishedOuterTerm, finishedOuterBindings)
 		
-			Just (originalInnerTerm, originalInnerBindings) ->
+			(_, Just (originalInnerTerm, originalInnerBindings)) -> do
 				-- This binding evaluates to another "inner" literal, so we can fold it into the outer literal.
 
 				-- In our example, this clause is used to handle the `subA` binding. `originalInnerTerm` would be
@@ -465,9 +472,9 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 										innerTerm = innerTermFun outerBindingParamValues
 										valueOfTheParam = outerBindingParamValues !! numberOfTheParam
 										in applySubstBRP brp
-											innerTermName
+											innerBindingName
 											(length innerBindingParams)
-											(freeAndGlobalVarsOfTermBRP brp valueOfTheParam)
+											(freeVarsAndGlobalsOfTermBRP brp valueOfTheParam)
 											(const valueOfTheParam)
 											innerTerm
 
@@ -495,14 +502,16 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 											name `M.member` freeVarsInMetaObject innerBindingValue
 											-- This condition tests that the parameter isn't being shadowed by another
 											-- parameter.
-											&& n `S.notMember` S.unions (map (allParamNamesBRP brp) rest)
+											&& name `S.notMember` S.unions (map (allParamNamesBRP brp) rest)
 											| name <- S.toList (allParamNamesBRP brp param)]
 										| param:rest <- tails outerBindingParams]
 
 								let outerBindingParamsKept = filterByFlags outerBindingParamsKeepFlags outerBindingParams
 								let newOuterBindingParams = outerBindingParamsKept ++ innerBindingParams
 
-								let newOuterBinding = makeBindingBRP brp (newOuterBindingParams, outerBindingValue)
+								let newOuterBinding = makeBindingBRP brp
+										innerBindingName
+										(newOuterBindingParams, outerBindingValue)
 
 								let
 									-- innerTermFun' :: [termType] -> termType
@@ -511,11 +520,11 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 										prunedParamValues = filterByFlags outerBindingParamsKeepFlags outerBindingParamValues
 										bindingType = typeOfSubstInTermBRP innerTerm innerBindingName innerBinding
 										in applySubstBRP brp
-											innerTermName
+											innerBindingName
 											(length innerBindingParams)
 											(S.singleton newOuterBindingName
-												`S.union` freeAndGlobalVarsOfTypeBRP brp bindingType
-												`S.union` S.unions (map (freeAndGlobalVarsOfTermBRP brp) prunedParamValues))
+												`S.union` freeVarsAndGlobalsInTypeBRP brp bindingType
+												`S.union` S.unions (map (freeVarsAndGlobalsOfTermBRP brp) prunedParamValues))
 											(\ innerBindingParamValues -> makeTermInvokingSubstBRP brp
 												newOuterBindingName
 												bindingType
@@ -546,10 +555,10 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 				-- innerTermFun :: [termType] -> termType
 				-- newOuterBindings :: [(nameType, bindingType)]
 				(innerTermFun, newOuterBindings) <-
-					processInnerBindings originalInnerBindings (const originalInnerTerm)
+					processInnerBindings (M.toList originalInnerBindings) (const originalInnerTerm)
 
 				let newVarsIntroduced =
-						(freeAndGlobalVarsOfTermBRP brp originalInnerTerm
+						(freeVarsAndGlobalsOfTermBRP brp originalInnerTerm
 							S.\\ S.fromList (M.keys originalInnerBindings))
 						`S.union` S.fromList (M.keys finalOuterBindings)
 				let outerTerm' = applySubstBRP brp
