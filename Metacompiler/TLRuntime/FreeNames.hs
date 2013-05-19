@@ -22,18 +22,18 @@ freeVarsInMetaObject :: MetaObject -> M.Map NameOfMetaObject MetaType
 freeVarsInMetaObject (MOAbs (paramName, paramType) body) = let
 	paramNames = freeVarsInMetaType paramType
 	bodyNames = M.delete paramName (freeVarsInMetaObject body)
-	in paramNames `M.union` bodyNames'
+	in paramNames `M.union` bodyNames
 freeVarsInMetaObject (MOName n type_) =
 	M.singleton n type_ `M.union` freeVarsInMetaType type_
 freeVarsInMetaObject (MOSLType _ bindings) =
-	M.unions (map freeVarsInSLTypeBinding bindings)
+	M.unions (map freeVarsInSLTypeBinding (M.elems bindings))
 freeVarsInMetaObject (MOSLTerm _ typeBindings termBindings) =
-	M.unions (map freeVarsInSLTypeBinding typeBindings)
-	`M.union` M.unions (map freeVarsInSLTermBinding termBindings)
+	M.unions (map freeVarsInSLTypeBinding (M.elems typeBindings))
+	`M.union` M.unions (map freeVarsInSLTermBinding (M.elems termBindings))
 freeVarsInMetaObject (MOJSExprLiteral equiv type_ _ bindings) =
 	freeVarsInMetaObject equiv
 	`M.union` freeVarsInMetaObject type_
-	`M.union` M.unions (map freeVarsInJSExprBinding bindings)
+	`M.union` M.unions (map freeVarsInJSExprBinding (M.elems bindings))
 freeVarsInMetaObject other =
 	getConst (traverseMetaObject freeVarsVisitor other)
 
@@ -68,11 +68,11 @@ globalsInMetaType other =
 
 globalsInMetaObject :: MetaObject -> S.Set NameOfMetaObject
 globalsInMetaObject (MOJSExprTypeDefn defn params) =
-	S.singleton defn `S.union` S.unions (map globalsInMetaObject params)
+	S.singleton (nameOfJSExprTypeDefn defn) `S.union` S.unions (map globalsInMetaObject params)
 globalsInMetaObject other =
 	getConst (traverseMetaObject globalsVisitor other)
 
-globalsVisitor :: Visitor (Const Names)
+globalsVisitor :: Visitor (Const (S.Set NameOfMetaObject))
 globalsVisitor = Visitor {
 	visitMetaType = Const . globalsInMetaType,
 	visitMetaObject = Const . globalsInMetaObject
@@ -82,9 +82,9 @@ globalsVisitor = Visitor {
 
 freeVarsAndGlobalsInMetaObject :: MetaObject -> S.Set NameOfMetaObject
 freeVarsAndGlobalsInMetaObject o =
-	S.fromList (M.keys freeVarsInMetaObject o) `S.union` globalsInMetaObject o
+	M.keysSet (freeVarsInMetaObject o) `S.union` globalsInMetaObject o
 
 freeVarsAndGlobalsInMetaType :: MetaType -> S.Set NameOfMetaObject
 freeVarsAndGlobalsInMetaType t =
-	S.fromList (M.keys freeVarsInMetaType t) `S.union` globalsInMetaType t
+	M.keysSet (freeVarsInMetaType t) `S.union` globalsInMetaType t
 

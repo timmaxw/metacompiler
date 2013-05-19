@@ -37,7 +37,7 @@ freeTypeVarsVisitor = TypeVisitor {
 freeAllVarsVisitor :: TermVisitor (Const (M.Map NameOfType Kind, M.Map NameOfTerm Type))
 freeAllVarsVisitor = TermVisitor {
 	getTypeVisitor = TypeVisitor {
-		visitType = \t -> Const (freeVarsInType t, M.empty),
+		visitType = \t -> Const (freeVarsInType t, M.empty)
 		},
 	visitTerm = Const . freeVarsInTerm
 	}
@@ -50,7 +50,7 @@ globalsInType other =
 
 globalsInTerm :: Term -> (S.Set NameOfType, S.Set NameOfTerm)
 globalsInTerm (TermDefined defn params) =
-	(S.singleton (nameOfTermDefn defn), S.unions (map globalsInType params))
+	(S.unions (map globalsInType params), S.singleton (nameOfTermDefn defn))
 globalsInTerm other =
 	getConst (traverseTerm allGlobalsVisitor other)
 

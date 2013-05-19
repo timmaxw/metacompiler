@@ -4,7 +4,7 @@ import Control.Monad.Identity
 import qualified Data.List
 import qualified Data.Map as M
 import qualified Data.Set as S
-import qualified Metacompiler.SLRuntime as SLR
+import qualified Metacompiler.SLRuntime.Types as SLR
 import qualified Metacompiler.SLSyntax.Types as SLS
 import qualified Metacompiler.SLSyntax.ToSExpr as SLS
 

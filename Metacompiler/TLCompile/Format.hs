@@ -7,7 +7,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Language.ECMAScript3.Syntax.Annotations as JS
 import qualified Metacompiler.SLCompile.Format as SLF
-import qualified Metacompiler.TLRuntime as TLR
+import qualified Metacompiler.TLRuntime.TLRuntime as TLR
 import qualified Metacompiler.TLSyntax.ToSExpr as TLS
 import qualified Metacompiler.TLSyntax.Types as TLS
 

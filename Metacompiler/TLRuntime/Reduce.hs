@@ -111,11 +111,7 @@ bindingReductionParametersForSL = BindingReductionParameters {
 	applySubstBRP = (\ typeOrTermName numParams newNames substFun typeOrTerm -> let
 		(typeSubs, termSubs) = case typeOrTermName of
 			Left typeName | numParams == 0 -> (
-				M.singleton typeName (SLR.TypeSub
-					(\ params -> let
-						Left value = substFun []
-						in Identity (foldl SLR.TypeApp value params))
-					),
+				M.singleton typeName (let Left value = substFun [] in SLR.simpleTypeSub value),
 				M.empty
 				)
 			Right termName -> (
@@ -346,14 +342,14 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 
 		in case (outerBindingValue, isMetaObjectALiteralBRP brp outerBindingValue) of
 
-			(_, _) | outerBindingName `S.notMember` freeVarsAndGlobalsOfTermBRP brp outerTerm = do
+			(_, _) | outerBindingName `S.notMember` freeVarsAndGlobalsOfTermBRP brp outerTerm -> do
 				-- This binding isn't used at all. We should just ignore it.
 			
 				-- In our example, the `subD` binding will be handled by this code path.
 
 				processOuterBindings (outerTerm, remainingOuterBindings)
 
-			(MOName name _, _) | name `M.member` paramPrimaryNames =
+			(MOName name _, _) | name `M.member` paramPrimaryNames ->
 				-- The binding is simply the name of one of its parameters, so we can easily reduce it.
 
 				-- In our example, the `subC` binding will be handled by this code path. `numberOfTheParam` will be

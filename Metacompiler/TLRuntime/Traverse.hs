@@ -39,12 +39,12 @@ traverseMetaObject v t = case t of
 		visitSLTypeBinding (SLTypeBinding v) =
 			SLTypeBinding <$> visitO v
 		in MOSLType type_ <$> traverse visitSLTypeBinding bs
-	MOSLTerm term typs tebs -> let
+	MOSLTerm term tybs tebs -> let
 		visitSLTypeBinding (SLTypeBinding v) =
 			SLTypeBinding <$> visitO v
 		visitSLTermBinding (SLTermBinding ps v) =
 			SLTermBinding <$> sequenceA [(,) pn <$> visitO pv | (pn, pv) <- ps] <*> visitO v
-		in MOSLTerm term <$> traverse visitSLTypeBinding tybs <*> visitSLTermBinding tebs
+		in MOSLTerm term <$> traverse visitSLTypeBinding tybs <*> traverse visitSLTermBinding tebs
 	MOJSExprTypeDefn defn params -> liftA (MOJSExprTypeDefn defn) (traverse visitO params)
 	MOJSExprLiteral equiv type_ expr bindings -> let
 		visitJSExprBinding (JSExprBinding params value) =

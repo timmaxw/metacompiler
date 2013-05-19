@@ -10,9 +10,9 @@ import qualified Metacompiler.JS.JS as JS
 import Metacompiler.Error
 import qualified Metacompiler.SLCompile.Compile as SLC
 import qualified Metacompiler.SLCompile.Format as SLF
-import qualified Metacompiler.SLSyntax as SLS
+import qualified Metacompiler.SLSyntax.Types as SLS
 import qualified Metacompiler.TLCompile.Format as TLF
-import qualified Metacompiler.TLRuntime as TLR
+import qualified Metacompiler.TLRuntime.TLRuntime as TLR
 import qualified Metacompiler.TLSyntax.FreeNames as TLS
 import qualified Metacompiler.TLSyntax.Types as TLS
 

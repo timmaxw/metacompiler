@@ -19,7 +19,7 @@ import Metacompiler.TLRuntime.Types
 substituteMetaType :: M.Map NameOfMetaObject MetaObject -> MetaType -> MetaType
 substituteMetaType subs (MTFun (paramName, paramType) returnType) = let
 	paramType' = substituteMetaType subs paramType
-	(paramName', [subs']) = prepareBinding (paramName, paramType') [(freeNamesInMetaType returnType, subs)]
+	(paramName', [subs']) = prepareBinding (paramName, paramType') [(freeVarsAndGlobalsInMetaType returnType, subs)]
 	returnType' = substituteMetaType subs' returnType
 	in MTFun (paramName', paramType') returnType'
 substituteMetaType subs other = runIdentity (traverseMetaType (makeSubstitutionVisitor subs) other)
@@ -27,7 +27,7 @@ substituteMetaType subs other = runIdentity (traverseMetaType (makeSubstitutionV
 substituteMetaObject :: M.Map NameOfMetaObject MetaObject -> MetaObject -> MetaObject
 substituteMetaObject subs (MOAbs (paramName, paramType) body) = let
 	paramType' = substituteMetaType subs paramType
-	(paramName', [subs']) = prepareBinding (paramName, paramType') [(freeNamesInMetaObject body, subs)]
+	(paramName', [subs']) = prepareBinding (paramName, paramType') [(freeVarsAndGlobalsInMetaObject body, subs)]
 	body' = substituteMetaObject subs' body
 	in MOAbs (paramName', paramType') body'
 substituteMetaObject subs (MOName name type_) = case M.lookup name subs of
@@ -38,8 +38,8 @@ substituteMetaObject subs (MOSLType type_ typeBindings) =
 		(M.map (substituteSLTypeBinding subs) typeBindings)
 substituteMetaObject subs (MOSLTerm term typeBindings termBindings) =
 	MOSLTerm term
-		(M.map (substituteSLTermBindings subs) typeBindings)
-		(M.map (substituteSLTypeBindings subs) termBindings)
+		(M.map (substituteSLTypeBinding subs) typeBindings)
+		(M.map (substituteSLTermBinding subs) termBindings)
 substituteMetaObject subs (MOJSExprTypeDefn defn params) =
 	case M.lookup (nameOfJSExprTypeDefn defn) subs of
 		Just _ -> error "trying to substitute the name of a global variable"
@@ -48,6 +48,7 @@ substituteMetaObject subs (MOJSExprLiteral equiv type_ expr bindings) =
 	MOJSExprLiteral
 		(substituteMetaObject subs equiv)
 		(substituteMetaObject subs type_)
+		expr
 		(M.map (substituteJSExprBinding subs) bindings)
 substituteMetaObject subs other =
 	runIdentity (traverseMetaObject (makeSubstitutionVisitor subs) other)
@@ -62,7 +63,7 @@ substituteSLTermBinding subs (SLTermBinding params value) = (uncurry SLTermBindi
 		f subs' [] = ([], substituteMetaObject subs' value)
 		f subs' ((name, type_):otherParams) = let
 			type_' = substituteMetaObject subs type_
-			namesInRest = freeNamesInMetaObject value S.\\ S.fromList (map fst otherParams)
+			namesInRest = freeVarsAndGlobalsInMetaObject value S.\\ S.fromList (map fst otherParams)
 			(name', [subs'']) = prepareBinding (name, MTSLTerm type_') [(namesInRest, subs')] 
 			(otherParams', value') = f subs'' otherParams
 			in ((name', type_'):otherParams', value')
@@ -73,12 +74,12 @@ substituteJSExprBinding subs (JSExprBinding params value) = (uncurry JSExprBindi
 		f subs' [] = ([], substituteMetaObject subs' value)
 		f subs' (JSExprBindingParam n1 t1 n2 t2 : otherParams) = let
 			t1' = substituteMetaObject subs t1
-			namesInT2 = freeNamesInMetaObject t2
-			namesInRest = freeNamesInMetaObject value
+			namesInT2 = freeVarsAndGlobalsInMetaObject t2
+			namesInRest = freeVarsAndGlobalsInMetaObject value
 				S.\\ S.fromList (concat [[a, b] | JSExprBindingParam a _ b _ <- otherParams])
 			(n1', [t2subs, restSubs]) = prepareBinding (n1, MTSLTerm t1') [(namesInT2, subs), (S.delete n2 namesInRest, subs')]
 			t2' = substituteMetaObject t2subs t2
-			(n2', [restSubs']) = prepareBinding (n2, MTJSExpr t2' (MOName n1' t1')) [(namesInRest, restSubs)]
+			(n2', [restSubs']) = prepareBinding (n2, MTJSExpr t2' (MOName n1' (MTSLTerm t1'))) [(namesInRest, restSubs)]
 			(otherParams', value') = f restSubs' otherParams
 			in ((JSExprBindingParam n1' t1' n2' t2'):otherParams', value')
 
@@ -93,12 +94,12 @@ prepareBinding :: (NameOfMetaObject, MetaType)
                -> (NameOfMetaObject, [M.Map NameOfMetaObject MetaObject])
 prepareBinding (name, nameType) contexts = let
 	forbiddenNames = S.unions [
-		S.unions [maybe S.empty freeAndGlobalNamesInMetaObject $ M.lookup n subs
+		S.unions [maybe S.empty freeVarsAndGlobalsInMetaObject $ M.lookup n subs
 			| n <- S.toList (S.delete name namesWithin)]
 		`S.union` S.delete name namesWithin
 		| (namesWithin, subs) <- contexts]
 	candidateNames = [NameOfMetaObject (unNameOfMetaObject name ++ replicate i '\'') | i <- [0..]]
 	Just name' = find (`S.notMember` forbiddenNames) candidateNames
-	subsFun = if name' == name then S.delete name else S.insert name (MOName name' nameType)
+	subsFun = if name' == name then M.delete name else M.insert name (MOName name' nameType)
 	in (name', map (subsFun . snd) contexts)
 

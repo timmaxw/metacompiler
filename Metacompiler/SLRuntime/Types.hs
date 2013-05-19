@@ -10,12 +10,12 @@ data Kind
 
 data DataDefn = DataDefn {
 	nameOfDataDefn :: NameOfType,
-	typeParamsDataDefn :: [Kind]
+	typeParamsOfDataDefn :: [Kind]
 	} deriving Eq
 
 data CtorDefn = CtorDefn {
 	nameOfCtorDefn :: NameOfTerm,
-	parentDataOfCtorDefn :: SLDataDefn,
+	parentDataOfCtorDefn :: DataDefn,
 	fieldTypesOfCtorDefn :: [[Type] -> Type]
 	}
 

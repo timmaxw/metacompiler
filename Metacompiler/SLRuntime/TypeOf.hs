@@ -3,7 +3,7 @@ module Metacompiler.SLRuntime.TypeOf where
 import Metacompiler.SLRuntime.Types
 
 kindOfType :: Type -> Kind
-kindOfType (TypeDefined defn) = foldr KindFun KindType (typeParamsOfSLDataDefn defn)
+kindOfType (TypeDefined defn) = foldr KindFun KindType (typeParamsOfDataDefn defn)
 kindOfType (TypeName _ kind) = kind
 kindOfType (TypeApp f _) = case kindOfType f of
 	KindFun _ r -> r
@@ -21,7 +21,7 @@ typeOfTerm (TermAbs (_, a) b) = TypeFun a (typeOfTerm b)
 typeOfTerm (TermCase _ cs) = case cs of
 	(_, _, _, b):_ -> typeOfTerm b
 	[] -> error "case with no clauses"
-typeOfTerm (TermData c tps _) = TypeDefined (parentDataOfSLCtorDefn c)
+typeOfTerm (TermData c tps _) = TypeDefined (parentDataOfCtorDefn c)
 typeOfTerm (TermWrap x) = TypeLazy (typeOfTerm x)
 typeOfTerm (TermUnwrap x) = case typeOfTerm x of
 	TypeLazy t -> t

@@ -1,4 +1,4 @@
-module Metacompiler.ToSExpr where
+module Metacompiler.SLSyntax.ToSExpr where
 
 import Metacompiler.Error
 import Metacompiler.SExpr.Format

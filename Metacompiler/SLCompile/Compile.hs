@@ -209,7 +209,7 @@ compileSLDirectives directives = do
 						SLR.parentDataOfSLCtorDefn = dataDefn,
 						SLR.fieldTypesOfSLCtorDefn = [\ paramValues ->
 							let subs = M.fromList [
-								(runNameForParamName n, SLR.TypeSub (Identity . foldl SLR.TypeApp v))
+								(runNameForParamName n, SLR.simpleTypeSub v)
 								| ((n, _), v) <- zip params paramValues]
 							in runIdentity (SLR.substituteType subs fieldType')
 							| fieldType' <- fieldTypes']
@@ -259,7 +259,7 @@ compileSLDirectives directives = do
 
 				makeSubbed object typeParamValues =
 					let subs = M.fromList [
-								(runNameForParamName n, SLR.TypeSub (Identity . foldl SLR.TypeApp v))
+								(runNameForParamName n, SLR.simpleTypeSub v)
 								| ((n, _), v) <- zip params paramValues]
 							in runIdentity (SLR.substituteType subs fieldType')
 
@@ -271,13 +271,13 @@ compileSLDirectives directives = do
 					SLR.typeOfTermDefn = (\ typeParamValues ->
 						let
 							subs = M.fromList [
-								(runNameForTypeParamName n, SLR.TypeSub (Identity . foldl SLR.TypeApp v))
+								(runNameForTypeParamName n, SLR.simpleTypeSub v)
 								| ((n, _), v) <- zip typeParams typeParamValues]
 						in runIdentity (SLR.substituteType subs wholeType)
 						),
 					SLR.valueOfTermDefn = (\ typeParamValues ->
 						let subs = M.fromList [
-								(runNameForTypeParamName n, SLR.TypeSub (Identity . foldl SLR.TypeApp v))
+								(runNameForTypeParamName n, SLR.simpleTypeSub v)
 								| ((n, _), v) <- zip typeParams typeParamValues],
 							realValue = case value of Success v -> v
 						in runIdentity (SLR.substituteTerm (subs, M.empty) realValue)

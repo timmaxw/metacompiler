@@ -14,7 +14,7 @@ data JSExprTypeDefn = JSExprTypeDefn {
 
 data MetaType
 	= MTFun (NameOfMetaObject, MetaType) MetaType
-	| MTSLType SLKind
+	| MTSLType SLR.Kind
 	| MTSLTerm MetaObject
 	| MTJSExprType MetaObject
 	| MTJSExpr MetaObject MetaObject   -- SL type, SL equivalent

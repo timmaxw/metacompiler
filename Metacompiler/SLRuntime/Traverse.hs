@@ -9,7 +9,7 @@ import Metacompiler.SLRuntime.Types
 -- implement many different things with a minimum of boilerplate.
 
 data TypeVisitor f = TypeVisitor {
-	visitType :: Type -> f Type,
+	visitType :: Type -> f Type
 	}
 
 data TermVisitor f = TermVisitor {
@@ -20,7 +20,7 @@ data TermVisitor f = TermVisitor {
 traverseType :: Applicative f => TypeVisitor f -> Type -> f Type
 traverseType v t = case t of
 	TypeDefined d -> pure (TypeDefined d)
-	TypeName n -> pure (TypeName n)
+	TypeName n k -> pure (TypeName n k)
 	TypeApp f x -> TypeApp <$> visitTy f <*> visitTy x
 	TypeFun a r -> TypeFun <$> visitTy a <*> visitTy r
 	TypeLazy x -> TypeLazy <$> visitTy x
@@ -29,15 +29,15 @@ traverseType v t = case t of
 
 traverseTerm :: Applicative f => TermVisitor f -> Term -> f Term
 traverseTerm v t = case t of
-	TermDefined defn tps -> TermDefined defn <*> traverse visitTy tps
-	TermName name -> pure (TermName name)
+	TermDefined defn tps -> TermDefined defn <$> traverse visitTy tps
+	TermName name type_ -> TermName name <$> visitTy type_
 	TermApp f x -> TermApp <$> visitTe f <*> visitTe x
-	TermAbs (an, at) b -> TermAbs <$> ((,) paramName <$> visitTy at) <*> visitTe b
+	TermAbs (an, at) b -> TermAbs <$> ((,) an <$> visitTy at) <*> visitTe b
 	TermCase s cs -> TermCase
 		<$> visitTe s
 		<*> traverse (\(c, tps, fns, b) ->
 			(,,,) c
-			<$> traverse visitTe tps
+			<$> traverse visitTy tps
 			<*> pure fns
 			<*> visitTe b
 			) cs
