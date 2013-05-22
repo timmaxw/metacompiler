@@ -21,11 +21,11 @@ import Text.Parsec.String ()   -- So `String` is an instance of `Stream`
 parseTLDirectiveFromSExpr :: SExpr -> ErrorMonad (TLS.Directive Range)
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") exprs1to7)) = do
-    {- sample input:
-    (let name (arg :: type) :: type = value )
-        ^    ^             ^  ^    ^ ^     ^
-        1    2             3  4    5 6     7
-    -}
+	{- sample input:
+	(let name (arg :: type) :: type = value )
+	    ^    ^             ^  ^    ^ ^     ^
+	    1    2             3  4    5 6     7
+	-}
 	(name, exprs2to7) <- case exprs1to7 of
 		Cons (Atom _ n) r -> return (TLS.Name n, r)
 		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to7)))
@@ -50,11 +50,11 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "let") exprs1to7)) = do
 		}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "sl-code") exprs1to2)) = do
-    {- sample input:
-    (sl-code "foo" )
-            ^     ^
-            1     2
-    -}
+	{- sample input:
+	(sl-code "foo" )
+	        ^     ^
+	        1     2
+	-}
 	expr1to2 <- case exprs1to2 of
 		Cons something (Nil _) -> return something
 		_ -> fail ("expected `(sl-code \"<string>\")`")
@@ -65,11 +65,11 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "sl-code") exprs1to2)) = do
 		}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-type") exprs1to7)) = do
-    {- sample input:
-    (js-expr-type name (arg :: type) = (spec blah ) )
-                 ^    ^             ^ ^     ^    ^ ^
-                 1    2             3 4     5    6 7
-    -}
+	{- sample input:
+	(js-expr-type name (arg :: type) = (spec blah ) )
+	             ^    ^             ^ ^     ^    ^ ^
+	             1    2             3 4     5    6 7
+	-}
 	(name, exprs2to7) <- case exprs1to7 of
 		Cons (Atom _ n) r -> return (TLS.Name n, r)
 		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to7)))
@@ -86,11 +86,11 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-type") exprs1to7)) 
 		}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-global") exprs1to14)) = do
-    {- sample input:
-    (js-expr-global name (arg :: type) = (args blah ) (type blah ) (spec blah ) (body blah )  )
-                   ^    ^             ^ ^     ^    ^ ^     ^    ^       ^    ^       ^    ^  ^
-                   1    2             3 4     5    6 7     8    9       10   11      12   13 14
-    -}
+	{- sample input:
+	(js-expr-global name (arg :: type) = (args blah ) (type blah ) (spec blah ) (body blah )  )
+	               ^    ^             ^ ^     ^    ^ ^     ^    ^       ^    ^       ^    ^  ^
+	               1    2             3 4     5    6 7     8    9       10   11      12   13 14
+	-}
 	(name, exprs2to14) <- case exprs1to14 of
 		Cons (Atom _ n) r -> return (TLS.Name n, r)
 		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to14)))
@@ -122,13 +122,14 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-global") exprs1to14
 		TLS.bodyOfDJSExprGlobal = body
 		}
 
+{-
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-use") exprs1to6)) = do
-    {- sample input:
-    (js-expr-use (params (arg :: type) ) (value blah ) )
-                ^       ^             ^        ^    ^ ^
-                1       2             3        4    5 6
-    -}
-    clauses <- parseClausesFromSExprs
+	{- sample input:
+	(js-expr-use (params (arg :: type) ) (value blah ) )
+	            ^       ^             ^        ^    ^ ^
+	            1       2             3        4    5 6
+	-}
+	clauses <- parseClausesFromSExprs
 		[("params", False, False), ("value", False, False)]
 		exprs1to6
 	params <- let [(_, exprs2to3)] = (M.!) clauses "params" in
@@ -140,13 +141,14 @@ parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-use") exprs1to6)) =
 		TLS.paramsOfDJSExprUse = params,
 		TLS.valueOfDJSExprUse = value
 		}
+-}
 
 parseTLDirectiveFromSExpr (List range (Cons (Atom _ "js-expr-infer") exprs1to9)) = do
-    {- sample input:
-    (js-expr-infer name = (type blah ) (spec blah ) )
-                  ^    ^ ^     ^    ^ ^     ^    ^ ^
-                  1    2 3     4    5 6     7    8 9
-    -}
+	{- sample input:
+	(js-expr-infer name = (type blah ) (spec blah ) )
+	              ^    ^ ^     ^    ^ ^     ^    ^ ^
+	              1    2 3     4    5 6     7    8 9
+	-}
 	(name, exprs2to9) <- case exprs1to9 of
 		Cons (Atom _ n) r -> return (TLS.Name n, r)
 		_ -> fail ("missing or invalid name at " ++ formatPoint (startOfRange (rangeOfSExprs exprs1to9)))

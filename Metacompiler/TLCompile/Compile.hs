@@ -71,9 +71,9 @@ compileMetaType scope (TLS.MTJSExpr range jsType slTerm) = do
 	unless (TLR.equivalentMetaObjects (TLR.reduceMetaObject slType1) (TLR.reduceMetaObject slType2)) $
 		fail (msgPrefix ++ "the JavaScript type is " ++ formatMOForMessage jsType' ++ " (at " ++
 			formatRange (TLS.tagOfMetaObject jsType) ++ "), which has SL equivalent " ++
-			SLC.formatTypeForMessage slType1 ++ ", and the SL term equivalent is " ++ formatMOForMessage slTerm' ++
+			formatMOForMessage slType1 ++ ", and the SL term equivalent is " ++ formatMOForMessage slTerm' ++
 			" (at " ++ formatRange (TLS.tagOfMetaObject slTerm) ++ "), which has SL type " ++
-			SLC.formatTypeForMessage slType2 ++ ". The SL equivalent of the JavaScript type is supposed to be the \
+			formatMOForMessage slType2 ++ ". The SL equivalent of the JavaScript type is supposed to be the \
 			\same as the SL type of the SL equivalent term.")
 	return (TLR.MTJSExpr jsType' slTerm')
 
@@ -103,20 +103,29 @@ compileMetaObject scope (TLS.MOName range name) = case M.lookup name (metaObject
 compileMetaObject scope (TLS.MOSLTypeLiteral range type_ typeBindings) = do
 	let msgPrefix = "in `(sl-type ...)` literal at " ++ formatRange range ++ ": "
 	typeBindings' <- compileSLTypeBindings msgPrefix scope typeBindings
-	let typeScopeAdditions = M.mapWithKey (\ name value -> case TLR.typeOfMetaObject value of
-		TLR.MTSLType kind -> SLC.NameTypeInScope (SLR.NameOfType (SLS.unNameOfType name)) kind
-		_ -> error "binding should have type (sl-type ...)"
+	let typeScopeAdditions = M.mapWithKey (\ name (TLR.SLTypeBinding value) ->
+		case TLR.typeOfMetaObject value of
+			TLR.MTSLType kind -> SLC.NameTypeInScope (SLR.NameOfType (SLS.unNameOfType name)) kind
+			_ -> error "binding should have type (sl-type ...)"
 		) typeBindings'
 	type_' <- errorContext msgPrefix $
 		SLC.compileType
 			(typeScopeAdditions `M.union` SLC.typesInScope (slObjectsInScope scope))
 			type_
 	-- TODO: Make sure subs are applied appropriately in `type_'`
-	return (TLR.MOSLType type_' typeBindings')
+	let typeBindings'' = M.mapKeys (SLR.NameOfType . SLS.unNameOfType) typeBindings'
+	return (TLR.MOSLType type_' typeBindings'')
 
 compileMetaObject scope (TLS.MOSLTermLiteral range term typeBindings termBindings) = do
 	let msgPrefix = "in `(sl-term ...)` literal at " ++ formatRange range ++ ": "
+
 	typeBindings' <- compileSLTypeBindings msgPrefix scope typeBindings
+	let typeScopeAdditions = M.mapWithKey (\ name (TLR.SLTypeBinding value) -> case TLR.typeOfMetaObject value of
+		TLR.MTSLType kind -> SLC.NameTypeInScope (SLR.NameOfType (SLS.unNameOfType name)) kind
+		_ -> error "binding should have type (sl-type ...)"
+		) typeBindings'
+	let typeBindings'' = M.mapKeys (SLR.NameOfType . SLS.unNameOfType) typeBindings'
+
 	termBindings' <- compileSLTermBindings msgPrefix scope termBindings
 	let
 		termScopeMaker :: State
@@ -124,25 +133,28 @@ compileMetaObject scope (TLS.MOSLTermLiteral range term typeBindings termBinding
 				(M.Map SLS.NameOfTerm SLC.TermInScope)
 		termScopeMaker = liftM M.fromList $ sequence [do
 			let
-				internType :: TLR.MetaObject
-				           -> SLR.NameOfType
+				internType :: SLR.NameOfType
+				           -> TLR.MetaObject
 				           -> State (M.Map SLR.NameOfType TLR.SLTypeBinding) SLR.Type
 				internType suggestedName typeAsMO = case TLR.reduceMetaObject typeAsMO of
 					TLR.MOSLType typeAsSL bindings -> do
 						subs <- liftM M.fromList $ sequence [do
 							value' <- internType name value
-							return (SLR.simpleTypeSub value')
+							return (name, SLR.simpleTypeSub value')
 							| (name, TLR.SLTypeBinding value) <- M.toList bindings]
 						return (runIdentity (SLR.substituteType subs typeAsSL))
 					other -> do
 						existingBindings <- get
-						name' <- case find (\(_, v) -> TLR.equivalentMetaObjects v other) (M.toList existingBindings) of
+						name' <- case find
+								(\(_, TLR.SLTypeBinding v) -> TLR.equivalentMetaObjects v other)
+								(M.toList existingBindings)
+								of
 							Nothing -> do
 								let forbiddenNames = M.keysSet existingBindings
 										`S.union` S.fromList [case tis of
 											SLC.NameTypeInScope name _ -> name
 											SLC.DefinedTypeInScope defn -> SLR.nameOfDataDefn defn
-											| (_, tis) <- SLC.typesInScope (slObjectsInScope scope)]
+											| (_, tis) <- M.toList (SLC.typesInScope (slObjectsInScope scope))]
 								let candidateNames =
 									[SLR.NameOfType (SLR.unNameOfType suggestedName ++ replicate i '\'') | i <- [0..]]
 								let Just name' = find (`S.notMember` forbiddenNames) candidateNames
@@ -154,29 +166,28 @@ compileMetaObject scope (TLS.MOSLTermLiteral range term typeBindings termBinding
 								_ -> error "this should have type (sl-type ...)"
 						return (SLR.TypeName name' kind)
 			paramTypes <- sequence [
-				internType type_ (SLR.NameOfType (name ++ "Type"))
+				internType (SLR.NameOfType (name ++ "Type")) type_
 				| (TLR.NameOfMetaObject name, type_) <- params]
 			valueType <- case TLR.typeOfMetaObject value of
-				TLR.MTSLTerm type_ -> internType value suggestedName
-					where suggestedName = SLR.NameOfType (SLR.unNameOfTerm name ++ "Type")
+				TLR.MTSLTerm type_ -> internType suggestedName type_
+					where suggestedName = SLR.NameOfType (SLS.unNameOfTerm name ++ "Type")
 				_ -> error "this should have type (sl-term ...)"
 			let wholeType = foldr SLR.TypeFun valueType paramTypes
 			return (name, SLC.NameTermInScope (SLR.NameOfTerm (SLS.unNameOfTerm name)) wholeType)
 			| (name, TLR.SLTermBinding params value) <- M.toList termBindings']
-	let (termScopeAdditions, typeBindings'') = runState termScopeMaker typeBindings'
-	let typeScopeAdditions = M.mapWithKey (\ name value -> case TLR.typeOfMetaObject value of
-		TLR.MTSLType kind -> SLC.NameTypeInScope (SLR.NameOfType (SLS.unNameOfType name)) kind
-		_ -> error "binding should have type (sl-type ...)"
-		) typeBindings''
+	let (termScopeAdditions, typeBindings''') = runState termScopeMaker typeBindings''
+	let termBindings'' = M.mapKeys (SLR.NameOfTerm . SLS.unNameOfTerm) termBindings'
+
 	term' <- errorContext msgPrefix $
 		SLC.compileTerm
 			(slObjectsInScope scope) {
-				SLC.typesInScope = typeBindings'' `M.union` (SLC.typesInScope $ slObjectsInScope scope),
+				SLC.typesInScope = typeScopeAdditions `M.union` (SLC.typesInScope $ slObjectsInScope scope),
 				SLC.termsInScope = termScopeAdditions `M.union` (SLC.termsInScope $ slObjectsInScope scope)
 				} 
 			term
 	-- TODO: Make sure subs are applied appropriately in `term'`
-	return (TLR.MOSLTerm term' typeBindings'' termBindings')
+
+	return (TLR.MOSLTerm term' typeBindings''' termBindings'')
 
 compileMetaObject scope (TLS.MOJSExprLiteral range equiv type_ expr bindings) = do
 	let msgPrefix = "in `(js-expr ...)` literal at " ++ formatRange range ++ ": "
@@ -193,9 +204,9 @@ compileMetaObject scope (TLS.MOJSExprLiteral range equiv type_ expr bindings) = 
 			\`(js-expr-type ...)`.")
 	unless (slType1 `TLR.equivalentMetaObjects` slType2) $
 		fail (msgPrefix ++ "the SL equivalent given at " ++ formatRange (TLS.tagOfMetaObject equiv) ++ " has SL \
-			\type " ++ SLC.formatTypeForMessage slType1 ++ ", but the JavaScript type given at " ++
-			formatRange (TLS.tagOfMetaObject type_) ++ " has SL equivalent type " ++
-			SLC.formatTypeForMessage slType2 ++ ". Those are supposed to be the same, but they aren't.")
+			\type " ++ formatMOForMessage slType1 ++ ", but the JavaScript type given at " ++
+			formatRange (TLS.tagOfMetaObject type_) ++ " has SL equivalent type " ++ formatMOForMessage slType2 ++
+			". Those are supposed to be the same, but they aren't.")
 	bindings' <- compileJSExprBindings msgPrefix scope bindings
 	-- TODO: Make sure subs are applied appropriately in `expr`
 	return (TLR.MOJSExprLiteral equiv' type_' (JS.removeAnnotations expr) bindings')
@@ -214,16 +225,16 @@ compileMetaObject scope (TLS.MOJSExprConvertEquiv range inEquiv outEquiv content
 			" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type `(sl-term ...)`.")
 	unless (slType1 `TLR.equivalentMetaObjects` slType2) $
 		fail (msgPrefix ++ "the `in-equiv` given at " ++ formatRange (TLS.tagOfMetaObject inEquiv) ++ " has SL \
-			\type " ++ SLC.formatTypeForMessage slType1 ++ ", but the `out-equiv` given at " ++
-			formatRange (TLS.tagOfMetaObject outEquiv) ++ " has SL type " ++ SLC.formatTypeForMessage slType2 ++
+			\type " ++ formatMOForMessage slType1 ++ ", but the `out-equiv` given at " ++
+			formatRange (TLS.tagOfMetaObject outEquiv) ++ " has SL type " ++ formatMOForMessage slType2 ++
 			". Because they have different types, they can't possibly be equivalent expressions.")
 	content' <- compileMetaObject scope content
 	case TLR.reduceMetaType (TLR.typeOfMetaObject content') of
 		TLR.MTJSExpr _ equiv ->
 			unless (equiv `TLR.equivalentMetaObjects` inEquiv') $
 				fail (msgPrefix ++ "the `content` given at " ++ formatRange (TLS.tagOfMetaObject content) ++
-					" has SL equivalent " ++ SLC.formatTermForMessage equiv ++ ", but the `in-equiv` given at " ++
-					formatRange (TLS.tagOfMetaObject inEquiv) ++ " is " ++ SLC.formatTermForMessage inEquiv' ++ ".")
+					" has SL equivalent " ++ formatMOForMessage equiv ++ ", but the `in-equiv` given at " ++
+					formatRange (TLS.tagOfMetaObject inEquiv) ++ " is " ++ formatMOForMessage inEquiv' ++ ".")
 		otherType -> fail (msgPrefix ++ "the `content` given at " ++ formatRange (TLS.tagOfMetaObject content) ++
 			" has meta-type " ++ formatMTForMessage otherType ++ ", but it should have meta-type `(js-expr ...)`.")
 	return $ TLR.MOJSExprConvertEquiv outEquiv' content'
@@ -473,9 +484,9 @@ compileDirectives directives = do
 						\`(js-expr-type ...)`.")
 				unless (slType1 `TLR.equivalentMetaObjects` slType2) $
 					fail (msgPrefix ++ "the SL equivalent given at " ++ formatRange (TLS.tagOfMetaObject equiv) ++ " has SL \
-						\type " ++ SLC.formatTypeForMessage slType1 ++ ", but the JavaScript type given at " ++
+						\type " ++ formatMOForMessage slType1 ++ ", but the JavaScript type given at " ++
 						formatRange (TLS.tagOfMetaObject type_) ++ " has SL equivalent type " ++
-						SLC.formatTypeForMessage slType2 ++ ". Those are supposed to be the same, but they aren't.")
+						formatMOForMessage slType2 ++ ". Those are supposed to be the same, but they aren't.")
 				let paramTypesMap = M.fromList [(name, type_) | ((name, _), (_, type_)) <- zip params params']
 				let paramNamesMap = M.fromList [(name, name') | ((name, _), (name', _)) <- zip params params']
 				runtimeArgsTypesAndEquivs <- sequence [
@@ -559,14 +570,19 @@ compileDirectives directives = do
 		bindings' <- compileJSExprBindings
 			("in `(js-emit ...)` directive at " ++ formatRange range ++ ": ")
 			scope bindings
-		let substs = M.map (\binding ->
-			case TLR.tryReduceJSExprBindingToJSSubst S.empty binding of
-				Just f -> f M.empty
-				Nothing -> let
-					TLR.JSExprBinding _ value = binding
-					in error ("for some reason, cannot reduce binding: " ++ formatMOForMessage value)
-			) bindings'
-		return $ map (JS.substituteStatement substs M.empty . JS.removeAnnotations) code
+		let subs = M.map (\ (TLR.JSExprBinding params value) -> let
+				fun paramValues = let
+						innerSubs = M.fromList
+							[(n2, TLR.MOJSExprLiteral (TLR.MOName n1 (TLR.MTSLTerm t1)) t2 v M.empty)
+							| (TLR.JSExprBindingParam n1 t1 n2 t2, v) <- zip params paramValues]
+						value' = TLR.reduceMetaObject (TLR.substituteMetaObject innerSubs value)
+						in case value' of
+							TLR.MOJSExprLiteral _ _ expr bs | M.null bs -> expr
+							_ -> error "not completely reduced for some reason"
+
+				varsIntroduced = JS.freeNamesInExpression (fun [JS.NullLit () | _ <- params])
+				in JS.SubstFun fun varsIntroduced) bindings'
+		return $ map (JS.substituteStatement subs M.empty . JS.removeAnnotations) code
 		| TLS.DJSEmit range code bindings <- directives]
 
 	-- Emits from `js-expr-global` directives must go before emits from `js-emit` directives so that user-supplied
