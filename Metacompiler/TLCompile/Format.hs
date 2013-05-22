@@ -7,6 +7,8 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Language.ECMAScript3.Syntax.Annotations as JS
 import qualified Metacompiler.SLCompile.Format as SLF
+import qualified Metacompiler.SLRuntime.Types as SLR
+import qualified Metacompiler.SLSyntax.Types as SLS
 import qualified Metacompiler.TLRuntime.TLRuntime as TLR
 import qualified Metacompiler.TLSyntax.ToSExpr as TLS
 import qualified Metacompiler.TLSyntax.Types as TLS
@@ -20,22 +22,22 @@ formatMetaTypeAsSyntax (TLR.MTFun (pn, pt) rt) =
 		pn' = TLS.Name (TLR.unNameOfMetaObject pn)
 		pt' = formatMetaTypeAsSyntax pt
 formatMetaTypeAsSyntax (TLR.MTSLType k) =
-	TLS.MTSLType () (SLF.formatSLKindAsSyntax k)
+	TLS.MTSLType () (SLF.formatKindAsSyntax k)
 formatMetaTypeAsSyntax (TLR.MTSLTerm t) =
-	TLS.MTSLType () (formatMetaObjectAsSyntax t)
+	TLS.MTSLTerm () (formatMetaObjectAsSyntax t)
 formatMetaTypeAsSyntax (TLR.MTJSExprType t) =
-	TLS.MTJSExprType () (formatMetaObjectAsSyntax t')
+	TLS.MTJSExprType () (formatMetaObjectAsSyntax t)
 formatMetaTypeAsSyntax (TLR.MTJSExpr ty te) =
 	TLS.MTJSExpr () (formatMetaObjectAsSyntax ty) (formatMetaObjectAsSyntax te)
 
 formatMetaTypeAsString :: TLR.MetaType -> String
 formatMetaTypeAsString = TLS.formatMetaTypeAsString . formatMetaTypeAsSyntax
 
-formatMetaObjectAsSyntax :: TLR.MetaObject -> TLFMonad (TLS.MetaObject ())
+formatMetaObjectAsSyntax :: TLR.MetaObject -> TLS.MetaObject ()
 formatMetaObjectAsSyntax (TLR.MOApp f x) =
 	TLS.MOApp () (formatMetaObjectAsSyntax f) (formatMetaObjectAsSyntax x)
 formatMetaObjectAsSyntax (TLR.MOAbs (pn, pt) b) = do
-	case formatMetaTypeAsSyntax b of
+	case formatMetaObjectAsSyntax b of
 		TLS.MOAbs () ps' b' -> TLS.MOAbs () ((pn', pt'):ps') b'
 		b' -> TLS.MOAbs () [(pn', pt')] b'
 	where
@@ -44,7 +46,7 @@ formatMetaObjectAsSyntax (TLR.MOAbs (pn, pt) b) = do
 formatMetaObjectAsSyntax (TLR.MOName n _) =
 	TLS.MOName () (TLS.Name (TLR.unNameOfMetaObject n))
 formatMetaObjectAsSyntax (TLR.MOSLType type_ bs) =
-	TLS.MOSLType ()
+	TLS.MOSLTypeLiteral ()
 		(SLF.formatTypeAsSyntax type_)
 		[TLS.Binding ()
 			(SLS.NameOfType (SLR.unNameOfType n))
@@ -52,7 +54,7 @@ formatMetaObjectAsSyntax (TLR.MOSLType type_ bs) =
 			(formatMetaObjectAsSyntax v)
 			| (n, TLR.SLTypeBinding v) <- M.toList bs]
 formatMetaObjectAsSyntax (TLR.MOSLTerm term tybs tebs) =
-	TLS.MOSLTerm ()
+	TLS.MOSLTermLiteral ()
 		(SLF.formatTermAsSyntax term)
 		[TLS.Binding ()
 			(SLS.NameOfType (SLR.unNameOfType n))
@@ -61,7 +63,9 @@ formatMetaObjectAsSyntax (TLR.MOSLTerm term tybs tebs) =
 			| (n, TLR.SLTypeBinding v) <- M.toList tybs]
 		[TLS.Binding ()
 			(SLS.NameOfTerm (SLR.unNameOfTerm n))
-			[(TLS.Name (TLR.unNameOfMetaObject pn), TLS.MTSLTerm () (formatMetaObjectAsSyntax pt)) | (pn, pt) <- ps]
+			[TLS.BindingParam ()
+				[(TLS.Name (TLR.unNameOfMetaObject pn), TLS.MTSLTerm () (formatMetaObjectAsSyntax pt))]
+				| (pn, pt) <- ps]
 			(formatMetaObjectAsSyntax v)
 			| (n, TLR.SLTermBinding ps v) <- M.toList tebs]
 formatMetaObjectAsSyntax (TLR.MOJSExprTypeDefn d ps) =

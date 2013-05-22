@@ -131,7 +131,7 @@ bindingReductionParametersForSL = BindingReductionParameters {
 				)
 		in case typeOrTerm of
 			Left type_ -> Left (runIdentity (SLR.substituteType typeSubs type_))
-			Right term -> Right (runIdentity (SLR.substituteTerm typeSubs termSubs term))
+			Right term -> Right (runIdentity (SLR.substituteTerm (typeSubs, termSubs) term))
 		),
 	typeOfSubstInTermBRP = (\ typeOrTerm typeOrTermName binding -> let
 		(kindsOfTypes, typesOfTerms) = case typeOrTerm of
@@ -160,11 +160,11 @@ bindingReductionParametersForSL = BindingReductionParameters {
 		(Left name, Left kind) -> let
 			args = [t | t' <- typeOrTermArgs, let Left t = t']
 			kind' = foldr SLR.KindFun kind (map SLR.kindOfType args)
-			in foldl SLR.TypeApp (SLR.TypeName name kind') args
+			in Left (foldl SLR.TypeApp (SLR.TypeName name kind') args)
 		(Right name, Right type_) -> let
 			args = [t | t' <- typeOrTermArgs, let Right t = t']
 			type_' = foldr SLR.TypeFun type_ (map SLR.typeOfTerm args)
-			in foldl SLR.TermApp (SLR.TermName name type_') args
+			in Right (foldl SLR.TermApp (SLR.TermName name type_') args)
 		)
 	}
 
@@ -404,7 +404,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 				let outerBinding' = makeBindingBRP brp outerBindingName (outerBindingParams', outerBindingValue)
 
 				-- In our example for `subB`, `bindingType` would be `Nat`.
-				let bindingType = typeOfSubstInTermBRP outerTerm outerBindingName outerBinding
+				let bindingType = typeOfSubstInTermBRP brp outerTerm outerBindingName outerBinding
 
 				-- In our example, `outerTerm'` would be the same as `outerTerm` except that `subB global5 global6` is
 				-- replaced with `subB global5`.
@@ -518,7 +518,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 									innerTermFun' outerBindingParamValues = let
 										innerTerm = innerTermFun outerBindingParamValues
 										prunedParamValues = filterByFlags outerBindingParamsKeepFlags outerBindingParamValues
-										bindingType = typeOfSubstInTermBRP innerTerm innerBindingName innerBinding
+										bindingType = typeOfSubstInTermBRP brp innerTerm innerBindingName innerBinding
 										in applySubstBRP brp
 											innerBindingName
 											(length innerBindingParams)
@@ -560,7 +560,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 				let newVarsIntroduced =
 						(freeVarsAndGlobalsOfTermBRP brp originalInnerTerm
 							S.\\ S.fromList (M.keys originalInnerBindings))
-						`S.union` S.fromList (M.keys finalOuterBindings)
+						`S.union` S.fromList (map fst newOuterBindings)
 				let outerTerm' = applySubstBRP brp
 						outerBindingName
 						(length outerBindingParams)

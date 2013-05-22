@@ -6,81 +6,81 @@ import Metacompiler.SExpr.Types
 import Metacompiler.SExpr.UtilsTo
 import Metacompiler.SLSyntax.Types
 
-formatSLKindAsSExpr :: Kind a -> SExpr
-formatSLKindAsSExpr (KindType _) =
+formatKindAsSExpr :: Kind a -> SExpr
+formatKindAsSExpr (KindType _) =
 	mkAtom "*"
-formatSLKindAsSExpr (KindFun _ as r) =
-	mkList' ([mkAtom "fun"] ++ map formatSLKindAsSExpr as ++ [mkAtom "->", formatSLKindAsSExpr r])
+formatKindAsSExpr (KindFun _ as r) =
+	mkList' ([mkAtom "fun"] ++ map formatKindAsSExpr as ++ [mkAtom "->", formatKindAsSExpr r])
 
-formatSLKindAsSExprs :: Kind a -> SExprs
-formatSLKindAsSExprs other =
-	sExprsFromList [formatSLKindAsSExpr other]
+formatKindAsSExprs :: Kind a -> SExprs
+formatKindAsSExprs other =
+	sExprsFromList [formatKindAsSExpr other]
 
-formatSLKindAsString :: Kind a -> String
-formatSLKindAsString = formatSExpr . formatSLKindAsSExpr
+formatKindAsString :: Kind a -> String
+formatKindAsString = formatSExpr . formatKindAsSExpr
 
-formatSLTypeAsSExpr :: Type a -> SExpr
-formatSLTypeAsSExpr (TypeName _ (NameOfType name)) =
+formatTypeAsSExpr :: Type a -> SExpr
+formatTypeAsSExpr (TypeName _ (NameOfType name)) =
 	mkAtom name
-formatSLTypeAsSExpr (TypeFun _ as r) =
+formatTypeAsSExpr (TypeFun _ as r) =
 	mkList' $
 		[mkAtom "fun"] ++
-		map formatSLTypeAsSExpr as ++
+		map formatTypeAsSExpr as ++
 		[mkAtom "->"] ++
-		sExprsToList (formatSLTypeAsSExprs r)
-formatSLTypeAsSExpr (TypeLazy _ x) =
-	mkList' [mkAtom "lazy", formatSLTypeAsSExpr x]
-formatSLTypeAsSExpr other =
-	mkList (formatSLTypeAsSExprs other)
+		sExprsToList (formatTypeAsSExprs r)
+formatTypeAsSExpr (TypeLazy _ x) =
+	mkList' [mkAtom "lazy", formatTypeAsSExpr x]
+formatTypeAsSExpr other =
+	mkList (formatTypeAsSExprs other)
 
-formatSLTypeAsSExprs :: Type a -> SExprs
-formatSLTypeAsSExprs (TypeApp _ f a) = let
-	f' = sExprsToList (formatSLTypeAsSExprs f)
-	in sExprsFromList (f' ++ [formatSLTypeAsSExpr a])
-formatSLTypeAsSExprs other =
-	sExprsFromList [formatSLTypeAsSExpr other]
+formatTypeAsSExprs :: Type a -> SExprs
+formatTypeAsSExprs (TypeApp _ f a) = let
+	f' = sExprsToList (formatTypeAsSExprs f)
+	in sExprsFromList (f' ++ [formatTypeAsSExpr a])
+formatTypeAsSExprs other =
+	sExprsFromList [formatTypeAsSExpr other]
 
-formatSLTypeAsString :: Type a -> String
-formatSLTypeAsString = formatSExpr . formatSLTypeAsSExpr
+formatTypeAsString :: Type a -> String
+formatTypeAsString = formatSExpr . formatTypeAsSExpr
 
-formatSLTermAsSExpr :: Term a -> SExpr
-formatSLTermAsSExpr t@(TermName _ (NameOfTerm name) typs) =
+formatTermAsSExpr :: Term a -> SExpr
+formatTermAsSExpr t@(TermName _ (NameOfTerm name) typs) =
 	case typs of
 		[] -> mkAtom name
-		_ -> mkList (formatSLTermAsSExprs t)
-formatSLTermAsSExpr (TermAbs _ as b) =
+		_ -> mkList (formatTermAsSExprs t)
+formatTermAsSExpr (TermAbs _ as b) =
 	mkList' $
 		[mkAtom "\\"] ++
-		[mkList' ([mkAtom n, mkAtom "::"] ++ sExprsToList (formatSLTypeAsSExprs t))
+		[mkList' ([mkAtom n, mkAtom "::"] ++ sExprsToList (formatTypeAsSExprs t))
 			| (NameOfTerm n, t) <- as] ++
 		[mkAtom "->"] ++
-		sExprsToList (formatSLTermAsSExprs b)
-formatSLTermAsSExpr (TermCase _ s cs) =
+		sExprsToList (formatTermAsSExprs b)
+formatTermAsSExpr (TermCase _ s cs) =
 	mkList' $
-		[mkAtom "case", formatSLTermAsSExpr s, mkAtom "of"] ++
+		[mkAtom "case", formatTermAsSExpr s, mkAtom "of"] ++
 		concat [[
 				-- TODO: Type parameters on ctor
 				mkList' ([mkAtom (unNameOfTerm c)] ++ map mkAtom [n | NameOfTerm n <- fns]),
 				mkAtom "->",
-				formatSLTermAsSExpr b
+				formatTermAsSExpr b
 			]
 			| (c, tps, fns, b) <- cs]
-formatSLTermAsSExpr (TermWrap _ x) =
-	mkList' [mkAtom "wrap", formatSLTermAsSExpr x]
-formatSLTermAsSExpr (TermUnwrap _ x) =
-	mkList' [mkAtom "unwrap", formatSLTermAsSExpr x]
-formatSLTermAsSExpr other =
-	mkList (formatSLTermAsSExprs other)
+formatTermAsSExpr (TermWrap _ x) =
+	mkList' [mkAtom "wrap", formatTermAsSExpr x]
+formatTermAsSExpr (TermUnwrap _ x) =
+	mkList' [mkAtom "unwrap", formatTermAsSExpr x]
+formatTermAsSExpr other =
+	mkList (formatTermAsSExprs other)
 
-formatSLTermAsSExprs :: Term a -> SExprs
-formatSLTermAsSExprs (TermApp _ f a) = let
-	f' = sExprsToList (formatSLTermAsSExprs f)
-	in sExprsFromList (f' ++ [formatSLTermAsSExpr a])
-formatSLTermAsSExprs (TermName _ (NameOfTerm name) typs) =
-	sExprsFromList $ [mkAtom name] ++ map formatSLTypeAsSExpr typs ++ [mkAtom "."]
-formatSLTermAsSExprs other =
-	sExprsFromList [formatSLTermAsSExpr other]
+formatTermAsSExprs :: Term a -> SExprs
+formatTermAsSExprs (TermApp _ f a) = let
+	f' = sExprsToList (formatTermAsSExprs f)
+	in sExprsFromList (f' ++ [formatTermAsSExpr a])
+formatTermAsSExprs (TermName _ (NameOfTerm name) typs) =
+	sExprsFromList $ [mkAtom name] ++ map formatTypeAsSExpr typs ++ [mkAtom "."]
+formatTermAsSExprs other =
+	sExprsFromList [formatTermAsSExpr other]
 
-formatSLTermAsString :: Term a -> String
-formatSLTermAsString = formatSExpr . formatSLTermAsSExpr
+formatTermAsString :: Term a -> String
+formatTermAsString = formatSExpr . formatTermAsSExpr
 

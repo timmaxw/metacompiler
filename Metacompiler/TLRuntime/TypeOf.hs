@@ -10,16 +10,16 @@ typeOfMetaObject :: MetaObject -> MetaType
 typeOfMetaObject (MOApp fun arg) =
 	case typeOfMetaObject fun of
 		MTFun (paramName, _) bodyType -> reduceMetaType $
-			substituteMetaType (Substitutions (M.singleton paramName arg) M.empty M.empty) bodyType
+			substituteMetaType (M.singleton paramName arg) bodyType
 		_ -> error "badly typed meta-object: MOApp of non-function"
 typeOfMetaObject (MOAbs (paramName, paramType) body) =
 	MTFun (paramName, paramType) (typeOfMetaObject body)
 typeOfMetaObject (MOName _ type_) =
 	type_
 typeOfMetaObject (MOSLType type_ _) =
-	MTSLType (SLR.kindOfSLType type_)
-typeOfMetaObject (MOSLTerm term subs) =
-	MTSLTerm (reduceMetaObject (MOSLType (SLR.typeOfSLTerm term) subs))
+	MTSLType (SLR.kindOfType type_)
+typeOfMetaObject (MOSLTerm term typeSubs _) =
+	MTSLTerm (reduceMetaObject (MOSLType (SLR.typeOfTerm term) typeSubs))
 typeOfMetaObject (MOJSExprTypeDefn defn params) =
 	MTJSExprType (slEquivOfJSExprTypeDefn defn params)
 typeOfMetaObject (MOJSExprLiteral equiv type_ _ _ ) =

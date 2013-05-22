@@ -21,7 +21,7 @@ formatKindAsString :: SLR.Kind -> String
 formatKindAsString = SLS.formatKindAsString . formatKindAsSyntax
 
 formatTypeAsSyntax :: SLR.Type -> SLS.Type ()
-formatTypeAsSyntax (SLR.TypeDefn defn) =
+formatTypeAsSyntax (SLR.TypeDefined defn) =
 	SLS.TypeName () (SLS.NameOfType (SLR.unNameOfType (SLR.nameOfDataDefn defn)))
 formatTypeAsSyntax (SLR.TypeName name _) =
 	SLS.TypeName () (SLS.NameOfType (SLR.unNameOfType name))
@@ -30,7 +30,7 @@ formatTypeAsSyntax (SLR.TypeApp f x) =
 formatTypeAsSyntax (SLR.TypeFun a r) =
 	case formatTypeAsSyntax r of
 		SLS.TypeFun () as' r' -> SLS.TypeFun () (a':as') r'
-		_ -> SLS.TypeFun () [a'] r'
+		r' -> SLS.TypeFun () [a'] r'
 	where a' = formatTypeAsSyntax a
 formatTypeAsSyntax (SLR.TypeLazy x) =
 	SLS.TypeLazy () (formatTypeAsSyntax x)
@@ -38,18 +38,18 @@ formatTypeAsSyntax (SLR.TypeLazy x) =
 formatTypeAsString :: SLR.Type -> String
 formatTypeAsString = SLS.formatTypeAsString . formatTypeAsSyntax
 
-formatTermAsSyntax' :: SLR.Term -> SLS.Term ()
-formatTermAsSyntax (SLR.TermDefn d typs) =
+formatTermAsSyntax :: SLR.Term -> SLS.Term ()
+formatTermAsSyntax (SLR.TermDefined d typs) =
 	SLS.TermName () d' (map formatTypeAsSyntax typs)
 	where d' = SLS.NameOfTerm (SLR.unNameOfTerm (SLR.nameOfTermDefn d))
 formatTermAsSyntax (SLR.TermName n _) =
-	SLS.TermName () (SLS.NameOfTerm (SLR.unNameOfTerm n))
+	SLS.TermName () (SLS.NameOfTerm (SLR.unNameOfTerm n)) []
 formatTermAsSyntax (SLR.TermApp f x) =
 	SLS.TermApp () (formatTermAsSyntax f) (formatTermAsSyntax x)
 formatTermAsSyntax (SLR.TermAbs (a, at) b) =
 	case formatTermAsSyntax b of
 		SLS.TermAbs () as' b' -> SLS.TermAbs () ((a', at'):as') b'
-		_ -> SLS.TermAbs () [(a', at')] b'
+		b' -> SLS.TermAbs () [(a', at')] b'
 	where
 		a' = SLS.NameOfTerm (SLR.unNameOfTerm a)
 		at' = formatTypeAsSyntax at
@@ -73,7 +73,7 @@ formatTermAsSyntax (SLR.TermData c typs teps) =
 formatTermAsSyntax (SLR.TermWrap x) =
 	SLS.TermWrap () (formatTermAsSyntax x)
 formatTermAsSyntax (SLR.TermUnwrap x) =
-	SLS.TermUnwap () (formatTermAsSyntax x)
+	SLS.TermUnwrap () (formatTermAsSyntax x)
 
 formatTermAsString :: SLR.Term -> String
 formatTermAsString = SLS.formatTermAsString . formatTermAsSyntax

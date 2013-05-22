@@ -1,5 +1,6 @@
 module Metacompiler.TLCompile.Compile where
 
+import Control.Monad.Identity
 import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Graph
@@ -10,6 +11,8 @@ import qualified Metacompiler.JS.JS as JS
 import Metacompiler.Error
 import qualified Metacompiler.SLCompile.Compile as SLC
 import qualified Metacompiler.SLCompile.Format as SLF
+import qualified Metacompiler.SLRuntime.Substitute as SLR
+import qualified Metacompiler.SLRuntime.Types as SLR
 import qualified Metacompiler.SLSyntax.Types as SLS
 import qualified Metacompiler.TLCompile.Format as TLF
 import qualified Metacompiler.TLRuntime.TLRuntime as TLR
@@ -101,12 +104,12 @@ compileMetaObject scope (TLS.MOSLTypeLiteral range type_ typeBindings) = do
 	let msgPrefix = "in `(sl-type ...)` literal at " ++ formatRange range ++ ": "
 	typeBindings' <- compileSLTypeBindings msgPrefix scope typeBindings
 	let typeScopeAdditions = M.mapWithKey (\ name value -> case TLR.typeOfMetaObject value of
-		TLR.MTSLType kind -> SLC.NamedTypeInScope (SLR.NameOfType (SLS.unNameOfType name)) kind
+		TLR.MTSLType kind -> SLC.NameTypeInScope (SLR.NameOfType (SLS.unNameOfType name)) kind
 		_ -> error "binding should have type (sl-type ...)"
 		) typeBindings'
 	type_' <- errorContext msgPrefix $
 		SLC.compileType
-			(typeBindingsInSLScope `M.union` SLC.typesInScope (slObjectsInScope scope))
+			(typeScopeAdditions `M.union` SLC.typesInScope (slObjectsInScope scope))
 			type_
 	-- TODO: Make sure subs are applied appropriately in `type_'`
 	return (TLR.MOSLType type_' typeBindings')
@@ -123,22 +126,22 @@ compileMetaObject scope (TLS.MOSLTermLiteral range term typeBindings termBinding
 			let
 				internType :: TLR.MetaObject
 				           -> SLR.NameOfType
-				           -> State (M.Map SLR.NameOfType TLR.SLTypeBinding) SLR.SLType
+				           -> State (M.Map SLR.NameOfType TLR.SLTypeBinding) SLR.Type
 				internType suggestedName typeAsMO = case TLR.reduceMetaObject typeAsMO of
 					TLR.MOSLType typeAsSL bindings -> do
 						subs <- liftM M.fromList $ sequence [do
 							value' <- internType name value
-							return (TypeSub (Identity .foldl SLR.SLTypeApp value'))
+							return (SLR.simpleTypeSub value')
 							| (name, TLR.SLTypeBinding value) <- M.toList bindings]
-						return (runIdentity (substituteSLType subs typeAsSL))
+						return (runIdentity (SLR.substituteType subs typeAsSL))
 					other -> do
 						existingBindings <- get
 						name' <- case find (\(_, v) -> TLR.equivalentMetaObjects v other) (M.toList existingBindings) of
 							Nothing -> do
 								let forbiddenNames = M.keysSet existingBindings
 										`S.union` S.fromList [case tis of
-											SLC.NamedTypeInScope name _ -> name
-											SLC.DefinedTypeInScope defn -> nameOfSLDataDefn defn
+											SLC.NameTypeInScope name _ -> name
+											SLC.DefinedTypeInScope defn -> SLR.nameOfDataDefn defn
 											| (_, tis) <- SLC.typesInScope (slObjectsInScope scope)]
 								let candidateNames =
 									[SLR.NameOfType (SLR.unNameOfType suggestedName ++ replicate i '\'') | i <- [0..]]
@@ -157,16 +160,16 @@ compileMetaObject scope (TLS.MOSLTermLiteral range term typeBindings termBinding
 				TLR.MTSLTerm type_ -> internType value suggestedName
 					where suggestedName = SLR.NameOfType (SLR.unNameOfTerm name ++ "Type")
 				_ -> error "this should have type (sl-term ...)"
-			let wholeType = foldr SLR.SLTermFun valueType paramTypes
+			let wholeType = foldr SLR.TypeFun valueType paramTypes
 			return (name, SLC.NameTermInScope (SLR.NameOfTerm (SLS.unNameOfTerm name)) wholeType)
-			| (name, SLTermBinding params value) <- M.toList termBindings']
+			| (name, TLR.SLTermBinding params value) <- M.toList termBindings']
 	let (termScopeAdditions, typeBindings'') = runState termScopeMaker typeBindings'
 	let typeScopeAdditions = M.mapWithKey (\ name value -> case TLR.typeOfMetaObject value of
-		TLR.MTSLType kind -> SLC.NamedTypeInScope (SLR.NameOfType (SLS.unNameOfType name)) kind
+		TLR.MTSLType kind -> SLC.NameTypeInScope (SLR.NameOfType (SLS.unNameOfType name)) kind
 		_ -> error "binding should have type (sl-type ...)"
 		) typeBindings''
 	term' <- errorContext msgPrefix $
-		SLC.compileSLTerm
+		SLC.compileTerm
 			(slObjectsInScope scope) {
 				SLC.typesInScope = typeBindings'' `M.union` (SLC.typesInScope $ slObjectsInScope scope),
 				SLC.termsInScope = termScopeAdditions `M.union` (SLC.termsInScope $ slObjectsInScope scope)
@@ -438,7 +441,7 @@ compileDirectives directives = do
 			value <- compileAbstraction scope params (\params' scope' -> do
 				slEquiv' <- compileMetaObject scope' slEquiv
 				case TLR.typeOfMetaObject slEquiv' of
-					TLR.MTSLType TLR.SLKindType -> return ()
+					TLR.MTSLType SLR.KindType -> return ()
 					otherType -> fail ("in `(js-expr-type ...)` directive at " ++ formatRange range ++ ": the SL \
 						\equivalent given at " ++ formatRange (TLS.tagOfMetaObject slEquiv) ++ " has meta-type " ++
 						formatMTForMessage otherType ++ ", but it's supposed to have meta-type `(sl-type ...)`.")
@@ -447,7 +450,7 @@ compileDirectives directives = do
 					TLR.paramsOfJSExprTypeDefn = map snd params',
 					TLR.slEquivOfJSExprTypeDefn = \paramValues -> let
 						subs = M.fromList $ zip (map fst params') paramValues
-						in TLR.substituteMetaObject (TLR.Substitutions subs M.empty M.empty) slEquiv'
+						in TLR.substituteMetaObject subs slEquiv'
 					}
 				return (TLR.MOJSExprTypeDefn defn [TLR.MOName paramName paramType | (paramName, paramType) <- params'])
 				) TLR.MOAbs
@@ -517,12 +520,10 @@ compileDirectives directives = do
 					let runtimeArgsMetaObjects = [TLR.MOJSExprLiteral e t (JS.VarRef () n) M.empty
 							| ((e, t), n) <- zip runtimeArgsTypesAndEquivs runtimeArgsJSNames]
 					let body'' = TLR.substituteMetaObject
-							(TLR.Substitutions
-								(M.fromList (zip
+							(M.fromList (zip
 									[(M.!) paramNamesMap name | name <- runtimeArgs]
 									runtimeArgsMetaObjects
 									))
-								M.empty M.empty)
 							body'
 					body''' <- case TLR.reduceMetaObject body'' of
 						TLR.MOJSExprLiteral _ _ expr subs | M.null subs -> return expr

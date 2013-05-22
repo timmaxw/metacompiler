@@ -1,9 +1,13 @@
 module Metacompiler.SLCompile.Compile where
 
 import Control.Monad (when, unless, liftM)
+import Control.Monad.Identity
+import Data.List (intercalate)
 import qualified Data.Map as M
 import Metacompiler.Error
 import qualified Metacompiler.SLCompile.Format as SLF
+import qualified Metacompiler.SLRuntime.Substitute as SLR
+import qualified Metacompiler.SLRuntime.TypeOf as SLR
 import qualified Metacompiler.SLRuntime.Types as SLR
 import qualified Metacompiler.SLSyntax.Types as SLS
 import qualified Metacompiler.SLSyntax.ToSExpr as SLS
@@ -26,6 +30,10 @@ data Scope = Scope {
 formatKindForMessage :: SLR.Kind -> String
 formatKindForMessage k = "`" ++ SLF.formatKindAsString k ++ "`"
 
+formatKindListForMessage :: [SLR.Kind] -> String
+formatKindListForMessage [] = "(none)"
+formatKindListForMessage l = intercalate ", " [formatKindForMessage k | k <- l]
+
 formatTypeForMessage :: SLR.Type -> String
 formatTypeForMessage t = "`" ++ SLF.formatTypeAsString t ++ "`"
 
@@ -40,16 +48,16 @@ compileKind (SLS.KindFun _ params res) = do
 	res' <- compileKind res
 	return (foldr SLR.KindFun res' params')
 
-compileType :: M.Map SLS.NameOfType TypeInScope -> SLS.Type Range -> ErrorMonad SLR.MetaObject
+compileType :: M.Map SLS.NameOfType TypeInScope -> SLS.Type Range -> ErrorMonad SLR.Type
 compileType typeScope (SLS.TypeName range name) =
 	case M.lookup name typeScope of
-		Just (NameTypeInScope name' kind) = return (SLR.TypeName name' kind)
-		Just (DefinedTypeInScope defn) = return (SLR.TypeDefined defn)
+		Just (NameTypeInScope name' kind) -> return (SLR.TypeName name' kind)
+		Just (DefinedTypeInScope defn) -> return (SLR.TypeDefined defn)
 		Nothing -> fail ("at " ++ formatRange range ++ ": type name `" ++ SLS.unNameOfType name ++ "` is not in scope")
 compileType typeScope (SLS.TypeApp range fun arg) = do
 	fun' <- compileType typeScope fun
 	arg' <- compileType typeScope arg
-	case kindOfType fun' of
+	case SLR.kindOfType fun' of
 		SLR.KindType -> fail ("at " ++ formatRange range ++ ": the type " ++ formatTypeForMessage fun' ++ " (at " ++
 			formatRange (SLS.tagOfType fun) ++ "), is being applied like a function, but it has kind `*`.")
 		SLR.KindFun paramKind _
@@ -57,7 +65,7 @@ compileType typeScope (SLS.TypeApp range fun arg) = do
 				return (SLR.TypeApp fun' arg')
 			| otherwise -> fail ("at " ++ formatRange range ++ ": the type " ++ formatTypeForMessage fun' ++ " (at " ++
 				formatRange (SLS.tagOfType fun) ++ "), expects an argument of kind " ++
-				formatKindForMessage paramKind ++ ", but the argument it was given is " ++ formatTypeForMessage arg ++
+				formatKindForMessage paramKind ++ ", but the argument it was given is " ++ formatTypeForMessage arg' ++
 				" (at " ++ formatRange (SLS.tagOfType arg) ++ "), which has kind " ++
 				formatKindForMessage (SLR.kindOfType arg') ++ ".")
 compileType typeScope (SLS.TypeFun range params res) = do
@@ -87,53 +95,50 @@ compileType typeScope (SLS.TypeLazy range x) = do
 
 compileTerm :: Scope -> SLS.Term Range -> ErrorMonad SLR.Term
 compileTerm scope (SLS.TermName range name typeParams) = do
-	typeParams' <- mapM compileType typeParams
-	let
-		formatKindList :: [SLR.Kind] -> String
-		formatKindList [] = "(none)"
-		formatKindList l = intercalate ", " [formatKindForMessage k | k <- l]
+	typeParams' <- mapM (compileType (typesInScope scope)) typeParams
 	case (M.lookup name (termsInScope scope), typeParams') of
-		(Just (NameTermInScope name' type_), []) -> return (SLS.TermName name' type_)
+		(Just (NameTermInScope name' type_), []) -> return (SLR.TermName name' type_)
 		(Just (NameTermInScope _ _), _:_) -> fail ("at " ++ formatRange range ++ ": term name `" ++
 			SLS.unNameOfTerm name ++ "` expects no type parameters, but " ++ show (length typeParams) ++ " type \
 			\parameters have been given.")
 		(Just (DefinedTermInScope defn), _)
-			| typeParamsOfSLDataDefn defn == map SLR.kindOfType typeParams' ->
-				return (SLS.TermDefined defn typeParams')
-			| otherwise -> fail ("at " ++ formatRange range ++ ": global definition `" ++ SLS.unNameOfTerm term ++ "` \
-				\expects type parameters with the following kinds: " ++ formatKindList (typeParamsOfSLDataDefn defn) ++
-				" but it got type parameters with the following kinds: " ++
-				formatKindList (map SLR.kindOfType typeParams') ++ ".")
+			| SLR.typeParamsOfTermDefn defn == map SLR.kindOfType typeParams' ->
+				return (SLR.TermDefined defn typeParams')
+			| otherwise -> fail ("at " ++ formatRange range ++ ": global definition `" ++ SLS.unNameOfTerm name ++ "` \
+				\expects type parameters with the following kinds: " ++
+				formatKindListForMessage (SLR.typeParamsOfTermDefn defn) ++ " but it got type parameters with the \
+				\following kinds: " ++ formatKindListForMessage (map SLR.kindOfType typeParams') ++ ".")
 		(Just (CtorTermInScope ctor), _)
 			| expectedKinds == map SLR.kindOfType typeParams' -> do
-				let fieldTypes = map ($ typeParams') fieldTypesOfSLCtorDefn
+				let fieldTypes = map ($ typeParams') (SLR.fieldTypesOfCtorDefn ctor)
 				let fieldVars = [(SLR.NameOfTerm ("f" ++ show i), ty) | (i, ty) <- zip [1..] fieldTypes]
 				let fieldTerms = map (uncurry SLR.TermName) fieldVars
 				return $ foldr SLR.TermAbs (SLR.TermData ctor typeParams' fieldTerms) fieldVars
-			| otherwise -> fail ("at " ++ formatRange range ++ ": constructor `" ++ SLS.unNameOfTerm term ++ "` \
-				\expects type parameters with the following kinds: " ++ formatKindList expectedKinds ++ " but \
-				\it got type parameters with the following kinds: " ++ formatKindList (map SLR.kindOfType typeParams') ++
-				".")
-			where expectedKinds = typeParamsOfSLDataDefn (parentDataOfSLCtorDefn ctor)
-		(Nothing, _) -> fail ("at " ++ formatRange range ++ ": term name `" ++ SLS.unNameOfTerm name ++ "` is not in scope")
+			| otherwise -> fail ("at " ++ formatRange range ++ ": constructor `" ++ SLS.unNameOfTerm name ++ "` \
+				\expects type parameters with the following kinds: " ++ formatKindListForMessage expectedKinds ++
+				" but it got type parameters with the following kinds: " ++
+				formatKindListForMessage (map SLR.kindOfType typeParams') ++ ".")
+			where expectedKinds = SLR.typeParamsOfDataDefn (SLR.parentDataOfCtorDefn ctor)
+		(Nothing, _) -> fail ("at " ++ formatRange range ++ ": term name `" ++ SLS.unNameOfTerm name ++ "` is not in \
+			\scope")
 compileTerm scope (SLS.TermApp range fun arg) = do
 	fun' <- compileTerm scope fun
 	arg' <- compileTerm scope arg
 	case SLR.typeOfTerm fun' of
-		SLR.TypeFun paramKind _
-			| paramKind == SLR.typeOfTerm arg' ->
+		SLR.TypeFun paramType _
+			| paramType == SLR.typeOfTerm arg' ->
 				return (SLR.TermApp fun' arg')
 			| otherwise -> fail ("at " ++ formatRange range ++ ": the type " ++ formatTermForMessage fun' ++ " (at " ++
-				formatRange (SLS.tagOfType fun) ++ "), expects an argument of type " ++
-				formatTypeForMessage paramType ++ ", but the argument it was given is " ++ formatTermForMessage arg ++
+				formatRange (SLS.tagOfTerm fun) ++ "), expects an argument of type " ++
+				formatTypeForMessage paramType ++ ", but the argument it was given is " ++ formatTermForMessage arg' ++
 				" (at " ++ formatRange (SLS.tagOfTerm arg) ++ "), which has type " ++
 				formatTypeForMessage (SLR.typeOfTerm arg') ++ ".")
-		other -> fail ("at " ++ formatRange range ++ ": the term " ++ formatTermForMessage fun ++ " (at " ++
+		other -> fail ("at " ++ formatRange range ++ ": the term " ++ formatTermForMessage fun' ++ " (at " ++
 			formatRange (SLS.tagOfTerm fun) ++ "), is being applied like a function, but it has type " ++
 			formatTypeForMessage other ++ ".")
 compileTerm scope (SLS.TermAbs range params body) = f (termsInScope scope) params
 	where
-		f :: M.Map SLS.NameOfTerm TermInScope -> [(SLS.NameOfTerm, SLS.Type Range)] -> ErrorMonad SLR.MetaObject
+		f :: M.Map SLS.NameOfTerm TermInScope -> [(SLS.NameOfTerm, SLS.Type Range)] -> ErrorMonad SLR.Term
 		f termScope' [] = compileTerm (scope { termsInScope = termScope' }) body
 		f termScope' ((paramName, paramType):paramsLeft) = do
 			let paramName' = SLR.NameOfTerm (SLS.unNameOfTerm paramName)
@@ -149,16 +154,16 @@ compileTerm scope (SLS.TermCase range subject clauses) = do
 			Nothing -> fail ("at " ++ formatRange range ++ ": constructor `" ++ SLS.unNameOfTerm ctorName ++ "` is not \
 				\ in scope")
 		ctorTypeArgs' <- mapM (compileType (typesInScope scope)) ctorTypeArgs
-		let expectedKinds = SLR.typeParamsOfSLDataDefn (SLR.parentDataOfSLCtorDefn ctor)
+		let expectedKinds = SLR.typeParamsOfDataDefn (SLR.parentDataOfCtorDefn ctor)
 		let actualKinds = map SLR.kindOfType ctorTypeArgs'
 		unless (expectedKinds == actualKinds) $
 			fail ("at " ++ formatRange range ++ ": constructor `" ++ SLS.unNameOfTerm ctorName ++ "` expects type \
-				\parameters with the following kinds: " ++ formatKindList expectedKinds ++ " but it got type \
-				\parameters with the following kinds: " ++ formatKindList actualKinds)
-		let fieldTypes = map ($ ctorTypeArgs') (SLR.fieldTypesOfSLCtorDefn ctor)
+				\parameters with the following kinds: " ++ formatKindListForMessage expectedKinds ++ " but it got \
+				\type parameters with the following kinds: " ++ formatKindListForMessage actualKinds)
+		let fieldTypes = map ($ ctorTypeArgs') (SLR.fieldTypesOfCtorDefn ctor)
 		let fieldNames' = map (SLR.NameOfTerm . SLS.unNameOfTerm) fieldNames
 		let termScope' = foldr
-			(\ (name, name', type_) -> M.insert name (NamedTermInScope name- type_))
+			(\ (name, name', type_) -> M.insert name (NameTermInScope name' type_))
 			(termsInScope scope)
 			(zip3 fieldNames fieldNames' fieldTypes)
 		body' <- compileTerm (scope { termsInScope = termScope' }) body
@@ -182,6 +187,14 @@ data Defns = Defns {
 	termDefns :: M.Map SLS.NameOfTerm SLR.TermDefn
 	}
 
+scopeForDefns :: Defns -> Scope
+scopeForDefns defns = Scope {
+	typesInScope = M.map DefinedTypeInScope (dataDefns defns),
+	ctorsInScope = ctorDefns defns,
+	termsInScope = M.map DefinedTermInScope (termDefns defns)
+		`M.union` M.map CtorTermInScope (ctorDefns defns)
+	}
+
 compileSLDirectives :: [SLS.Dir Range] -> ErrorMonad Defns
 compileSLDirectives directives = do
 	-- TODO: Detect name conflicts: type/type, term/term, ctor/ctor, term/ctor
@@ -191,23 +204,23 @@ compileSLDirectives directives = do
 		paramKinds' <- sequence [compileKind kind | (_, kind) <- params]
 
 		let dataDefn = SLR.DataDefn {
-			SLR.nameOfSLDataDefn = SLR.NameOfType (SLS.unNameOfType typeName),
-			SLR.typeParamsOfSLDataDefn = paramKinds'
+			SLR.nameOfDataDefn = SLR.NameOfType (SLS.unNameOfType typeName),
+			SLR.typeParamsOfDataDefn = paramKinds'
 			}
 
 		let
 			ctorPromise :: M.Map SLS.NameOfType SLR.DataDefn -> ErrorMonad (M.Map SLS.NameOfTerm SLR.CtorDefn)
 			ctorPromise dataDefns = do
 				let runNameForParamName = SLR.NameOfType . SLS.unNameOfType
-				let typeScope = M.fromList [(name, NameTypeInScope (runNameForParamName) paramKind')
+				let typeScope = M.fromList [(name, NameTypeInScope (runNameForParamName name) paramKind')
 					| ((name, _), paramKind') <- zip params paramKinds']
 					`M.union` M.map DefinedTypeInScope dataDefns
 				liftM M.fromList $ sequence [do
 					fieldTypes' <- mapM (compileType typeScope) fieldTypes
 					let ctorDefn = SLR.CtorDefn {
-						SLR.nameOfSLCtorDefn = SLR.NameOfTerm (SLS.unNameOfTerm ctorName),
-						SLR.parentDataOfSLCtorDefn = dataDefn,
-						SLR.fieldTypesOfSLCtorDefn = [\ paramValues ->
+						SLR.nameOfCtorDefn = SLR.NameOfTerm (SLS.unNameOfTerm ctorName),
+						SLR.parentDataOfCtorDefn = dataDefn,
+						SLR.fieldTypesOfCtorDefn = [\ paramValues ->
 							let subs = M.fromList [
 								(runNameForParamName n, SLR.simpleTypeSub v)
 								| ((n, _), v) <- zip params paramValues]
@@ -231,7 +244,7 @@ compileSLDirectives directives = do
 
 		let typeScope = M.fromList [(name, NameTypeInScope (runNameForTypeParamName name) typeParamKind')
 			| ((name, _), typeParamKind') <- zip typeParams typeParamKinds']
-			`M.union` M.map typeInScopeForDataDefn dataDefns
+			`M.union` M.map DefinedTypeInScope allDataDefns
 
 		termParamTypes' <- sequence [compileType typeScope paramType | (_, paramType) <- termParams]
 		let runNameForTermParamName = SLR.NameOfTerm . SLS.unNameOfTerm
@@ -242,12 +255,7 @@ compileSLDirectives directives = do
 			promise :: M.Map SLS.NameOfTerm SLR.TermDefn -> (SLR.TermDefn, ErrorMonad ())
 			promise allTermDefns = let
 
-				scope1 = Scope {
-					typesInScope = M.map DefinedTypeInScope allDataDefns,
-					ctorsInScope = allCtorDefns,
-					termsInScope = M.map CtorTermInScope allCtorDefns
-						`M.union` M.map DefinedTermInScope allTermDefns
-					}
+				scope1 = scopeForDefns (Defns allDataDefns allCtorDefns allTermDefns)
 				paramTermsInScope = M.fromList [(name, NameTermInScope (runNameForTermParamName name) termParamType')
 					| ((name, _), termParamType') <- zip termParams termParamTypes']
 				scope2 = scope1 {
@@ -259,27 +267,27 @@ compileSLDirectives directives = do
 
 				makeSubbed object typeParamValues =
 					let subs = M.fromList [
-								(runNameForParamName n, SLR.simpleTypeSub v)
-								| ((n, _), v) <- zip params paramValues]
-							in runIdentity (SLR.substituteType subs fieldType')
+								(runNameForTypeParamName n, SLR.simpleTypeSub v)
+								| ((n, _), v) <- zip typeParams typeParamValues]
+							in runIdentity (SLR.substituteType subs object)
 
-				let wholeType = foldr SLR.TypeFun type_' termParamTypes'
+				wholeType = foldr SLR.TypeFun type_' termParamTypes'
 
 				termDefn = SLR.TermDefn {
 					SLR.nameOfTermDefn = SLR.NameOfTerm (SLS.unNameOfTerm termName),
 					SLR.typeParamsOfTermDefn = typeParamKinds',
 					SLR.typeOfTermDefn = (\ typeParamValues ->
-						let
-							subs = M.fromList [
+						let subs = M.fromList [
 								(runNameForTypeParamName n, SLR.simpleTypeSub v)
 								| ((n, _), v) <- zip typeParams typeParamValues]
 						in runIdentity (SLR.substituteType subs wholeType)
 						),
 					SLR.valueOfTermDefn = (\ typeParamValues ->
-						let subs = M.fromList [
+						let
+							subs = M.fromList [
 								(runNameForTypeParamName n, SLR.simpleTypeSub v)
-								| ((n, _), v) <- zip typeParams typeParamValues],
-							realValue = case value of Success v -> v
+								| ((n, _), v) <- zip typeParams typeParamValues]
+							realValue = case valueOrError of Success v -> v
 						in runIdentity (SLR.substituteTerm (subs, M.empty) realValue)
 						)
 					}
