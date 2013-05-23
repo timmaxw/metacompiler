@@ -85,7 +85,7 @@ substituteTerm' (typeSubs, termSubs) (TermName n t) args | n `M.member` termSubs
 	performTermSub (termSubs M.! n) args
 substituteTerm' subs (TermApp f x) args = do
 	x' <- substituteTerm subs x
-	substituteTerm' subs f (x : args)
+	substituteTerm' subs f (x' : args)
 substituteTerm' (typeSubs, termSubs) (TermAbs (argName, argType) body) [] = do
 	argType' <- substituteType typeSubs argType
 	let (argName', termSubs') = performBinding (argName, argType') (snd (freeVarsAndGlobalsInTerm body)) termSubs

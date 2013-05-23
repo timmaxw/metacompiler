@@ -209,6 +209,7 @@ compileMetaObject scope (TLS.MOJSExprLiteral range equiv type_ expr bindings) = 
 			". Those are supposed to be the same, but they aren't.")
 	bindings' <- compileJSExprBindings msgPrefix scope bindings
 	-- TODO: Make sure subs are applied appropriately in `expr`
+
 	return (TLR.MOJSExprLiteral equiv' type_' (JS.removeAnnotations expr) bindings')
 
 compileMetaObject scope (TLS.MOJSExprConvertEquiv range inEquiv outEquiv content) = do
@@ -579,7 +580,6 @@ compileDirectives directives = do
 						in case value' of
 							TLR.MOJSExprLiteral _ _ expr bs | M.null bs -> expr
 							_ -> error "not completely reduced for some reason"
-
 				varsIntroduced = JS.freeNamesInExpression (fun [JS.NullLit () | _ <- params])
 				in JS.SubstFun fun varsIntroduced) bindings'
 		return $ map (JS.substituteStatement subs M.empty . JS.removeAnnotations) code

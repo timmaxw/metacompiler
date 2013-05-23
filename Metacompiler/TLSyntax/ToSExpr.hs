@@ -39,7 +39,7 @@ formatMetaTypeAsString = formatSExpr . formatMetaTypeAsSExpr
 formatMetaObjectAsSExpr :: TLS.MetaObject a -> SExpr
 formatMetaObjectAsSExpr (TLS.MOAbs _ ps r) =
 	mkList' $
-		[mkAtom "fun"] ++
+		[mkAtom "\\"] ++
 		[mkList' ([mkAtom n, mkAtom "::"] ++ sExprsToList (formatMetaTypeAsSExprs t))
 			| (TLS.Name n, t) <- ps] ++
 		[mkAtom "->"] ++

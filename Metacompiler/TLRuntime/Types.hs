@@ -4,13 +4,17 @@ import qualified Data.Map as M
 import qualified Metacompiler.JS.JS as JS
 import qualified Metacompiler.SLRuntime.Types as SLR
 
-newtype NameOfMetaObject = NameOfMetaObject { unNameOfMetaObject :: String } deriving (Ord, Show, Eq)
+newtype NameOfMetaObject = NameOfMetaObject { unNameOfMetaObject :: String } deriving (Ord, Eq)
+instance Show NameOfMetaObject where
+	show (NameOfMetaObject n) = "NameOfMetaObject " ++ show n
 
 data JSExprTypeDefn = JSExprTypeDefn {
 	nameOfJSExprTypeDefn :: NameOfMetaObject,
 	paramsOfJSExprTypeDefn :: [MetaType],
 	slEquivOfJSExprTypeDefn :: [MetaObject] -> MetaObject
 	}
+instance Show JSExprTypeDefn where
+	show (JSExprTypeDefn name _ _) = "(JSExprTypeDefn (" ++ show name ++ ") ...)"
 
 data MetaType
 	= MTFun (NameOfMetaObject, MetaType) MetaType
@@ -18,6 +22,7 @@ data MetaType
 	| MTSLTerm MetaObject
 	| MTJSExprType MetaObject
 	| MTJSExpr MetaObject MetaObject   -- SL type, SL equivalent
+	deriving Show
 
 data MetaObject
 	= MOApp MetaObject MetaObject
@@ -28,25 +33,26 @@ data MetaObject
 	| MOJSExprTypeDefn JSExprTypeDefn [MetaObject]
 	| MOJSExprLiteral MetaObject MetaObject (JS.Expression ()) (M.Map (JS.Id ()) JSExprBinding)   -- equiv, type
 	| MOJSExprConvertEquiv MetaObject MetaObject   -- new equivalent, expression to convert
+	deriving Show
 
 data SLTypeBinding = SLTypeBinding {
 	valueOfSLTypeBinding :: MetaObject
-	}
+	} deriving Show
 
 data SLTermBinding = SLTermBinding {
 	paramsOfSLTermBinding :: [(NameOfMetaObject, MetaObject)],
 	valueOfSLTermBinding :: MetaObject
-	}
+	} deriving Show
 
 data JSExprBinding = JSExprBinding {
 	paramsOfJSExprBinding :: [JSExprBindingParam],
 	valueOfJSExprBinding :: MetaObject
-	}
+	} deriving Show
 
 data JSExprBindingParam = JSExprBindingParam {
 	nameOfSLOfJSExprBindingParam :: NameOfMetaObject,
 	typeOfSLOfJSExprBindingParam :: MetaObject,
 	nameOfJSOfJSExprBindingParam :: NameOfMetaObject,
 	typeOfJSOfJSExprBindingParam :: MetaObject
-	}
+	} deriving Show
 

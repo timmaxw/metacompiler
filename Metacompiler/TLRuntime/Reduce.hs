@@ -43,7 +43,10 @@ reduceMetaObject (MOSLType type_ bindings) = let
 	(type_'', bindings'') = reduceBindings bindingReductionParametersForSL (type_', bindings')
 	Left type_''' = type_''
 	bindings''' = M.mapKeys (\ (Left x) -> x) (M.map (\ (Left x) -> x) bindings'')
-	in MOSLType type_''' bindings'''
+	in case type_''' of
+		SLR.TypeName name _ | name `M.member` bindings''' -> value
+			where SLTypeBinding value = bindings''' M.! name
+		_ -> MOSLType type_''' bindings'''
 
 reduceMetaObject (MOSLTerm term typeBindings termBindings) = let
 	term' = Right term
@@ -52,7 +55,23 @@ reduceMetaObject (MOSLTerm term typeBindings termBindings) = let
 	Right term''' = term''
 	typeBindings''' = M.fromList [(n, v) | (Left n, Left v) <- M.toList bindings'']
 	termBindings''' = M.fromList [(n, v) | (Right n, Right v) <- M.toList bindings'']
-	in MOSLTerm term''' typeBindings''' termBindings'''
+
+	getApp :: SLR.Term -> Maybe (SLR.NameOfTerm, [SLR.Term])
+	getApp (SLR.TermName name _) =
+		return (name, [])
+	getApp (SLR.TermApp fun arg) = do
+		(name, args) <- getApp fun
+		return (name, args ++ [arg])
+	getApp _ = Nothing
+
+	in case getApp term''' of
+		Just (name, paramValues) | name `M.member` termBindings''' && length paramValues == length params -> let
+				subs = M.fromList [
+					(name, MOSLTerm v typeBindings''' termBindings''')
+					| ((name, _), v) <- zip params paramValues]
+				in reduceMetaObject (substituteMetaObject subs value)
+			where SLTermBinding params value = termBindings''' M.! name
+		_ -> MOSLTerm term''' typeBindings''' termBindings'''
 
 reduceMetaObject (MOJSExprLiteral equiv type_ expr bindings) = let
 	equiv' = reduceMetaObject equiv
@@ -129,9 +148,10 @@ bindingReductionParametersForSL = BindingReductionParameters {
 						in Identity (foldl SLR.TermApp value (drop numParams params)))
 					)
 				)
-		in case typeOrTerm of
+		result = case typeOrTerm of
 			Left type_ -> Left (runIdentity (SLR.substituteType typeSubs type_))
 			Right term -> Right (runIdentity (SLR.substituteTerm (typeSubs, termSubs) term))
+		in result
 		),
 	typeOfSubstInTermBRP = (\ typeOrTerm typeOrTermName binding -> let
 		(kindsOfTypes, typesOfTerms) = case typeOrTerm of
@@ -351,7 +371,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 
 			(_, _) | outerBindingName `S.notMember` freeVarsAndGlobalsOfTermBRP brp outerTerm -> do
 				-- This binding isn't used at all. We should just ignore it.
-			
+
 				-- In our example, the `subD` binding will be handled by this code path.
 
 				processOuterBindings (outerTerm, remainingOuterBindings)
@@ -424,7 +444,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 				let finishedOuterBindings = (outerBindingName', outerBinding') : remainingOuterBindings'
 
 				return (finishedOuterTerm, finishedOuterBindings)
-		
+
 			(_, Just (originalInnerTerm, originalInnerBindings)) -> do
 				-- This binding evaluates to another "inner" literal, so we can fold it into the outer literal.
 

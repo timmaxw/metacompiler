@@ -1,7 +1,12 @@
 module Metacompiler.SLRuntime.Types where
 
-newtype NameOfType = NameOfType { unNameOfType :: String } deriving (Eq, Show, Ord)
-newtype NameOfTerm = NameOfTerm { unNameOfTerm :: String } deriving (Eq, Show, Ord)
+newtype NameOfType = NameOfType { unNameOfType :: String } deriving (Eq, Ord)
+instance Show NameOfType where
+	show (NameOfType n) = "NameOfType " ++ show n
+
+newtype NameOfTerm = NameOfTerm { unNameOfTerm :: String } deriving (Eq, Ord)
+instance Show NameOfTerm where
+	show (NameOfTerm n) = "NameOfTerm " ++ show n
 
 data Kind
 	= KindType
@@ -12,12 +17,16 @@ data DataDefn = DataDefn {
 	nameOfDataDefn :: NameOfType,
 	typeParamsOfDataDefn :: [Kind]
 	} deriving Eq
+instance Show DataDefn where
+	show (DataDefn name _) = "(DataDefn (" ++ show name ++ ") ...)"
 
 data CtorDefn = CtorDefn {
 	nameOfCtorDefn :: NameOfTerm,
 	parentDataOfCtorDefn :: DataDefn,
 	fieldTypesOfCtorDefn :: [[Type] -> Type]
 	}
+instance Show CtorDefn where
+	show (CtorDefn name _ _) = "(CtorDefn (" ++ show name ++ ") ...)"
 
 data TermDefn = TermDefn {
 	nameOfTermDefn :: NameOfTerm,
@@ -25,6 +34,8 @@ data TermDefn = TermDefn {
 	typeOfTermDefn :: [Type] -> Type,
 	valueOfTermDefn :: [Type] -> Term
 	}
+instance Show TermDefn where
+	show (TermDefn name _ _ _) = "(TermDefn (" ++ show name ++ ") ...)"
 
 data Type
 	= TypeDefined DataDefn
@@ -32,7 +43,7 @@ data Type
 	| TypeApp Type Type
 	| TypeFun Type Type
 	| TypeLazy Type
-	deriving Eq
+	deriving (Eq, Show)
 
 data Term
 	= TermDefined TermDefn [Type]
@@ -43,3 +54,4 @@ data Term
 	| TermData CtorDefn [Type] [Term]
 	| TermWrap Term
 	| TermUnwrap Term
+	deriving Show
