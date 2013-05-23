@@ -25,10 +25,10 @@ data Scope = Scope {
 	}
 
 formatMTForMessage :: TLR.MetaType -> String
-formatMTForMessage t = "`" ++ TLF.formatMetaTypeAsString t ++ "`"
+formatMTForMessage t = "\n    " ++ TLF.formatMetaTypeAsString t ++ "\n"
 
 formatMOForMessage :: TLR.MetaObject -> String
-formatMOForMessage o = "`" ++ TLF.formatMetaObjectAsString o ++ "`"
+formatMOForMessage o = "\n    " ++ TLF.formatMetaObjectAsString o ++ "\n"
 
 compileMetaType :: Scope -> TLS.MetaType Range -> ErrorMonad TLR.MetaType
 compileMetaType scope (TLS.MTFun range params result) =
