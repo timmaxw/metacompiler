@@ -51,7 +51,7 @@ data Term
 	| TermApp Term Term
 	| TermAbs (NameOfTerm, Type) Term
 	| TermCase Term [(CtorDefn, [Type], [NameOfTerm], Term)]
-	| TermData CtorDefn [Type] [Term]
+	| TermData CtorDefn [Type]
 	| TermWrap Term
 	| TermUnwrap Term
 	deriving Show

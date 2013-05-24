@@ -51,6 +51,8 @@ globalsInType other =
 globalsInTerm :: Term -> (S.Set NameOfType, S.Set NameOfTerm)
 globalsInTerm (TermDefined defn params) =
 	(S.unions (map globalsInType params), S.singleton (nameOfTermDefn defn))
+globalsInTerm (TermData ctor typs) =
+	(S.unions (map globalsInType typs), S.singleton (nameOfCtorDefn ctor))
 globalsInTerm other =
 	getConst (traverseTerm allGlobalsVisitor other)
 

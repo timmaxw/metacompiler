@@ -142,10 +142,9 @@ equivalentSLTerms tlEquivs tybs tebs slEquivs
 		&& equivalentSLTerms tlEquivs tybs tebs (foldr addEquivalentPair slEquivs (zip fns1 fns2)) b1 [] b2 []
 		| ((c1, typs1, fns1, b1), (c2, typs2, fns2, b2)) <- zip clauses1 clauses2]
 equivalentSLTerms tlEquivs tybs tebs slEquivs
-			(SLR.TermData ctor1 typs1 teps1) [] (SLR.TermData ctor2 typs2 teps2) [] =
+			(SLR.TermData ctor1 typs1) [] (SLR.TermData ctor2 typs2) [] =
 	SLR.nameOfCtorDefn ctor1 == SLR.nameOfCtorDefn ctor2
 	&& and (zipWith (equivalentSLTypes tlEquivs tybs) typs1 typs2)
-	&& and (zipWith (\ t1 t2 -> equivalentSLTerms tlEquivs tybs tebs slEquivs t1 [] t2 []) teps1 teps2)
 equivalentSLTerms tlEquivs tybs tebs slEquivs
 			(SLR.TermWrap x1) [] (SLR.TermWrap x2) [] =
 	equivalentSLTerms tlEquivs tybs tebs slEquivs x1 [] x2 []

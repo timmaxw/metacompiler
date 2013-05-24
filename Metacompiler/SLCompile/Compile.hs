@@ -109,11 +109,8 @@ compileTerm scope (SLS.TermName range name typeParams) = do
 				formatKindListForMessage (SLR.typeParamsOfTermDefn defn) ++ " but it got type parameters with the \
 				\following kinds: " ++ formatKindListForMessage (map SLR.kindOfType typeParams') ++ ".")
 		(Just (CtorTermInScope ctor), _)
-			| expectedKinds == map SLR.kindOfType typeParams' -> do
-				let fieldTypes = map ($ typeParams') (SLR.fieldTypesOfCtorDefn ctor)
-				let fieldVars = [(SLR.NameOfTerm ("f" ++ show i), ty) | (i, ty) <- zip [1..] fieldTypes]
-				let fieldTerms = map (uncurry SLR.TermName) fieldVars
-				return $ foldr SLR.TermAbs (SLR.TermData ctor typeParams' fieldTerms) fieldVars
+			| expectedKinds == map SLR.kindOfType typeParams' ->
+				return (SLR.TermData ctor typeParams')
 			| otherwise -> fail ("at " ++ formatRange range ++ ": constructor `" ++ SLS.unNameOfTerm name ++ "` \
 				\expects type parameters with the following kinds: " ++ formatKindListForMessage expectedKinds ++
 				" but it got type parameters with the following kinds: " ++

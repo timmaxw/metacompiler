@@ -21,7 +21,10 @@ typeOfTerm (TermAbs (_, a) b) = TypeFun a (typeOfTerm b)
 typeOfTerm (TermCase _ cs) = case cs of
 	(_, _, _, b):_ -> typeOfTerm b
 	[] -> error "case with no clauses"
-typeOfTerm (TermData c tps _) = TypeDefined (parentDataOfCtorDefn c)
+typeOfTerm (TermData c tps) =
+	foldr TypeFun
+		(foldl TypeApp (TypeDefined (parentDataOfCtorDefn c)) tps)
+		(map ($ tps) (fieldTypesOfCtorDefn c))
 typeOfTerm (TermWrap x) = TypeLazy (typeOfTerm x)
 typeOfTerm (TermUnwrap x) = case typeOfTerm x of
 	TypeLazy t -> t

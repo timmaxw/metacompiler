@@ -63,13 +63,10 @@ formatTermAsSyntax (SLR.TermCase s cs) =
 			v' = formatTermAsSyntax v
 		in (c', typs', fns', v')
 		| (c, typs, fns, v) <- cs]
-formatTermAsSyntax (SLR.TermData c typs teps) =
-	foldl
-		(SLS.TermApp ())
-		(SLS.TermName ()
-			(SLS.NameOfTerm (SLR.unNameOfTerm (SLR.nameOfCtorDefn c)))
-			(map formatTypeAsSyntax typs))
-		(map formatTermAsSyntax teps)
+formatTermAsSyntax (SLR.TermData c typs) =
+	SLS.TermName ()
+		(SLS.NameOfTerm (SLR.unNameOfTerm (SLR.nameOfCtorDefn c)))
+		(map formatTypeAsSyntax typs)
 formatTermAsSyntax (SLR.TermWrap x) =
 	SLS.TermWrap () (formatTermAsSyntax x)
 formatTermAsSyntax (SLR.TermUnwrap x) =

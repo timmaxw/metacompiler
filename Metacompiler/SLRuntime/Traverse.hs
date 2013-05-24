@@ -41,7 +41,7 @@ traverseTerm v t = case t of
 			<*> pure fns
 			<*> visitTe b
 			) cs
-	TermData c tps fs -> TermData c <$> traverse visitTy tps <*> traverse visitTe fs
+	TermData c tps -> TermData c <$> traverse visitTy tps
 	TermWrap x -> TermWrap <$> visitTe x
 	TermUnwrap x -> TermUnwrap <$> visitTe x
 	where
