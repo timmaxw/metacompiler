@@ -530,7 +530,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 
 								let newOuterBinding = makeBindingBRP brp
 										innerBindingName
-										(newOuterBindingParams, outerBindingValue)
+										(newOuterBindingParams, innerBindingValue)
 
 								let
 									-- innerTermFun' :: [termType] -> termType

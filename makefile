@@ -4,6 +4,9 @@ build/metacompiler: Metacompiler/*.hs Metacompiler/*/*.hs
 build/run_all_tests: Metacompiler/*.hs Metacompiler/*/*.hs TestMetacompiler/*.hs
 	ghc --make TestMetacompiler/AllTests.hs -o $@ -main-is TestMetacompiler.AllTests.main -outputdir build/objs
 
+build/metacompiler-prof: Metacompiler/*.hs Metacompiler/*/*.hs
+	ghc --make Metacompiler/Main.hs -o $@ -main-is Metacompiler.Main.main -outputdir build/objs -prof -fprof-auto
+
 run_all_tests: build/run_all_tests
 	build/run_all_tests
 

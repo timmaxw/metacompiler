@@ -140,6 +140,6 @@ performBinding (name, nameType) namesWithin subs = let
 		`S.union` S.delete name namesWithin
 	candidateNames = [NameOfTerm (unNameOfTerm name ++ replicate i '\'') | i <- [0..]]
 	Just name' = find (`S.notMember` forbiddenNames) candidateNames
-	subs' = if name' == name then M.delete name subs else M.insert name (simpleTermSub (TermName name' nameType)) subs'
+	subs' = if name' == name then M.delete name subs else M.insert name (simpleTermSub (TermName name' nameType)) subs
 	in (name', subs')
 
