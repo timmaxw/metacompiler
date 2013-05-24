@@ -1,8 +1,14 @@
 build/metacompiler: Metacompiler/*.hs Metacompiler/*/*.hs
 	ghc --make Metacompiler/Main.hs -o $@ -main-is Metacompiler.Main.main -outputdir build/objs
 
+build/run_all_tests: Metacompiler/*.hs Metacompiler/*/*.hs TestMetacompiler/*.hs
+	ghc --make TestMetacompiler/AllTests.hs -o $@ -main-is TestMetacompiler.AllTests.main -outputdir build/objs
+
+run_all_tests: build/run_all_tests
+	build/run_all_tests
+
 clean:
-	rm -f build/metacompiler
+	rm -f build/metacompiler build/run_all_tests
 	rm -rf build/objs/*
 
 run_examples: build/metacompiler examples/*.mc

@@ -395,8 +395,7 @@ reduceBindings brp (originalOuterTerm, originalOuterBindings) = let
 
 			(_, Nothing) -> do
 				-- This binding is used, but cannot be reduced further, so we must keep it. However, we might still
-				-- have to rename it so it doesn't conflict with global names, and we might want to prune unused
-				-- parameters.
+				-- have to rename it to avoid name conflicts, and we might want to prune unused parameters.
 
 				-- In our example, the `subB` binding will be handled by this code path.
 
